@@ -24,12 +24,11 @@ export default function ManualControlPage() {
   const [isMobile, setIsMobile] = useState(false);
   const router = useRouter();
 
-  // detect mobile để đổi layout
   useEffect(() => {
     if (typeof window === "undefined") return;
 
     const update = () => {
-      setIsMobile(window.innerWidth < 1024); // dưới ~tablet ngang coi như mobile
+      setIsMobile(window.innerWidth < 1024);
     };
 
     update();
@@ -57,10 +56,10 @@ export default function ManualControlPage() {
     router.push("/dashboard");
   }, [router]);
 
-  /* ----------------- MOBILE: full tràn viền, không Sidebar/Topbar ----------------- */
+  /* ----------------- MOBILE ----------------- */
   if (isMobile) {
     return (
-      <div className="relative min-h-screen w-full bg-[#0c0520] text-white">
+      <div className="relative min-h-screen w-full bg-slate-50 text-slate-900 dark:bg-[#0c0520] dark:text-white">
         {/* Nút quay lại Connection (floating) */}
         <button
           onClick={goToConnection}
@@ -84,10 +83,14 @@ export default function ManualControlPage() {
             toggleMode={toggleMode}
           />
         ) : (
-          <section className="min-h-screen w-full bg-[#0c0520] text-white">
-            <div className="mx-auto max-w-5xl px-2 py-3 space-y-3 pt-12">
-              {/* chừa khoảng trên cho nút back */}
-              <HeaderControl mode={mode} onToggle={toggleMode} connected={true} />
+          <section className="min-h-screen w-full bg-slate-50 text-slate-900 dark:bg-[#0c0520] dark:text-white pt-12">
+            {/* chừa khoảng trên cho nút back */}
+            <div className="mx-auto max-w-5xl px-2 py-3 space-y-3">
+              <HeaderControl
+                mode={mode}
+                onToggle={toggleMode}
+                connected={true}
+              />
               <FPVView fps={fpv.fps ?? 30} />
             </div>
           </section>
@@ -96,14 +99,15 @@ export default function ManualControlPage() {
     );
   }
 
+  /* ----------------- DESKTOP ----------------- */
   return (
-    <div className="min-h-screen bg-[#1A0F28] text-white">
+    <div className="min-h-screen bg-slate-100 text-slate-900 dark:bg-[#1A0F28] dark:text-white">
       <div className="flex min-h-screen">
         <Sidebar />
         <div className="flex flex-col flex-1">
           <Topbar />
-          <section className="flex-1 w-full bg-[#0c0520] text-white p-6">
-            <div className="mt-6">
+          <section className="flex-1 w-full bg-slate-50 text-slate-900 dark:bg-[#0c0520] dark:text-white p-6">
+            <div className="">
               {mode === "remote" ? (
                 <RemoteView
                   onEmergencyStop={robotStop}
@@ -112,7 +116,11 @@ export default function ManualControlPage() {
                 />
               ) : (
                 <div className="space-y-4">
-                  <HeaderControl mode={mode} onToggle={toggleMode} connected={true} />
+                  <HeaderControl
+                    mode={mode}
+                    onToggle={toggleMode}
+                    connected={true}
+                  />
                   <FPVView fps={fpv.fps ?? 30} />
                 </div>
               )}
