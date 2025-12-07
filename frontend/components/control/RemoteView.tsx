@@ -31,7 +31,7 @@ async function api<T = any>(path: string, init?: RequestInit): Promise<T | null>
     },
     cache: "no-store",
   });
-  
+
   return res.json();
 }
 
@@ -55,11 +55,13 @@ const RobotAPI = {
     rx: number;
     ry: number;
     rz: number;
-  }) =>
-    api(`/api/robots/${robotId}/command/move/`, {
+  }) => {
+    console.log("MOVE CMD:", cmd);
+    return api(`/api/robots/${robotId}/command/move/`, {
       method: "POST",
       body: JSON.stringify(cmd),
-    }),
+    });
+  },
   lidar: (action: "start" | "stop") =>
     api(`/api/robots/${robotId}/command/lidar/`, {
       method: "POST",
@@ -144,7 +146,6 @@ export default function RemoteView({
   const [stabilizing, setStabilizing] = useState(false);
   const [lefting, setLefting] = useState(false);
   const [righting, setRighting] = useState(false);
-  // NEW: trạng thái bật/tắt điều khiển bằng chuột + WASD
   const [mouseLook, setMouseLook] = useState(false);
 
   const postureBtns = ["Lie_Down", "Stand_Up", "Sit_Down", "Squat", "Crawl"];
@@ -158,7 +159,26 @@ export default function RemoteView({
   const behavior1 = ["Wave_Hand", "Handshake", "Pray", "Stretch", "Swing"];
   const behavior2 = ["Wave_Body", "Handshake", "Pee", "Play_Ball", "Mark_Time"];
   const hasResetBody = useRef(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const [isPortrait, setIsPortrait] = useState(false);
+    useEffect(() => {
+    if (typeof window === "undefined") return;
 
+    const update = () => {
+      const { innerWidth, innerHeight } = window;
+      const mobile = innerWidth < 1024;     // tuỳ ngưỡng, 1024 = dưới tablet ngang
+      setIsMobile(mobile);
+      setIsPortrait(innerHeight > innerWidth);
+    };
+
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("orientationchange", update);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("orientationchange", update);
+    };
+  }, []);
   useEffect(() => {
     // Không có URL -> chắc chắn không chạy
     if (!lidarUrl) {
@@ -350,7 +370,7 @@ export default function RemoteView({
 
       // forward = tiến/lùi, strafe = đi ngang
       const forward = Math.cos(rad) * power; // -1..1 (lên/xuống)
-      const strafe  = Math.sin(rad) * power; // -1..1 (trái/phải)
+      const strafe = Math.sin(rad) * power; // -1..1 (trái/phải)
 
       const vx = forward * maxV;      // tiến (+) / lùi (-)
       const vy = strafe * maxSideV;   // phải (+) / trái (-) (tuỳ bạn)
@@ -378,32 +398,33 @@ export default function RemoteView({
   }, []);
 
 
-  const turnLeft = () =>{
-    if(lefting){
-      setLefting(false);
-    }else{
+  const turnLeft = () => {
+    if (lefting) {
+      // đang quay trái → bấm lại để stop
+      stopMove();
+    } else {
       RobotAPI.move({ vx: 0, vy: 0, vz: 0, rx: 0, ry: 0, rz: +0.8 });
       setLefting(true);
       setRighting(false);
     }
-  }
-    
-  const turnRight = () =>{
-    if(righting){
-      setRighting(false);
-    }else{
+  };
+
+  const turnRight = () => {
+    if (righting) {
+      // đang quay phải → bấm lại để stop
+      stopMove();
+    } else {
       RobotAPI.move({ vx: 0, vy: 0, vz: 0, rx: 0, ry: 0, rz: -0.8 });
       setRighting(true);
       setLefting(false);
     }
-  }
-    
-  const stopMove = () =>{
+  };
+
+ const stopMove = () => {
     RobotAPI.move({ vx: 0, vy: 0, vz: 0, rx: 0, ry: 0, rz: 0 });
     setRighting(false);
     setLefting(false);
-  }
-    
+  };
 
   type BodyState = {
     tx: number;
@@ -456,7 +477,79 @@ export default function RemoteView({
       /* ignore */
     });
   }, []);
-  
+
+  if (isMobile) {
+    return (
+      <section className="h-screen w-full bg-[#0c0520] text-white">
+        <div className="mx-auto max-w-4xl h-full flex flex-col px-3 py-2 space-y-2">
+          {isPortrait && (
+            <div className="rounded-xl bg-amber-500/10 border border-amber-400/40 px-3 py-2 text-[11px] text-amber-200">
+              For better control, please rotate your phone to{" "}
+              <span className="font-semibold">landscape</span>.
+            </div>
+          )}
+
+          <div className="flex-1">
+            <div className="relative w-full h-full rounded-2xl border border-white/10 bg-black overflow-hidden">
+              {/* VIDEO luôn nằm dưới cùng */}
+              <img
+                src={streamUrl || "/placeholder.svg?height=360&width=640"}
+                alt="FPV"
+                className="absolute inset-0 w-full h-full object-cover opacity-80 z-0"
+              />
+
+              {/* FPS overlay */}
+              <div className="absolute left-2 top-2 text-[11px] font-semibold text-green-300 z-10">
+                FPS:{fps}
+              </div>
+
+              {/* Joystick + nút điều khiển, luôn nằm trên video */}
+              <div className="absolute inset-x-3 bottom-3 z-20">
+                <div className="flex items-center justify-between gap-4">
+                  {/* Joystick bên trái */}
+                  <div className="flex-shrink-0">
+                    <HalfCircleJoystick
+                      width={160}
+                      height={100}
+                      rest="center"
+                      onChange={onJoyChange}
+                      onRelease={onJoyRelease}
+                    />
+                  </div>
+
+                  {/* Cụm nút bên phải: <  Stop  > */}
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={turnLeft}
+                      className={`w-10 h-10 rounded-full bg-black/60 text-white text-lg flex items-center justify-center border border-white/20
+                        ${lefting ? "bg-cyan-600/70" : "hover:bg-white/20"}`}
+                    >
+                      {"<"}
+                    </button>
+
+                    <button
+                      onClick={stopMove}
+                      className="w-12 h-12 rounded-full bg-red-600 text-white text-xs font-semibold flex items-center justify-center shadow-lg active:scale-95"
+                    >
+                      Stop
+                    </button>
+
+                    <button
+                      onClick={turnRight}
+                      className={`w-10 h-10 rounded-full bg-black/60 text-white text-lg flex items-center justify-center border border-white/20
+                        ${righting ? "bg-cyan-600/70" : "hover:bg-white/20"}`}
+                    >
+                      {">"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="min-h-screen w-full bg-[#0c0520] text-white">
@@ -612,9 +705,9 @@ export default function RemoteView({
                   />
                 </div>
 
-    
 
-         
+
+
               </div>
             </div>
           </Panel>
@@ -731,7 +824,7 @@ function Btn({
   onClick,
 }: {
   label: string;
-  variant:string;
+  variant: string;
   onClick?: () => void;
 }) {
   const base =
@@ -798,16 +891,16 @@ function SliderRow({
         </span>
       </div>
       <div className="flex">
-      -100
-      <input
-        type="range"
-        min={min}
-        max={max}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="w-full mx-2 accent-fuchsia-400 cursor-pointer "
-      />
-      100
+        -100
+        <input
+          type="range"
+          min={min}
+          max={max}
+          value={value}
+          onChange={(e) => onChange(Number(e.target.value))}
+          className="w-full mx-2 accent-fuchsia-400 cursor-pointer "
+        />
+        100
       </div>
 
     </div>
@@ -822,8 +915,15 @@ function MouseLookToggle({
 }: {
   on: boolean;
   onToggle: () => void;
-  variant:string,
+  variant: string,
 }) {
+    const handleClick = () => {
+    if (on) {
+      // sắp tắt → gửi lệnh dừng xoay
+      RobotAPI.move({ vx: 0, vy: 0, vz: 0, rx: 0, ry: 0, rz: 0 });
+    }
+    onToggle();
+  };
   return (
     <Btn
       label={on ? "Mouse Look ON" : "Mouse Look OFF"}

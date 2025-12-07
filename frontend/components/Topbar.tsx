@@ -1,5 +1,4 @@
 "use client";
-
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
@@ -7,36 +6,40 @@ import Image from "next/image";
 export default function Topbar() {
   const router = useRouter();
   const [username, setUsername] = useState<string | null>(null);
+  const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
-    const token = localStorage.getItem("access_token");
-    const storedUser = localStorage.getItem("username");
+    if (typeof window === "undefined") return;
 
-    if (token && storedUser) {
-      setUsername(storedUser);
-      return;
-    }
+    const detect = () => {
+      const ua =
+        typeof navigator !== "undefined" ? navigator.userAgent || "" : "";
+      const uaMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobi/i.test(
+        ua
+      );
 
-    // Nếu chỉ có token, lấy username từ payload JWT
-    if (token) {
-      try {
-        const payload = JSON.parse(atob(token.split(".")[1]));
-        const name = payload.username || "User";
-        setUsername(name);
-        localStorage.setItem("username", name);
-      } catch {
-        setUsername(null);
-      }
-    } else {
-      setUsername(null);
-    }
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const sizeMobile = vw <= 1024 && vh <= 820;
+
+      setIsMobile(uaMobile || sizeMobile);
+    };
+
+    detect();
+    window.addEventListener("resize", detect);
+    window.addEventListener("orientationchange", detect);
+    return () => {
+      window.removeEventListener("resize", detect);
+      window.removeEventListener("orientationchange", detect);
+    };
   }, []);
 
   function logout() {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("username");
-
-    // animation nhỏ trước khi chuyển trang
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("access_token");
+      localStorage.removeItem("username");
+    }
+    setUsername(null);
     setTimeout(() => {
       router.push("/login");
     }, 200);
@@ -46,15 +49,18 @@ export default function Topbar() {
     router.push("/login");
   }
 
+  if (isMobile){
+    return null;
+  } 
+
   return (
-    <header className="border-b border-white/10 bg-[#1A0F28]/70 backdrop-blur p-4 flex justify-between items-center">
+    <header className="flex items-center justify-between px-6 py-4 bg-[#1A0F28] border-b border-white/10">
       <input
         placeholder="Search..."
         className="rounded-full bg-white/10 px-4 py-2 text-sm placeholder:text-white/60 focus:outline-none flex-1 max-w-md"
       />
 
       <div className="flex items-center gap-4 text-sm text-white/80">
-
         {!username && (
           <button
             onClick={goLogin}
@@ -70,18 +76,18 @@ export default function Topbar() {
             Login
           </button>
         )}
+
         {username && (
           <>
             <span className="font-medium">{username}</span>
 
-
-            <div className="h-8 w-8 rounded-full bg-white/20 border border-white/10">
+            <div className="h-8 w-8 rounded-full bg-white/20 border border-white/10 overflow-hidden">
               <Image
                 src="/logo_hongtrang.png"
                 alt="RobotControl Logo"
-                width={60}
-                height={60}
-                className="rounded-full mb-3"
+                width={32}
+                height={32}
+                className="h-full w-full object-cover"
               />
             </div>
 
@@ -101,7 +107,6 @@ export default function Topbar() {
             </button>
           </>
         )}
-
       </div>
     </header>
   );

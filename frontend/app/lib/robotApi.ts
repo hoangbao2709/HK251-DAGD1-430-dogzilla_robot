@@ -1,6 +1,7 @@
-// lib/robotApi.ts
+const BACKEND_BASE =
+  process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
 const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE || "";
+  process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
 export const DEFAULT_DOG_SERVER =
   process.env.NEXT_PUBLIC_DOGZILLA_BASE || "";
 export const robotId = "robot-a";

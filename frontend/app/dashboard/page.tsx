@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 export type Device = {
   id: number;
   name: string;
-  ip: string; 
+  ip: string;
   battery: number;
   url?: string;
   status: "online" | "offline" | "unknown";
@@ -18,7 +18,7 @@ const BACKEND_BASE =
   process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
 
 // Base cho các API điều khiển robot (Django app "control")
-const CONTROL_BASE = `${BACKEND_BASE}/control`;
+const CONTROL_BASE = `${BACKEND_BASE}`;
 
 const robotId = "robot-a";
 const DEVICES_COOKIE_KEY = "dogzilla_devices";
@@ -62,15 +62,12 @@ function loadDevicesFromCookie(): Device[] | null {
 // Gọi API connect trên Django
 // ========================
 async function connectRobot(addr: string) {
-  const res = await fetch(
-    `${CONTROL_BASE}/api/robots/${robotId}/connect/`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ addr }),
-      cache: "no-store",
-    }
-  );
+  const res = await fetch(`${CONTROL_BASE}/api/robots/${robotId}/connect/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ addr }),
+    cache: "no-store",
+  });
 
   if (!res.ok) {
     throw new Error(await res.text());
@@ -87,10 +84,31 @@ export default function DashboardPage() {
   const [addr, setAddr] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [isPortrait, setIsPortrait] = useState(false); // 🔹 theo dõi xoay dọc/ngang
 
   const router = useRouter();
 
   const canAdd = useMemo(() => addr.trim().length > 0, [addr]);
+
+  // Theo dõi orientation để gợi ý xoay ngang trên mobile
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const updateOrientation = () => {
+      const { innerWidth, innerHeight } = window;
+      // nếu chiều cao lớn hơn chiều rộng -> đang cầm dọc
+      setIsPortrait(innerHeight > innerWidth);
+    };
+
+    updateOrientation();
+    window.addEventListener("resize", updateOrientation);
+    window.addEventListener("orientationchange", updateOrientation);
+
+    return () => {
+      window.removeEventListener("resize", updateOrientation);
+      window.removeEventListener("orientationchange", updateOrientation);
+    };
+  }, []);
 
   // 1) Load manual devices từ cookie
   useEffect(() => {
@@ -256,22 +274,30 @@ export default function DashboardPage() {
   };
 
   return (
-    <section className="p-6">
-      <h1 className="gradient-title mb-6">Connection Manager</h1>
+    <section className="h-full w-full p-4 md:p-6">
+      {/* Thanh nhắc xoay ngang trên điện thoại khi đang cầm dọc */}
+      {isPortrait && (
+        <div className="mb-3 rounded-xl bg-amber-500/10 border border-amber-400/40 px-3 py-2 text-xs md:text-sm text-amber-200">
+          For best control experience, please rotate your phone to{" "}
+          <span className="font-semibold">landscape</span>.
+        </div>
+      )}
 
-      <div className="mb-6 flex gap-2">
+      <h1 className={`gradient-title mb-6 ${isPortrait? "" : "hidden"}`}>Connection Manager</h1>
+
+      <div className="mb-6 flex flex-col sm:flex-row gap-2">
         <input
           type="text"
           placeholder="Enter device IP (vd: 192.168.2.100)"
           value={addr}
           onChange={(e) => setAddr(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && canAdd && handleAdd()}
-          className="flex-1 rounded-xl bg-white/10 px-4 py-2 text-sm placeholder:text-white/60 focus:outline-none focus:ring-2 focus:ring-pink-400/60"
+          className="flex-1 rounded-xl bg-white/10 px-4 py-2 text-sm placeholder:text-white/60 focus:outline-none focus:ring-2 focus:ring-pink-400/60 min-h-[44px]"
         />
         <button
           onClick={handleAdd}
           disabled={!canAdd || loading}
-          className={`gradient-button1 px-4 py-2 rounded-xl cursor-pointer text-sm font-medium ${
+          className={`gradient-button1 px-4 py-2 rounded-xl cursor-pointer text-sm font-medium min-h-[44px] ${
             !canAdd || loading ? "opacity-50 cursor-not-allowed" : ""
           }`}
         >
@@ -283,7 +309,7 @@ export default function DashboardPage() {
         <div className="mb-4 text-xs text-rose-400">Error: {errorMsg}</div>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
         {devices.map((dev) => (
           <ConnectionCard
             key={dev.id}
