@@ -141,9 +141,11 @@ export function SliderRow({
 export function MouseLookToggle({
   on,
   onToggle,
+  variant,
 }: {
   on: boolean;
   onToggle: () => void;
+  variant: string,
 }) {
   const handleClick = () => {
     if (on) {
