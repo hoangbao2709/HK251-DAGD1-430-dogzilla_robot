@@ -39,15 +39,10 @@ export default function LoginPage() {
       console.log("[login] json =", json);
 
       if (!res.ok || json.ok === false) {
-        setError(
-          json.error ||
-            json.detail ||
-            "Login failed"
-        );
+        setError(json.error || json.detail || "Login failed");
         return;
       }
 
-      // ==== LẤY TOKEN TỪ RESPONSE ====
       const accessToken: string | null =
         json.access || json.token || json.access_token || null;
       const refreshToken: string | null =
@@ -58,27 +53,25 @@ export default function LoginPage() {
         return;
       }
 
-      // ✅ LƯU ĐÚNG KEY ĐỂ DASHBOARD ĐỌC
-      localStorage.setItem("access_token", accessToken);
-      if (refreshToken) {
-        localStorage.setItem("refresh_token", refreshToken);
+      if (typeof window !== "undefined") {
+        localStorage.setItem("access_token", accessToken);
+        if (refreshToken) {
+          localStorage.setItem("refresh_token", refreshToken);
+        }
+        if (json.username) {
+          localStorage.setItem("username", json.username);
+        }
+        if (json.email) {
+          localStorage.setItem("user_email", json.email);
+        }
+        if (json.robot_url) {
+          localStorage.setItem("robot_url", json.robot_url);
+        }
+        if (json.robot_device_id) {
+          localStorage.setItem("robot_device_id", json.robot_device_id);
+        }
       }
 
-      // lưu thêm info nếu backend trả về
-      if (json.username) {
-        localStorage.setItem("username", json.username);
-      }
-      if (json.email) {
-        localStorage.setItem("user_email", json.email);
-      }
-      if (json.robot_url) {
-        localStorage.setItem("robot_url", json.robot_url);
-      }
-      if (json.robot_device_id) {
-        localStorage.setItem("robot_device_id", json.robot_device_id);
-      }
-
-      // 👉 Redirect sang dashboard (Connection Manager)
       router.push("/dashboard");
     } catch (err) {
       console.error(err);
@@ -89,112 +82,147 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#0c0520] text-white grid place-items-center p-6">
-      <div className="w-full max-w-md">
-        <div className="relative rounded-3xl border border-white/10 bg-white/5 p-6 sm:p-8 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
-          <div className="pointer-events-none absolute inset-0 rounded-3xl ring-1 ring-inset ring-fuchsia-500/20" />
-          <div className="mb-6 text-center">
-            <div className="inline-flex items-center gap-2">
-              <span className="h-3 w-3 rounded-full bg-pink-400 shadow-[0_0_20px_2px_rgba(244,114,182,0.6)]" />
-              <h1 className="text-2xl font-bold tracking-tight">
+    <main
+      className="
+    min-h-[100dvh]
+    bg-[#0c0520] text-white
+    flex justify-center
+    px-0 sm:px-6
+    py-0 sm:py-6
+    lg:items-center
+  "
+    >
+      <div className="w-full max-w-md mx-auto flex flex-col">
+        <div className="flex-1 overflow-y-auto">
+
+          {/* CARD: MOBILE = full width, PC = card */}
+          <div
+            className="
+          mt-0 sm:mt-8 mb-0 sm:mb-4
+          w-full
+          
+          /* MOBILE style (no rounded, no border, full width) */
+          rounded-none border-0 shadow-none bg-transparent p-6
+
+          /* DESKTOP style */
+          sm:rounded-3xl sm:border sm:border-white/10 sm:bg-white/5
+          sm:shadow-[0_0_0_1px_rgba(255,255,255,0.02)]
+          sm:p-8
+        "
+          >
+            {/* Ring chỉ hiện trên PC */}
+            <div className="hidden sm:block pointer-events-none absolute inset-0 rounded-3xl ring-1 ring-inset ring-fuchsia-500/20" />
+
+            <div className="mb-6 text-center">
+              <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
                 <span className="text-pink-400">ROBOT</span>{" "}
                 <span className="text-sky-300">CONTROL</span>{" "}
                 <span className="text-indigo-400">LOGIN</span>
               </h1>
+
+              <p className="mt-2 text-sm text-white/70">
+                Sign in to continue
+              </p>
             </div>
-            <p className="mt-2 text-sm text-white/70">
-              Sign in to continue to the Remote Control Mode.
-            </p>
+
+            <form onSubmit={onSubmit} className="space-y-5">
+
+              <FieldLabel htmlFor="email">Email</FieldLabel>
+              <div className="relative">
+                <input
+                  id="email"
+                  name="email"
+                  type="email"
+                  placeholder="you@example.com"
+                  className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm sm:text-base outline-none placeholder:text-white/40 focus:border-fuchsia-400/50 focus:ring-2 focus:ring-fuchsia-400/30"
+                  autoComplete="email"
+                  inputMode="email"
+                />
+                <div className="pointer-events-none absolute inset-0 rounded-xl ring-1 ring-inset ring-white/5" />
+              </div>
+
+              <FieldLabel htmlFor="password">Password</FieldLabel>
+              <div className="relative">
+                <input
+                  id="password"
+                  name="password"
+                  type={showPassword ? "text" : "password"}
+                  placeholder="••••••••"
+                  className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 pr-16 text-sm sm:text-base outline-none placeholder:text-white/40 focus:border-indigo-400/50 focus:ring-2 focus:ring-indigo-400/30"
+                  autoComplete="current-password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((s) => !s)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg px-3 py-1 text-xs bg-white/5 border border-white/10 hover:bg-white/10"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? "Hide" : "Show"}
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between text-xs sm:text-sm">
+                <label className="inline-flex items-center gap-2 select-none">
+                  <input
+                    type="checkbox"
+                    name="remember"
+                    className="accent-fuchsia-400 h-3 w-3 sm:h-4 sm:w-4"
+                  />
+                  <span className="text-white/80">Remember me</span>
+                </label>
+                <a
+                  href="#"
+                  className="text-sky-300 hover:text-sky-200 whitespace-nowrap"
+                >
+                  Forgot password?
+                </a>
+              </div>
+
+              {error && (
+                <p className="text-xs sm:text-sm text-rose-300 bg-rose-500/10 border border-rose-400/30 rounded-lg px-3 py-2">
+                  {error}
+                </p>
+              )}
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full rounded-xl border border-fuchsia-400/40 bg-gradient-to-r from-pink-500/30 via-indigo-500/30 to-sky-500/30 px-4 py-3 text-sm sm:text-base font-semibold hover:from-pink-500/40 hover:via-indigo-500/40 hover:to-sky-500/40 disabled:opacity-60"
+              >
+                {loading ? "Signing in..." : "Sign in"}
+              </button>
+
+              <div className="relative py-2 sm:py-3 text-center">
+                <div className="border-t border-white/10" />
+                <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-[#0c0520] px-3 text-[10px] sm:text-xs text-white/60">
+                  or
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  className="rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-xs sm:text-sm hover:bg-white/10"
+                >
+                  Login with Google
+                </button>
+                <button
+                  type="button"
+                  className="rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-xs sm:text-sm hover:bg-white/10"
+                >
+                  Login with GitHub
+                </button>
+              </div>
+            </form>
           </div>
 
-          <form onSubmit={onSubmit} className="space-y-5">
-            <FieldLabel htmlFor="email">Email</FieldLabel>
-            <div className="relative">
-              <input
-                id="email"
-                name="email"
-                type="email"
-                placeholder="you@example.com"
-                className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 outline-none placeholder:text-white/40 focus:border-fuchsia-400/50 focus:ring-2 focus:ring-fuchsia-400/30"
-                autoComplete="email"
-              />
-              <div className="pointer-events-none absolute inset-0 rounded-xl ring-1 ring-inset ring-white/5" />
-            </div>
-
-            <FieldLabel htmlFor="password">Password</FieldLabel>
-            <div className="relative">
-              <input
-                id="password"
-                name="password"
-                type={showPassword ? "text" : "password"}
-                placeholder="••••••••"
-                className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 pr-12 outline-none placeholder:text-white/40 focus:border-indigo-400/50 focus:ring-2 focus:ring-indigo-400/30"
-                autoComplete="current-password"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword((s) => !s)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg px-3 py-1 text-xs bg-white/5 border border-white/10 hover:bg-white/10"
-                aria-label={showPassword ? "Hide password" : "Show password"}
-              >
-                {showPassword ? "Hide" : "Show"}
-              </button>
-            </div>
-
-            <div className="flex items-center justify-between text-sm">
-              <label className="inline-flex items-center gap-2 select-none">
-                <input type="checkbox" name="remember" className="accent-fuchsia-400" />
-                <span className="text-white/80">Remember me</span>
-              </label>
-              <a href="#" className="text-sky-300 hover:text-sky-200">
-                Forgot password?
-              </a>
-            </div>
-
-            {error && (
-              <p className="text-sm text-rose-300 bg-rose-500/10 border border-rose-400/30 rounded-lg px-3 py-2">
-                {error}
-              </p>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full rounded-xl border border-fuchsia-400/40 bg-gradient-to-r from-pink-500/30 via-indigo-500/30 to-sky-500/30 px-4 py-3 font-semibold hover:from-pink-500/40 hover:via-indigo-500/40 hover:to-sky-500/40 disabled:opacity-60"
-            >
-              {loading ? "Signing in..." : "Sign in"}
-            </button>
-
-            <div className="relative py-3 text-center">
-              <div className="border-t border-white/10" />
-              <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-white/5 px-3 text-xs text-white/60">
-                or
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                className="rounded-xl bg-white/5 border border-white/10 px-4 py-2 hover:bg-white/10"
-              >
-                Login with Google
-              </button>
-              <button
-                type="button"
-                className="rounded-xl bg-white/5 border border-white/10 px-4 py-2 hover:bg-white/10"
-              >
-                Login with GitHub
-              </button>
-            </div>
-          </form>
+          <p className="mt-4 sm:mt-6 text-center text-[11px] sm:text-xs text-white/50">
+            Don&apos;t have an account?{" "}
+            <a href="/register" className="text-sky-300 hover:text-sky-200">
+              Create one
+            </a>
+          </p>
         </div>
-
-        <p className="mt-6 text-center text-xs text-white/50">
-          Don&apos;t have an account?{" "}
-          <a href="/register" className="text-sky-300 hover:text-sky-200">
-            Create one
-          </a>
-        </p>
       </div>
     </main>
   );
@@ -208,7 +236,10 @@ function FieldLabel({
   htmlFor: string;
 }) {
   return (
-    <label htmlFor={htmlFor} className="block text-sm font-medium text-white/80">
+    <label
+      htmlFor={htmlFor}
+      className="block text-xs sm:text-sm font-medium text-white/80"
+    >
       {children}
     </label>
   );

@@ -18,7 +18,7 @@ const BACKEND_BASE =
   process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
 
 // Base cho các API điều khiển robot (Django app "control")
-const CONTROL_BASE = `${BACKEND_BASE}`;
+const CONTROL_BASE = `${BACKEND_BASE}/control`;
 
 const robotId = "robot-a";
 const DEVICES_COOKIE_KEY = "dogzilla_devices";

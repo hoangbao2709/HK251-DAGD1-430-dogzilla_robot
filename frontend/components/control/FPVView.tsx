@@ -278,24 +278,6 @@ export default function FPVView({
               ))}
             </div>
           </Panel>
-
-          {/* ví dụ thêm nút toggle lidar bằng tay */}
-          <Panel title="Lidar & Stabilizing (Gamepad B0/B2 + Button)">
-            <div className="flex flex-wrap gap-3">
-              <Btn
-                label={lidarRunning ? "Stop Lidar" : "Start Lidar"}
-                variant={lidarRunning ? "success" : "default"}
-                onClick={toggleLidar}
-              />
-              <Btn
-                label={
-                  stabilizingOn ? "Stabilizing ON" : "Stabilizing OFF (B2)"
-                }
-                variant={stabilizingOn ? "success" : "default"}
-                onClick={toggleStabilizing}
-              />
-            </div>
-          </Panel>
         </div>
       </div>
     </div>

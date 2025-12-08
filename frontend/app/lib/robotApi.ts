@@ -8,57 +8,59 @@ export const DEFAULT_DOG_SERVER =
 export const robotId = "robot-a";
 
 // ==============================
-// Generic API wrapper
+// Generic API wrapper (trả JSON trực tiếp)
 // ==============================
-async function api<T = any>(
-  path: string,
-  init?: RequestInit
-): Promise<{ ok: boolean; log?: string; data?: T; error?: string } | null> {
-  if (!API_BASE) return null;
-
-  try {
-    const res = await fetch(`${API_BASE}${path}`, {
-      ...init,
-      headers: {
-        "Content-Type": "application/json",
-        ...(init?.headers || {}),
-      },
-      cache: "no-store",
-    });
-
-    const json = await res.json().catch(() => ({}));
-
-    return {
-      ok: res.ok,
-      log: json.log,
-      data: json,
-      error: !res.ok ? json.error || `HTTP ${res.status}` : undefined,
-    };
-  } catch (e: any) {
-    return {
-      ok: false,
-      error: e?.message || "Network error",
-      log: `[Network error] ${path}: ${e?.message}`,
-    };
+async function api<T = any>(path: string, init?: RequestInit): Promise<T> {
+  if (!API_BASE) {
+    throw new Error("API_BASE is not configured");
   }
+
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...(init?.headers || {}),
+    },
+    cache: "no-store",
+  });
+
+  const json = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    const msg = (json as any)?.error || `HTTP ${res.status}`;
+    const err: any = new Error(msg);
+    err.status = res.status;
+    err.body = json;
+    throw err;
+  }
+
+  return json as T;
 }
 
 // ==============================
 // Robot API functions
 // ==============================
 export const RobotAPI = {
+  // /control/api/robots/robot-a/connect/
   connect: (addr: string) =>
-    api(`/api/robots/${robotId}/connect/`, {
-      method: "POST",
-      body: JSON.stringify({ addr }),
-    }),
+    api<{ connected: boolean; error?: string; log?: string }>(
+      `/api/robots/${robotId}/connect/`,
+      {
+        method: "POST",
+        body: JSON.stringify({ addr }),
+      }
+    ),
 
-  status: () => api(`/api/robots/${robotId}/status/`),
+  // /control/api/robots/robot-a/status/
+  status: () => api<any>(`/api/robots/${robotId}/status/`),
 
-  fpv: () => api(`/api/robots/${robotId}/fpv/`),
+  // /control/api/robots/robot-a/fpv/
+  // backend nên trả: { "stream_url": "http://.../camera/stream" }
+  fpv: () => api<{ stream_url: string | null }>(`/api/robots/${robotId}/fpv/`),
 
+  // speed mode: "slow" | "normal" | "high"
   speed: (mode: "slow" | "normal" | "high") =>
-    api(`/api/robots/${robotId}/command/speed/`, {
+    api<any>(`/api/robots/${robotId}/command/speed/`, {
       method: "POST",
       body: JSON.stringify({ mode }),
     }),
@@ -71,25 +73,25 @@ export const RobotAPI = {
     ry: number;
     rz: number;
   }) =>
-    api(`/api/robots/${robotId}/command/move/`, {
+    api<any>(`/api/robots/${robotId}/command/move/`, {
       method: "POST",
       body: JSON.stringify(cmd),
     }),
 
   lidar: (action: "start" | "stop") =>
-    api(`/api/robots/${robotId}/command/lidar/`, {
+    api<any>(`/api/robots/${robotId}/command/lidar/`, {
       method: "POST",
       body: JSON.stringify({ action }),
     }),
 
   posture: (name: string) =>
-    api(`/api/robots/${robotId}/command/posture/`, {
+    api<any>(`/api/robots/${robotId}/command/posture/`, {
       method: "POST",
       body: JSON.stringify({ name }),
     }),
 
   behavior: (name: string) =>
-    api(`/api/robots/${robotId}/command/behavior/`, {
+    api<any>(`/api/robots/${robotId}/command/behavior/`, {
       method: "POST",
       body: JSON.stringify({ name }),
     }),
@@ -102,13 +104,13 @@ export const RobotAPI = {
     ry: number;
     rz: number;
   }) =>
-    api(`/api/robots/${robotId}/command/body_adjust/`, {
+    api<any>(`/api/robots/${robotId}/command/body_adjust/`, {
       method: "POST",
       body: JSON.stringify(sl),
     }),
 
   stabilizingMode: (action: "on" | "off" | "toggle") =>
-    api(`/api/robots/${robotId}/command/stabilizing_mode/`, {
+    api<any>(`/api/robots/${robotId}/command/stabilizing_mode/`, {
       method: "POST",
       body: JSON.stringify({ action }),
     }),
