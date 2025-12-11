@@ -50,8 +50,10 @@ type LidarPose = {
 };
 
 const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000/control";
+  process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
 const robotId = "robot-a";
+const CONTROL_PREFIX = "/control/api/robots";
+
 
 async function api<T = any>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
@@ -121,7 +123,7 @@ export default function HeaderControl({
 
     async function fetchStatus() {
       try {
-        const data = await api<any>(`/api/robots/${robotId}/status/`);
+        const data = await api<any>(`${CONTROL_PREFIX}/${robotId}/status/`);
         if (!isMounted) return;
 
         setRobotName(data.name || "Robot A");

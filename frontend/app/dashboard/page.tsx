@@ -13,12 +13,13 @@ export type Device = {
   status: "online" | "offline" | "unknown";
   source?: "manual" | "cloudflare";
 };
+import { RobotAPI } from "./../lib/robotApi";
 
 const BACKEND_BASE =
   process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
 
 // Base cho các API điều khiển robot (Django app "control")
-const CONTROL_BASE = `${BACKEND_BASE}/control`;
+const CONTROL_BASE = `${BACKEND_BASE}`;
 
 const robotId = "robot-a";
 const DEVICES_COOKIE_KEY = "dogzilla_devices";
@@ -58,45 +59,24 @@ function loadDevicesFromCookie(): Device[] | null {
   }
 }
 
-// ========================
-// Gọi API connect trên Django
-// ========================
-async function connectRobot(addr: string) {
-  const res = await fetch(`${CONTROL_BASE}/api/robots/${robotId}/connect/`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ addr }),
-    cache: "no-store",
-  });
 
-  if (!res.ok) {
-    throw new Error(await res.text());
-  }
 
-  return res.json() as Promise<{ connected: boolean; error?: string }>;
-}
-
-// ========================
-// Component chính
-// ========================
 export default function DashboardPage() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [addr, setAddr] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [isPortrait, setIsPortrait] = useState(false); // 🔹 theo dõi xoay dọc/ngang
+  const [isPortrait, setIsPortrait] = useState(false); 
 
   const router = useRouter();
 
   const canAdd = useMemo(() => addr.trim().length > 0, [addr]);
 
-  // Theo dõi orientation để gợi ý xoay ngang trên mobile
   useEffect(() => {
     if (typeof window === "undefined") return;
 
     const updateOrientation = () => {
       const { innerWidth, innerHeight } = window;
-      // nếu chiều cao lớn hơn chiều rộng -> đang cầm dọc
       setIsPortrait(innerHeight > innerWidth);
     };
 
@@ -198,48 +178,64 @@ export default function DashboardPage() {
   }, [devices]);
 
   // 4) Connect khi bấm trên card
-  const handleConnectDevice = async (device: Device) => {
-    if (loading) return;
+const handleConnectDevice = async (device: Device) => {
+  if (loading) return;
 
-    setErrorMsg(null);
-    setLoading(true);
+  setErrorMsg(null);
+  setLoading(true);
 
-    let dogzillaAddr = device.ip.trim();
+  let dogzillaAddr = device.ip.trim();
 
-    // Nếu không phải URL đầy đủ thì coi là IP nội bộ -> thêm http + port 9000
-    if (
-      !dogzillaAddr.startsWith("http://") &&
-      !dogzillaAddr.startsWith("https://")
-    ) {
-      dogzillaAddr = `http://${dogzillaAddr}:9000`;
+  // Nếu không phải URL đầy đủ thì coi là IP nội bộ -> thêm http + port 9000
+  if (
+    !dogzillaAddr.startsWith("http://") &&
+    !dogzillaAddr.startsWith("https://")
+  ) {
+    dogzillaAddr = `http://${dogzillaAddr}:9000`;
+  }
+
+  // 🟣 NHÁNH ĐẶC BIỆT CHO CLOUDFLARE:
+  // Nếu source = cloudflare hoặc ip đã là http/https (URL public),
+  // ta không bắt Django đi gọi /health nữa, chỉ mở trang điều khiển.
+  if (
+    device.source === "cloudflare" ||
+    dogzillaAddr.includes("trycloudflare.com")
+  ) {
+    router.push(`/control?ip=${encodeURIComponent(dogzillaAddr)}`);
+    setLoading(false);
+    return;
+  }
+
+  // 🟢 Còn lại (IP nội bộ) -> vẫn gọi Django /control/api/robots/.../connect/
+  try {
+    const res = await RobotAPI.connect(dogzillaAddr);
+
+    const status: Device["status"] = res.connected ? "online" : "offline";
+
+    setDevices((prev) =>
+      prev.map((d) => (d.id === device.id ? { ...d, status } : d))
+    );
+
+    if (!res.connected) {
+      setErrorMsg(res.error || "Không kết nối được tới robot.");
+      return;
     }
 
-    try {
-      const res = await connectRobot(dogzillaAddr);
-      const status: Device["status"] = res.connected ? "online" : "offline";
+    router.push(`/control?ip=${encodeURIComponent(dogzillaAddr)}`);
+  } catch (e: any) {
+    console.error("Connect error:", e);
+    setDevices((prev) =>
+      prev.map((d) =>
+        d.id === device.id ? { ...d, status: "offline" } : d
+      )
+    );
+    setErrorMsg(e?.message || "Không kết nối được tới backend");
+  } finally {
+    setLoading(false);
+  }
+};
 
-      setDevices((prev) =>
-        prev.map((d) => (d.id === device.id ? { ...d, status } : d))
-      );
 
-      if (!res.connected) {
-        setErrorMsg(res.error || "Không kết nối được tới robot.");
-        return;
-      }
-
-      router.push(`/control?ip=${encodeURIComponent(dogzillaAddr)}`);
-    } catch (e: any) {
-      console.error("Connect error:", e);
-      setDevices((prev) =>
-        prev.map((d) =>
-          d.id === device.id ? { ...d, status: "offline" } : d
-        )
-      );
-      setErrorMsg(e?.message || "Không kết nối được tới backend");
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleDeleteDevice = (device: Device) => {
     setDevices((prev) => prev.filter((d) => d.id !== device.id));

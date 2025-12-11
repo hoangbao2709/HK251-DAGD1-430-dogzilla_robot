@@ -1,15 +1,13 @@
 // app/lib/robotApi.ts
 const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000/control";
+  process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
 
 export const DEFAULT_DOG_SERVER =
   process.env.NEXT_PUBLIC_DOGZILLA_BASE || "http://127.0.0.1:9000";
 
 export const robotId = "robot-a";
 
-// ==============================
-// Generic API wrapper (trả JSON trực tiếp)
-// ==============================
+// Wrapper chung
 async function api<T = any>(path: string, init?: RequestInit): Promise<T> {
   if (!API_BASE) {
     throw new Error("API_BASE is not configured");
@@ -37,30 +35,28 @@ async function api<T = any>(path: string, init?: RequestInit): Promise<T> {
   return json as T;
 }
 
-// ==============================
-// Robot API functions
-// ==============================
+// Prefix đúng với Django: control/api/robots/...
+const CONTROL_PREFIX = "/control/api/robots";
+
 export const RobotAPI = {
-  // /control/api/robots/robot-a/connect/
   connect: (addr: string) =>
     api<{ connected: boolean; error?: string; log?: string }>(
-      `/api/robots/${robotId}/connect/`,
+      `${CONTROL_PREFIX}/${robotId}/connect/`,
       {
         method: "POST",
         body: JSON.stringify({ addr }),
       }
     ),
 
-  // /control/api/robots/robot-a/status/
-  status: () => api<any>(`/api/robots/${robotId}/status/`),
+  status: () => api<any>(`${CONTROL_PREFIX}/${robotId}/status/`),
 
-  // /control/api/robots/robot-a/fpv/
-  // backend nên trả: { "stream_url": "http://.../camera/stream" }
-  fpv: () => api<{ stream_url: string | null }>(`/api/robots/${robotId}/fpv/`),
+  fpv: () =>
+    api<{ stream_url: string | null }>(
+      `${CONTROL_PREFIX}/${robotId}/fpv/`
+    ),
 
-  // speed mode: "slow" | "normal" | "high"
   speed: (mode: "slow" | "normal" | "high") =>
-    api<any>(`/api/robots/${robotId}/command/speed/`, {
+    api<any>(`${CONTROL_PREFIX}/${robotId}/command/speed/`, {
       method: "POST",
       body: JSON.stringify({ mode }),
     }),
@@ -73,25 +69,25 @@ export const RobotAPI = {
     ry: number;
     rz: number;
   }) =>
-    api<any>(`/api/robots/${robotId}/command/move/`, {
+    api<any>(`${CONTROL_PREFIX}/${robotId}/command/move/`, {
       method: "POST",
       body: JSON.stringify(cmd),
     }),
 
   lidar: (action: "start" | "stop") =>
-    api<any>(`/api/robots/${robotId}/command/lidar/`, {
+    api<any>(`${CONTROL_PREFIX}/${robotId}/command/lidar/`, {
       method: "POST",
       body: JSON.stringify({ action }),
     }),
 
   posture: (name: string) =>
-    api<any>(`/api/robots/${robotId}/command/posture/`, {
+    api<any>(`${CONTROL_PREFIX}/${robotId}/command/posture/`, {
       method: "POST",
       body: JSON.stringify({ name }),
     }),
 
   behavior: (name: string) =>
-    api<any>(`/api/robots/${robotId}/command/behavior/`, {
+    api<any>(`${CONTROL_PREFIX}/${robotId}/command/behavior/`, {
       method: "POST",
       body: JSON.stringify({ name }),
     }),
@@ -104,14 +100,17 @@ export const RobotAPI = {
     ry: number;
     rz: number;
   }) =>
-    api<any>(`/api/robots/${robotId}/command/body_adjust/`, {
+    api<any>(`${CONTROL_PREFIX}/${robotId}/command/body_adjust/`, {
       method: "POST",
       body: JSON.stringify(sl),
     }),
 
   stabilizingMode: (action: "on" | "off" | "toggle") =>
-    api<any>(`/api/robots/${robotId}/command/stabilizing_mode/`, {
-      method: "POST",
-      body: JSON.stringify({ action }),
-    }),
+    api<any>(
+      `${CONTROL_PREFIX}/${robotId}/command/stabilizing_mode/`,
+      {
+        method: "POST",
+        body: JSON.stringify({ action }),
+      }
+    ),
 };
