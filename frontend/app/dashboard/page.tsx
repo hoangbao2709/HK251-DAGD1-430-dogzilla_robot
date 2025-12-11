@@ -177,7 +177,6 @@ export default function DashboardPage() {
     saveDevicesToCookie(devices);
   }, [devices]);
 
-  // 4) Connect khi bấm trên card
 const handleConnectDevice = async (device: Device) => {
   if (loading) return;
 
@@ -194,46 +193,70 @@ const handleConnectDevice = async (device: Device) => {
     dogzillaAddr = `http://${dogzillaAddr}:9000`;
   }
 
-  // 🟣 NHÁNH ĐẶC BIỆT CHO CLOUDFLARE:
-  // Nếu source = cloudflare hoặc ip đã là http/https (URL public),
-  // ta không bắt Django đi gọi /health nữa, chỉ mở trang điều khiển.
-  if (
+  const isCloudflare =
     device.source === "cloudflare" ||
-    dogzillaAddr.includes("trycloudflare.com")
-  ) {
-    router.push(`/control?ip=${encodeURIComponent(dogzillaAddr)}`);
-    setLoading(false);
-    return;
-  }
+    dogzillaAddr.includes("trycloudflare.com") ||
+    dogzillaAddr.startsWith("https://");
 
-  // 🟢 Còn lại (IP nội bộ) -> vẫn gọi Django /control/api/robots/.../connect/
   try {
-    const res = await RobotAPI.connect(dogzillaAddr);
+    let connected = false;
+    let newStatus: Device["status"] = "offline";
 
-    const status: Device["status"] = res.connected ? "online" : "offline";
+    if (isCloudflare) {
+      // 🔵 Cloudflare: check trực tiếp từ browser
+      const healthUrl = dogzillaAddr.replace(/\/+$/, "") + "/status"; 
+      // nếu robot của bạn dùng /health thì đổi lại chỗ này
 
+      const resp = await fetch(healthUrl, { cache: "no-store" });
+      if (!resp.ok) {
+        throw new Error(`Cloudflare status HTTP ${resp.status}`);
+      }
+
+      // có thể đọc thêm data nếu cần
+      // const data = await resp.json().catch(() => ({} as any));
+
+      connected = true;
+      newStatus = "online";
+    } else {
+      // 🟢 LAN: để Django kiểm tra & lưu addr
+      const res = await RobotAPI.connect(dogzillaAddr);
+      connected = res.connected;
+      newStatus = connected ? "online" : "offline";
+
+      if (!connected) {
+        throw new Error(res.error || "Không kết nối được tới robot.");
+      }
+    }
+
+    // cập nhật trạng thái card
     setDevices((prev) =>
-      prev.map((d) => (d.id === device.id ? { ...d, status } : d))
+      prev.map((d) =>
+        d.id === device.id ? { ...d, status: newStatus } : d
+      )
     );
 
-    if (!res.connected) {
-      setErrorMsg(res.error || "Không kết nối được tới robot.");
+    if (!connected) {
+      // đề phòng nhánh nào đó set connected = false
+      setErrorMsg("Không kết nối được tới robot.");
       return;
     }
 
+    // thành công -> sang trang điều khiển
     router.push(`/control?ip=${encodeURIComponent(dogzillaAddr)}`);
   } catch (e: any) {
     console.error("Connect error:", e);
+
     setDevices((prev) =>
       prev.map((d) =>
         d.id === device.id ? { ...d, status: "offline" } : d
       )
     );
-    setErrorMsg(e?.message || "Không kết nối được tới backend");
+    setErrorMsg(e?.message || "Không kết nối được tới backend/robot");
   } finally {
     setLoading(false);
   }
 };
+
 
 
 
