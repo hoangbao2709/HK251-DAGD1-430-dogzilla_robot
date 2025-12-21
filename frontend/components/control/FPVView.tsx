@@ -1,96 +1,10 @@
 "use client";
 
-import React, { useEffect, useRef, useCallback, useState, useMemo } from "react";
+import React, { useEffect, useRef, useCallback, useState } from "react";
 import { useSearchParams } from "next/navigation";
-
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000/control";
-const DEFAULT_DOG_SERVER =
-  process.env.NEXT_PUBLIC_DOGZILLA_BASE || "http://127.0.0.1:9000";
-const robotId = "robot-a";
-
-async function api<T = any>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...(init?.headers || {}) },
-    cache: "no-store",
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
-
-const RobotAPI = {
-  connect: (addr: string) =>
-    api(`/api/robots/${robotId}/connect/`, {
-      method: "POST",
-      body: JSON.stringify({ addr }),
-    }),
-  status: () => api(`/api/robots/${robotId}/status/`),
-  fpv: () => api(`/api/robots/${robotId}/fpv/`),
-  speed: (mode: "slow" | "normal" | "high") =>
-    api(`/api/robots/${robotId}/command/speed/`, {
-      method: "POST",
-      body: JSON.stringify({ mode }),
-    }),
-  move: (cmd: {
-    vx: number;
-    vy: number;
-    vz: number;
-    rx: number;
-    ry: number;
-    rz: number;
-  }) =>
-    api(`/api/robots/${robotId}/command/move/`, {
-      method: "POST",
-      body: JSON.stringify(cmd),
-    }),
-  lidar: (action: "start" | "stop") =>
-    api(`/api/robots/${robotId}/command/lidar/`, {
-      method: "POST",
-      body: JSON.stringify({ action }),
-    }),
-  posture: (name: string) =>
-    api(`/api/robots/${robotId}/command/posture/`, {
-      method: "POST",
-      body: JSON.stringify({ name }),
-    }),
-  behavior: (name: string) =>
-    api(`/api/robots/${robotId}/command/behavior/`, {
-      method: "POST",
-      body: JSON.stringify({ name }),
-    }),
-  body: (sl: {
-    tx: number;
-    ty: number;
-    tz: number;
-    rx: number;
-    ry: number;
-    rz: number;
-  }) =>
-    api(`/api/robots/${robotId}/command/body_adjust/`, {
-      method: "POST",
-      body: JSON.stringify(sl),
-    }),
-  // ====== NEW: ổn định / cân bằng ======
-  stabilizingMode: (action: "on" | "off" | "toggle") =>
-    api(`/api/robots/${robotId}/command/stabilizing_mode/`, {
-      method: "POST",
-      body: JSON.stringify({ action }),
-    }),
-};
-
-/* ===== GAMEPAD ===== */
-
-type GamepadSnapshot = {
-  connected: boolean;
-  axes: number[];
-  buttons: boolean[];  
-};
-
-const DEADZONE = 0.2;
-const SEND_INTERVAL = 80; // ms
-const MAX_V = 0.4; // m/s
-const MAX_W = 1.2; // rad/s
+import { RobotAPI, DEFAULT_DOG_SERVER } from "@/app/lib/robotApi";
+import { Panel, Btn, SliderRow } from "@/components/control/ControlUI";
+import { useGamepadMove } from "@/app/lib/useGamepadMove";
 
 export default function FPVView({
   fps = 30,
@@ -109,18 +23,19 @@ export default function FPVView({
   ];
   const behavior1 = ["Wave_Hand", "Handshake", "Pray", "Stretch", "Swing"];
   const behavior2 = ["Wave_Body", "Handshake", "Pee", "Play_Ball", "Mark_Time"];
+
   const [stabilizingOn, setStabilizingOn] = useState(false);
+  const [lidarRunning, setLidarRunning] = useState(false);
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
-  const [lidarRunning, setLidarRunning] = useState(false);
-  const lastButtonsRef = useRef<boolean[]>([]);
+
   const searchParams = useSearchParams();
   const ipParam = searchParams.get("ip");
-  const hasResetBody = useRef(false);
   const DOG_SERVER = ipParam || DEFAULT_DOG_SERVER;
+  const hasResetBody = useRef(false);
 
-  /* ===== BODY ADJUST (debounce) ===== */
+  /* ===== BODY ADJUST ===== */
 
   type BodyState = {
     tx: number;
@@ -148,9 +63,7 @@ export default function FPVView({
 
       if (bodyTimer.current) clearTimeout(bodyTimer.current);
       bodyTimer.current = setTimeout(() => {
-        RobotAPI.body(next).catch(() => {
-          /* ignore */
-        });
+        RobotAPI.body(next).catch(() => {});
       }, 150);
 
       return next;
@@ -169,9 +82,7 @@ export default function FPVView({
 
     if (bodyTimer.current) clearTimeout(bodyTimer.current);
     setSliders(zero);
-    RobotAPI.body(zero).catch(() => {
-      /* ignore */
-    });
+    RobotAPI.body(zero).catch(() => {});
   }, []);
 
   useEffect(
@@ -195,8 +106,8 @@ export default function FPVView({
           setConnected(true);
           setConnectError(null);
           if (!hasResetBody.current) {
-            resetBody();                     
-            hasResetBody.current = true;     
+            resetBody();
+            hasResetBody.current = true;
           }
           try {
             const f = await RobotAPI.fpv();
@@ -222,8 +133,7 @@ export default function FPVView({
 
     const iv = setInterval(async () => {
       try {
-        // const s = await RobotAPI.status();
-        // if (!stop && typeof s?.fps === "number") setFps(s.fps);
+        // có thể poll status nếu cần
       } catch {}
     }, 2000);
 
@@ -232,234 +142,36 @@ export default function FPVView({
       clearInterval(iv);
       onEmergencyStop?.();
     };
-  }, [DOG_SERVER, onEmergencyStop]);
+  }, [DOG_SERVER, onEmergencyStop, resetBody]);
 
-  /* ===== GAMEPAD READ LOOP ===== */
+  /* ===== HANDLERS toggle từ nút & gamepad ===== */
 
-  const padRef = useRef<GamepadSnapshot>({
-    connected: false,
-    axes: [],
-    buttons: [],
-  });
-
-  const lastMoveRef = useRef<{ vx: number; vy: number; rz: number }>({
-    vx: 0,
-    vy: 0,
-    rz: 0,
-  });
-  const loggedMappingRef = useRef(false);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const nav: any = navigator;
-    if (!nav.getGamepads) {
-      console.warn("Browser không hỗ trợ Gamepad API");
-      return;
-    }
-
-    let rafId: number | null = null;
-
-    const loop = () => {
-      const pads = nav.getGamepads() as (Gamepad | null)[];
-      const gp = pads[0];
-
-      if (gp) {
-        padRef.current = {
-          connected: true,
-          axes: gp.axes.slice(),
-          buttons: gp.buttons.map((b) => b.pressed),   // <-- thêm dòng này
-        };
-
-        if (!loggedMappingRef.current) {
-          console.log("[Gamepad] axes sample:", gp.axes);
-          console.log("[Gamepad] buttons sample:", gp.buttons.map(b => b.pressed));
-          loggedMappingRef.current = true;
-        }
-      } else {
-        padRef.current = { connected: false, axes: [], buttons: [] };
-      }
-
-      rafId = requestAnimationFrame(loop);
-    };
-
-
-    const handleConnect = (e: GamepadEvent) => {
-      console.log("Gamepad connected:", e.gamepad.id);
-      if (rafId == null) {
-        rafId = requestAnimationFrame(loop);
-      }
-    };
-
-    const handleDisconnect = (e: GamepadEvent) => {
-      console.log("Gamepad disconnected:", e.gamepad.id);
-      padRef.current = { connected: false, axes: [], buttons: [] };
-    };
-
-
-    window.addEventListener("gamepadconnected", handleConnect);
-    window.addEventListener("gamepaddisconnected", handleDisconnect);
-
-    // nếu tay cầm đã cắm sẵn
-    const pads = nav.getGamepads() as (Gamepad | null)[];
-    if (pads[0]) {
-      rafId = requestAnimationFrame(loop);
-    }
-
-    return () => {
-      window.removeEventListener("gamepadconnected", handleConnect);
-      window.removeEventListener("gamepaddisconnected", handleDisconnect);
-      if (rafId != null) cancelAnimationFrame(rafId);
-    };
+  const toggleLidar = useCallback(() => {
+    setLidarRunning((prev) => {
+      const next = !prev;
+      RobotAPI.lidar(next ? "start" : "stop").catch(() => {});
+      return next;
+    });
   }, []);
 
-  /* ===== GAMEPAD → MOVE (2 JOYSTICKS) ===== */
-
-useEffect(() => {
-  const timer = setInterval(() => {
-    const snap = padRef.current;
-    if (!snap.connected) return;
-
-    const axes = snap.axes;
-    const buttons = snap.buttons;
-    const lastButtons = lastButtonsRef.current;
-
-    // ===== LEFT STICK: move =====
-    // Axis 0 = left X (strafe), Axis 1 = left Y (forward/back)
-    const axLX = axes[0] ?? 0;
-    const axLY = axes[1] ?? 0;
-
-    let fwd = -axLY;      // lên = tiến
-    let strafe = axLX;    // trái / phải
-
-    if (Math.abs(fwd) < DEADZONE) fwd = 0;
-    if (Math.abs(strafe) < DEADZONE) strafe = 0;
-
-    const vx = fwd * MAX_V;
-    const vy = strafe * MAX_V;
-
-    // ===== B1 / B3: rotate =====
-    const btnB1 = buttons[1] ?? false; // xoay trái
-    const btnB3 = buttons[3] ?? false; // xoay phải
-    let yaw = 0;
-    if (btnB1 && !btnB3) yaw = +1;
-    else if (btnB3 && !btnB1) yaw = -1;
-
-    const rz = yaw * MAX_W;
-
-    // ===== gửi lệnh move nếu thay đổi =====
-    const last = lastMoveRef.current;
-    if (
-      Math.abs(vx - last.vx) > 0.01 ||
-      Math.abs(vy - last.vy) > 0.01 ||
-      Math.abs(rz - last.rz) > 0.01
-    ) {
-      lastMoveRef.current = { vx, vy, rz };
-      RobotAPI.move({ vx, vy, vz: 0, rx: 0, ry: 0, rz }).catch(() => {});
-    }
-
-    // ===== B0: toggle LiDAR =====
-    const btnB0 = buttons[0] ?? false;
-    const prevB0 = lastButtons[0] ?? false;
-    if (btnB0 && !prevB0) {
-      // vừa nhấn xuống
-      const next = !lidarRunning;
-      setLidarRunning(next);
-      RobotAPI.lidar(next ? "start" : "stop").catch(() => {});
-    }
-
-    // ===== B2: toggle stabilizing_mode =====
-    const btnB2 = buttons[2] ?? false;
-    const prevB2 = lastButtons[2] ?? false;
-    if (btnB2 && !prevB2) {
-      // vừa nhấn xuống
-      const nextStab = !stabilizingOn;
-      setStabilizingOn(nextStab);
-      // dùng action "toggle" như bạn đã định nghĩa
+  const toggleStabilizing = useCallback(() => {
+    setStabilizingOn((prev) => {
+      const next = !prev;
       RobotAPI.stabilizingMode("toggle").catch(() => {});
-      // hoặc nếu muốn sync chặt:
-      // RobotAPI.stabilizingMode(nextStab ? "on" : "off").catch(() => {});
-    }
+      return next;
+    });
+  }, []);
 
-    // cập nhật lastButtons cho lần sau
-    lastButtonsRef.current = buttons.slice();
-  }, SEND_INTERVAL);
-
-  return () => {
-    clearInterval(timer);
-    // dừng robot khi rời trang
-    RobotAPI.move({
-      vx: 0,
-      vy: 0,
-      vz: 0,
-      rx: 0,
-      ry: 0,
-      rz: 0,
-    }).catch(() => {});
-  };
-}, [lidarRunning, stabilizingOn]);
-
-
-
-  /* ===== NÚT MANUAL: STRAFE & ROTATE & LIDAR ===== */
-
-  const STRAFE_V = 0.25;
-  const TURN_W = 0.8;
-
-  const strafeLeft = () => {
-    RobotAPI.move({
-      vx: 0,
-      vy: +STRAFE_V,
-      vz: 0,
-      rx: 0,
-      ry: 0,
-      rz: 0,
-    }).catch(() => {});
-  };
-
-  const strafeRight = () => {
-    RobotAPI.move({
-      vx: 0,
-      vy: -STRAFE_V,
-      vz: 0,
-      rx: 0,
-      ry: 0,
-      rz: 0,
-    }).catch(() => {});
-  };
-
-  const turnLeft = () => {
-    RobotAPI.move({
-      vx: 0,
-      vy: 0,
-      vz: 0,
-      rx: 0,
-      ry: 0,
-      rz: +TURN_W,
-    }).catch(() => {});
-  };
-
-  const turnRight = () => {
-    RobotAPI.move({
-      vx: 0,
-      vy: 0,
-      vz: 0,
-      rx: 0,
-      ry: 0,
-      rz: -TURN_W,
-    }).catch(() => {});
-  };
-
-  const toggleLidar = () => {
-    const next = !lidarRunning;
-    setLidarRunning(next);
-    RobotAPI.lidar(next ? "start" : "stop").catch(() => {});
-  };
+  // DÙNG HOOK GAMEPAD: di chuyển + dùng B0/B2 để gọi 2 callback trên
+  useGamepadMove({
+    onToggleLidar: toggleLidar,
+    onToggleStabilizing: toggleStabilizing,
+  });
 
   /* ===== UI ===== */
 
   return (
     <div className="space-y-6">
-
       {/* FPV video */}
       <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-black shadow-[0_10px_30px_rgba(0,0,0,0.35)]">
         <div className="absolute left-3 top-2 text-green-300 text-xl font-bold drop-shadow">
@@ -472,9 +184,9 @@ useEffect(() => {
         />
       </div>
 
-      {/* 2 cột: trái = body, phải = move + poses */}
+      {/* Body + behavior */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
-        {/* LEFT — Body Adjustment */}
+        {/* LEFT — Body */}
         <Panel title="Body Adjustment">
           <SliderRow
             label="Translation_X"
@@ -507,7 +219,6 @@ useEffect(() => {
             onChange={(v) => updateBody({ rz: v })}
           />
 
-          {/* Nút reset về giữa */}
           <div className="mt-3 flex justify-end">
             <button
               onClick={resetBody}
@@ -517,25 +228,20 @@ useEffect(() => {
                 bg-fuchsia-500/15 text-fuchsia-100
                 shadow-sm shadow-black/40
                 transition-all duration-200
-
                 hover:bg-fuchsia-500
                 hover:text-[#0c0520]
                 hover:border-fuchsia-200
                 hover:shadow-xl hover:shadow-fuchsia-500/60
                 hover:-translate-y-0.5 hover:scale-105
-
                 active:scale-95 active:translate-y-0
               "
             >
               Reset body to center
             </button>
-
-
           </div>
         </Panel>
 
-
-        {/* RIGHT — Move + Posture/Behavior */}
+        {/* RIGHT — postures & behaviors */}
         <div className="flex flex-col gap-6">
           <Panel title="Basic Postures">
             <div className="grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-3">
@@ -577,109 +283,3 @@ useEffect(() => {
     </div>
   );
 }
-
-/* ===== UI helpers ===== */
-
-function Panel({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="rounded-2xl bg-white/5 border border-white/10 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
-      <div className="text-base font-semibold mb-4 opacity-90">{title}</div>
-      {children}
-    </div>
-  );
-}
-
-function Btn({
-  label,
-  variant = "default",
-  onClick,
-}: {
-  label: string;
-  variant?: "default" | "danger" | "success";
-  onClick?: () => void;
-}) {
-  const base =
-    "px-4 py-2 text-sm rounded-xl border font-medium cursor-pointer " +
-    "transition-all duration-200 transform select-none";
-
-  let styles = "";
-
-  if (variant === "danger") {
-    styles = [
-      "bg-rose-600/70 border-rose-400 text-white",
-      "hover:bg-rose-400 hover:border-rose-200",
-      "hover:shadow-xl hover:shadow-rose-500/50",
-      "hover:-translate-y-0.5 hover:scale-[1.03]",
-      "active:scale-95 active:translate-y-0",
-    ].join(" ");
-  } else if (variant === "success") {
-    styles = [
-      "bg-emerald-600/70 border-emerald-400 text-white",
-      "hover:bg-emerald-400 hover:border-emerald-200",
-      "hover:shadow-xl hover:shadow-emerald-500/50",
-      "hover:-translate-y-0.5 hover:scale-[1.03]",
-      "active:scale-95 active:translate-y-0",
-    ].join(" ");
-  } else {
-    // DEFAULT BUTTON STYLE — cho các posture, axis motion, behavior
-    styles = [
-      "bg-white/10 border-white/20 text-white",
-      "hover:bg-fuchsia-500 hover:text-[#0c0520] hover:border-fuchsia-200",
-      "hover:shadow-xl hover:shadow-fuchsia-500/50",
-      "hover:-translate-y-0.5 hover:scale-[1.04]",
-      "active:scale-95 active:translate-y-0",
-    ].join(" ");
-  }
-
-  return (
-    <button onClick={onClick} className={`${base} ${styles}`}>
-      {label}
-    </button>
-  );
-}
-
-
-function SliderRow({
-  label,
-  value,
-  onChange,
-  min = -100,
-  max = 100,
-}: {
-  label: string;
-  value: number;
-  onChange: (v: number) => void;
-  min?: number;
-  max?: number;
-}) {
-  return (
-    <div className="mb-3">
-      <div className="flex items-center justify-between text-xs mb-1">
-        <span className="opacity-75">{label}</span>
-        <span className="font-mono opacity-70">
-          <span className="text-fuchsia-300 text-[20px]">{value}</span>
-        </span>
-      </div>
-      <div className="flex">
-      -100
-      <input
-        type="range"
-        min={min}
-        max={max}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="w-full mx-2 accent-fuchsia-400 cursor-pointer "
-      />
-      100
-      </div>
-
-    </div>
-  );
-}
-

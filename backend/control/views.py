@@ -5,7 +5,8 @@ from django.shortcuts import get_object_or_404
 from .models import Robot
 from .serializers import RobotSerializer
 from .services.ros import ROSClient
-
+from django.utils.timezone import now
+import json
 # ===== Robots list =====
 class RobotListView(APIView):
     def get(self, request):
@@ -86,8 +87,15 @@ class FPVView(APIView):
 class SpeedModeView(APIView):
     def post(self, request, robot_id):
         mode = request.data.get("mode")  # "slow"|"normal"|"high"
-        ROSClient(robot_id).set_speed_mode(mode)
-        return Response({"ok": True})
+        try:
+            ROSClient(robot_id).set_speed_mode(mode)
+            ok, err = True, None
+        except Exception as e:
+            ok, err = False, str(e)
+
+        log_line = build_log(robot_id, "SPEED_MODE", {"mode": mode}, ok, err)
+        code = status.HTTP_200_OK if ok else status.HTTP_500_INTERNAL_SERVER_ERROR
+        return Response({"ok": ok, "log": log_line}, status=code)
 
 class MoveCommandView(APIView):
     def post(self, request, robot_id):
@@ -98,38 +106,107 @@ class MoveCommandView(APIView):
           "rx": 0.0, "ry": 0.0, "rz": 0.3
         }
         """
-        ROSClient(robot_id).move(request.data)
-        return Response({"ok": True})
+        payload = request.data
+        try:
+            ROSClient(robot_id).move(payload)
+            ok = True
+            err = None
+        except Exception as e:
+            ok = False
+            err = str(e)
+
+        log_line = build_log(robot_id, "MOVE", payload, ok, err)
+        status_code = status.HTTP_200_OK if ok else status.HTTP_500_INTERNAL_SERVER_ERROR
+
+        return Response(
+            {
+                "ok": ok,
+                "log": log_line,
+            },
+            status=status_code,
+        )
 
 class PostureView(APIView):
     def post(self, request, robot_id):
-        # name: "Lie_Down" | "Stand_Up" | "Sit_Down" | "Squat" | "Crawl"
-        ROSClient(robot_id).posture(request.data.get("name"))
-        return Response({"ok": True})
+        name = request.data.get("name")
+        try:
+            ROSClient(robot_id).posture(name)
+            ok, err = True, None
+        except Exception as e:
+            ok, err = False, str(e)
+
+        log_line = build_log(robot_id, "POSTURE", {"name": name}, ok, err)
+        code = status.HTTP_200_OK if ok else status.HTTP_500_INTERNAL_SERVER_ERROR
+        return Response({"ok": ok, "log": log_line}, status=code)
 
 class BehaviorView(APIView):
     def post(self, request, robot_id):
-        # name: "Wave_Hand" | "Handshake" | ...
-        ROSClient(robot_id).behavior(request.data.get("name"))
-        return Response({"ok": True})
+        name = request.data.get("name")
+        try:
+            ROSClient(robot_id).behavior(name)
+            ok, err = True, None
+        except Exception as e:
+            ok, err = False, str(e)
+
+        log_line = build_log(robot_id, "BEHAVIOR", {"name": name}, ok, err)
+        code = status.HTTP_200_OK if ok else status.HTTP_500_INTERNAL_SERVER_ERROR
+        return Response({"ok": ok, "log": log_line}, status=code)
 
 class LidarView(APIView):
     def post(self, request, robot_id):
-        # action: "start" | "stop"
-        ROSClient(robot_id).lidar(request.data.get("action"))
-        return Response({"ok": True})
+        action = request.data.get("action")  # "start" | "stop"
+        try:
+            ROSClient(robot_id).lidar(action)
+            ok, err = True, None
+        except Exception as e:
+            ok, err = False, str(e)
+
+        log_line = build_log(robot_id, "LIDAR", {"action": action}, ok, err)
+        code = status.HTTP_200_OK if ok else status.HTTP_500_INTERNAL_SERVER_ERROR
+        return Response({"ok": ok, "log": log_line}, status=code)
 
 class BodyAdjustView(APIView):
     def post(self, request, robot_id):
-        """
-        Body JSON:
-        { "tx": 0, "ty": 0, "tz": 0, "rx": 0, "ry": 0, "rz": 0 }
-        """
-        ROSClient(robot_id).body_adjust(request.data)
-        return Response({"ok": True})
+        payload = request.data
+        try:
+            ROSClient(robot_id).body_adjust(payload)
+            ok, err = True, None
+        except Exception as e:
+            ok, err = False, str(e)
+
+        log_line = build_log(robot_id, "BODY_ADJUST", payload, ok, err)
+        code = status.HTTP_200_OK if ok else status.HTTP_500_INTERNAL_SERVER_ERROR
+        return Response({"ok": ok, "log": log_line}, status=code)
     
 class StabilizingModeView(APIView):
     def post(self, request, robot_id):
-        action = request.data.get("action")  
-        ROSClient(robot_id).stabilizing_mode(action)
-        return Response({"ok": True})
+        action = request.data.get("action")
+        try:
+            ROSClient(robot_id).stabilizing_mode(action)
+            ok, err = True, None
+        except Exception as e:
+            ok, err = False, str(e)
+
+        log_line = build_log(robot_id, "STABILIZING", {"action": action}, ok, err)
+        code = status.HTTP_200_OK if ok else status.HTTP_500_INTERNAL_SERVER_ERROR
+        return Response({"ok": ok, "log": log_line}, status=code)
+
+def build_log(robot_id: str, action: str, payload, ok: bool, error: str | None = None):
+    """
+    robot_id: "robot-a"
+    action:   "MOVE" / "POSTURE" / "LIDAR" ...
+    payload:  request.data (dict)
+    ok:       True/False
+    error:    message nếu lỗi
+    """
+    ts = now().strftime("%H:%M:%S")
+    # cho gọn, stringify payload
+    try:
+        payload_str = json.dumps(payload, ensure_ascii=False)
+    except Exception:
+        payload_str = str(payload)
+
+    if ok:
+        return f"[{ts}] {robot_id} {action} {payload_str} → OK"
+    else:
+        return f"[{ts}] {robot_id} {action} {payload_str} → ERROR: {error}"

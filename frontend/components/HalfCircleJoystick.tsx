@@ -31,10 +31,9 @@ function HalfCircleJoystick({
   const strokeWidth = 6;
   const pad = 12;
 
-  // === TÂM + BÁN KÍNH CĂN CHUẨN PIXEL ===
-  const cx = Math.round(width / 2) + 0.5;   // tâm nằm trên half-pixel
+  const cx = Math.round(width / 2) + 0.5;
   const cy = Math.round(height / 2) + 0.5;
-  const R = Math.min(cx, cy) - pad - strokeWidth / 2; // trừ luôn half stroke
+  const R = Math.min(cx, cy) - pad - strokeWidth / 2;
 
   const svgRef = useRef<SVGSVGElement | null>(null);
   const dragging = useRef(false);
@@ -44,15 +43,16 @@ function HalfCircleJoystick({
   const restPos = useMemo(() => {
     if (typeof rest === "object") return rest;
     if (rest === "top") return { x: cx, y: cy - R * 0.7 };
-    return { x: cx, y: cy }; // CHÍNH GIỮA
+    return { x: cx, y: cy };
   }, [cx, cy, R, rest]);
 
   const getLocalPoint = useCallback((clientX: number, clientY: number) => {
-    const bbox = svgRef.current!.getBoundingClientRect();
+    if (!svgRef.current) return { x: cx, y: cy };
+    const bbox = svgRef.current.getBoundingClientRect();
     const x = clientX - bbox.left;
     const y = clientY - bbox.top;
     return { x, y };
-  }, []);
+  }, [cx, cy]);
 
   const projectToCircle = useCallback(
     (pt: { x: number; y: number }) => {
@@ -81,7 +81,7 @@ function HalfCircleJoystick({
     [cx, cy, R]
   );
 
-  const setFromPointer = useCallback(
+  const setFromClient = useCallback(
     (clientX: number, clientY: number) => {
       if (!svgRef.current) return;
       const local = getLocalPoint(clientX, clientY);
@@ -92,33 +92,51 @@ function HalfCircleJoystick({
     [computeOutput, getLocalPoint, onChange, projectToCircle]
   );
 
-  const handlePointerDown = (e: React.PointerEvent) => {
-    if (disabled) return;
-    (e.target as Element).setPointerCapture?.(e.pointerId);
-    dragging.current = true;
-    setIsPressed(true);
-    setFromPointer(e.clientX, e.clientY);
-  };
-
-  const handlePointerMove = (e: PointerEvent) => {
-    if (!dragging.current || disabled) return;
-    setFromPointer(e.clientX, e.clientY);
-  };
-
   const endDrag = useCallback(() => {
     if (!dragging.current) return;
     dragging.current = false;
     setIsPressed(false);
-
     setKnob(null);
-
     onChange?.({ angleDeg: 0, power: 0 });
-
     onRelease?.();
   }, [onChange, onRelease]);
 
+  // ===== Pointer (mouse / pen) =====
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if (disabled) return;
+    dragging.current = true;
+    setIsPressed(true);
+    setFromClient(e.clientX, e.clientY);
+  };
+
+  const handlePointerMove = (e: PointerEvent) => {
+    if (!dragging.current || disabled) return;
+    setFromClient(e.clientX, e.clientY);
+  };
+
+  // ===== Touch fallback (điện thoại không hỗ trợ pointer events chuẩn) =====
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (disabled) return;
+    dragging.current = true;
+    setIsPressed(true);
+    const t = e.touches[0];
+    if (!t) return;
+    setFromClient(t.clientX, t.clientY);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!dragging.current || disabled) return;
+    const t = e.touches[0];
+    if (!t) return;
+    setFromClient(t.clientX, t.clientY);
+  };
+
+  const handleTouchEnd = () => {
+    endDrag();
+  };
 
   useEffect(() => {
+    // pointermove trên window cho mouse/pen
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", endDrag);
     window.addEventListener("pointercancel", endDrag);
@@ -130,23 +148,26 @@ function HalfCircleJoystick({
   }, [endDrag]);
 
   const knobPos = knob ?? restPos;
-
-  // helper để tick marks cũng nằm đúng half-pixel
   const fx = (v: number) => Math.round(v) + 0.5;
 
   return (
     <div
       className={`select-none ${disabled ? "opacity-50" : ""} ${className}`}
       aria-disabled={disabled}
+      style={{ touchAction: "none" }} 
     >
       <svg
         ref={svgRef}
         width={width}
         height={height}
         viewBox={`0 0 ${width} ${height}`}
-        className="rounded-2xl shadow-sm bg-gradient-to-b from-slate-900 via-slate-900 to-slate-800 ring-1 ring-slate-700/60"
+        className="rounded-2xl bg-transparent"
         onPointerDown={handlePointerDown}
         onPointerUp={() => endDrag()}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchEnd}
         role="slider"
         aria-valuemin={-180}
         aria-valuemax={180}
@@ -202,16 +223,13 @@ function HalfCircleJoystick({
           y1={cy}
           x2={knobPos.x}
           y2={knobPos.y}
-          className={`${
-            isPressed ? "opacity-80" : "opacity-40"
-          } stroke-cyan-300`}
+          className={`${isPressed ? "opacity-80" : "opacity-40"} stroke-cyan-300`}
           strokeWidth={2}
           strokeLinecap="round"
         />
 
         {/* knob */}
-        <g
-        >
+        <g>
           <circle
             cx={knobPos.x}
             cy={knobPos.y}

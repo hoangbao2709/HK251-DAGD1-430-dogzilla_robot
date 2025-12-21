@@ -46,13 +46,23 @@ export default function ConnectionCard({
     : "bg-white/10 border border-white/10";
 
   // Helper: build base URL tới robot
-  function buildRobotBase() {
-    let base = device.ip.trim();
-    if (!base.startsWith("http://") && !base.startsWith("https://")) {
-      base = `http://${base}:9000`;
-    }
-    return base;
+function buildRobotBase() {
+  let base = device.ip.trim();
+
+  // Nếu đã có http/https -> giữ nguyên, chỉ bỏ dấu / ở cuối
+  if (base.startsWith("http://") || base.startsWith("https://")) {
+    return base.replace(/\/+$/, "");
   }
+
+  // Nếu user đã nhập ip:port thì không thêm :9000 nữa
+  if (base.includes(":")) {
+    return `http://${base.replace(/\/+$/, "")}`;
+  }
+
+  // Mặc định: chỉ có IP -> tự thêm port 9000
+  return `http://${base}:9000`;
+}
+
 
   // Poll /status của từng robot
   useEffect(() => {

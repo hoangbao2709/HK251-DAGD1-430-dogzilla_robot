@@ -7,18 +7,19 @@ import { useRouter } from "next/navigation";
 export type Device = {
   id: number;
   name: string;
-  ip: string; 
+  ip: string;
   battery: number;
   url?: string;
   status: "online" | "offline" | "unknown";
   source?: "manual" | "cloudflare";
 };
+import { RobotAPI } from "./../lib/robotApi";
 
 const BACKEND_BASE =
   process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
 
 // Base cho các API điều khiển robot (Django app "control")
-const CONTROL_BASE = `${BACKEND_BASE}/control`;
+const CONTROL_BASE = `${BACKEND_BASE}`;
 
 const robotId = "robot-a";
 const DEVICES_COOKIE_KEY = "dogzilla_devices";
@@ -58,39 +59,36 @@ function loadDevicesFromCookie(): Device[] | null {
   }
 }
 
-// ========================
-// Gọi API connect trên Django
-// ========================
-async function connectRobot(addr: string) {
-  const res = await fetch(
-    `${CONTROL_BASE}/api/robots/${robotId}/connect/`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ addr }),
-      cache: "no-store",
-    }
-  );
 
-  if (!res.ok) {
-    throw new Error(await res.text());
-  }
 
-  return res.json() as Promise<{ connected: boolean; error?: string }>;
-}
-
-// ========================
-// Component chính
-// ========================
 export default function DashboardPage() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [addr, setAddr] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [isPortrait, setIsPortrait] = useState(false); 
 
   const router = useRouter();
 
   const canAdd = useMemo(() => addr.trim().length > 0, [addr]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const updateOrientation = () => {
+      const { innerWidth, innerHeight } = window;
+      setIsPortrait(innerHeight > innerWidth);
+    };
+
+    updateOrientation();
+    window.addEventListener("resize", updateOrientation);
+    window.addEventListener("orientationchange", updateOrientation);
+
+    return () => {
+      window.removeEventListener("resize", updateOrientation);
+      window.removeEventListener("orientationchange", updateOrientation);
+    };
+  }, []);
 
   // 1) Load manual devices từ cookie
   useEffect(() => {
@@ -179,49 +177,88 @@ export default function DashboardPage() {
     saveDevicesToCookie(devices);
   }, [devices]);
 
-  // 4) Connect khi bấm trên card
-  const handleConnectDevice = async (device: Device) => {
-    if (loading) return;
+const handleConnectDevice = async (device: Device) => {
+  if (loading) return;
 
-    setErrorMsg(null);
-    setLoading(true);
+  setErrorMsg(null);
+  setLoading(true);
 
-    let dogzillaAddr = device.ip.trim();
+  let dogzillaAddr = device.ip.trim();
 
-    // Nếu không phải URL đầy đủ thì coi là IP nội bộ -> thêm http + port 9000
-    if (
-      !dogzillaAddr.startsWith("http://") &&
-      !dogzillaAddr.startsWith("https://")
-    ) {
-      dogzillaAddr = `http://${dogzillaAddr}:9000`;
-    }
+  // Nếu không phải URL đầy đủ thì coi là IP nội bộ -> thêm http + port 9000
+  if (
+    !dogzillaAddr.startsWith("http://") &&
+    !dogzillaAddr.startsWith("https://")
+  ) {
+    dogzillaAddr = `http://${dogzillaAddr}:9000`;
+  }
 
-    try {
-      const res = await connectRobot(dogzillaAddr);
-      const status: Device["status"] = res.connected ? "online" : "offline";
+  const isCloudflare =
+    device.source === "cloudflare" ||
+    dogzillaAddr.includes("trycloudflare.com") ||
+    dogzillaAddr.startsWith("https://");
 
-      setDevices((prev) =>
-        prev.map((d) => (d.id === device.id ? { ...d, status } : d))
-      );
+  try {
+    let connected = false;
+    let newStatus: Device["status"] = "offline";
 
-      if (!res.connected) {
-        setErrorMsg(res.error || "Không kết nối được tới robot.");
-        return;
+    if (isCloudflare) {
+      // 🔵 Cloudflare: check trực tiếp từ browser
+      const healthUrl = dogzillaAddr.replace(/\/+$/, "") + "/status"; 
+      // nếu robot của bạn dùng /health thì đổi lại chỗ này
+
+      const resp = await fetch(healthUrl, { cache: "no-store" });
+      if (!resp.ok) {
+        throw new Error(`Cloudflare status HTTP ${resp.status}`);
       }
 
-      router.push(`/control?ip=${encodeURIComponent(dogzillaAddr)}`);
-    } catch (e: any) {
-      console.error("Connect error:", e);
-      setDevices((prev) =>
-        prev.map((d) =>
-          d.id === device.id ? { ...d, status: "offline" } : d
-        )
-      );
-      setErrorMsg(e?.message || "Không kết nối được tới backend");
-    } finally {
-      setLoading(false);
+      // có thể đọc thêm data nếu cần
+      // const data = await resp.json().catch(() => ({} as any));
+
+      connected = true;
+      newStatus = "online";
+    } else {
+      // 🟢 LAN: để Django kiểm tra & lưu addr
+      const res = await RobotAPI.connect(dogzillaAddr);
+      connected = res.connected;
+      newStatus = connected ? "online" : "offline";
+
+      if (!connected) {
+        throw new Error(res.error || "Không kết nối được tới robot.");
+      }
     }
-  };
+
+    // cập nhật trạng thái card
+    setDevices((prev) =>
+      prev.map((d) =>
+        d.id === device.id ? { ...d, status: newStatus } : d
+      )
+    );
+
+    if (!connected) {
+      // đề phòng nhánh nào đó set connected = false
+      setErrorMsg("Không kết nối được tới robot.");
+      return;
+    }
+
+    // thành công -> sang trang điều khiển
+    router.push(`/control?ip=${encodeURIComponent(dogzillaAddr)}`);
+  } catch (e: any) {
+    console.error("Connect error:", e);
+
+    setDevices((prev) =>
+      prev.map((d) =>
+        d.id === device.id ? { ...d, status: "offline" } : d
+      )
+    );
+    setErrorMsg(e?.message || "Không kết nối được tới backend/robot");
+  } finally {
+    setLoading(false);
+  }
+};
+
+
+
 
   const handleDeleteDevice = (device: Device) => {
     setDevices((prev) => prev.filter((d) => d.id !== device.id));
@@ -256,22 +293,30 @@ export default function DashboardPage() {
   };
 
   return (
-    <section className="p-6">
-      <h1 className="gradient-title mb-6">Connection Manager</h1>
+    <section className="h-full w-full p-4 md:p-6">
+      {/* Thanh nhắc xoay ngang trên điện thoại khi đang cầm dọc */}
+      {isPortrait && (
+        <div className="mb-3 rounded-xl bg-amber-500/10 border border-amber-400/40 px-3 py-2 text-xs md:text-sm text-amber-200">
+          For best control experience, please rotate your phone to{" "}
+          <span className="font-semibold">landscape</span>.
+        </div>
+      )}
 
-      <div className="mb-6 flex gap-2">
+      <h1 className={`gradient-title mb-6 ${isPortrait? "" : "hidden"}`}>Connection Manager</h1>
+
+      <div className="mb-6 flex flex-col sm:flex-row gap-2">
         <input
           type="text"
           placeholder="Enter device IP (vd: 192.168.2.100)"
           value={addr}
           onChange={(e) => setAddr(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && canAdd && handleAdd()}
-          className="flex-1 rounded-xl bg-white/10 px-4 py-2 text-sm placeholder:text-white/60 focus:outline-none focus:ring-2 focus:ring-pink-400/60"
+          className="flex-1 rounded-xl bg-white/10 px-4 py-2 text-sm placeholder:text-white/60 focus:outline-none focus:ring-2 focus:ring-pink-400/60 min-h-[44px]"
         />
         <button
           onClick={handleAdd}
           disabled={!canAdd || loading}
-          className={`gradient-button1 px-4 py-2 rounded-xl cursor-pointer text-sm font-medium ${
+          className={`gradient-button1 px-4 py-2 rounded-xl cursor-pointer text-sm font-medium min-h-[44px] ${
             !canAdd || loading ? "opacity-50 cursor-not-allowed" : ""
           }`}
         >
@@ -283,7 +328,7 @@ export default function DashboardPage() {
         <div className="mb-4 text-xs text-rose-400">Error: {errorMsg}</div>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
         {devices.map((dev) => (
           <ConnectionCard
             key={dev.id}
