@@ -177,7 +177,7 @@ SIMPLE_JWT = {
     "AUTH_HEADER_TYPES": ("Bearer",),
 }
 
-MONGO_URI = "mongodb+srv://hoangbao27092004_db_user:baozzz123@cluster0.q7fvyyw.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
-MONGO_DB_NAME = "robot_users"  
-MONGO_USERS_COLLECTION = "users"
+MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://hoangbao27092004_db_user:baozzz123@cluster0.q7fvyyw.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
+MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "robot_users")
+MONGO_USERS_COLLECTION = os.getenv("MONGO_USERS_COLLECTION", "users")
 ROBOT_REG_SECRET = os.getenv("ROBOT_REG_SECRET", "dev-robot-secret")

@@ -27,8 +27,8 @@ services:
     container_name: dogzilla-robot
     working_dir: /robot
     volumes:
-      - ./robot_server:/robot
-    command: python app.py
+      - ./dogzilla_server:/robot
+    command: python -m dogzilla_server.app
     ports:
       - "9000:9000"
     restart: unless-stopped
