@@ -1,15 +1,8 @@
-# Multi-stage build cho toàn bộ project
-# Stage 1: Build Frontend (Next.js)
-FROM node:20-alpine AS frontend-builder
-WORKDIR /frontend
-COPY frontend/package*.json ./
-RUN npm install --frozen-lockfile
-COPY frontend . 
-RUN npm run build
+# Single-stage build cho Django backend (Render)
+FROM python:3.12-slim
 
-# Stage 2: Build Backend (Django)
-FROM python:3.12-slim AS backend-builder
 WORKDIR /app
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
@@ -17,6 +10,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN apt-get update && apt-get install -y \
     build-essential \
     libpq-dev \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy và cài Python dependencies
@@ -27,45 +21,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend . 
 
 # Collect static files
-RUN python manage.py collectstatic --noinput
+RUN python manage.py collectstatic --noinput || true
 
-# Stage 3: Final Runtime (Nginx + Daphne)
-FROM python:3.12-slim
-
-WORKDIR /app
-
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
-
-# Cài Nginx + dependencies
-RUN apt-get update && apt-get install -y \
-    nginx \
-    libpq5 \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy Python dependencies từ builder
-COPY --from=backend-builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
-COPY --from=backend-builder /usr/local/bin /usr/local/bin
-
-# Copy backend app
-COPY --from=backend-builder /app /app
-
-# Copy frontend build
-COPY --from=frontend-builder /frontend/.next /app/frontend/.next
-COPY --from=frontend-builder /frontend/public /app/frontend/public
-
-# Copy Nginx config
-COPY nginx.conf /etc/nginx/nginx.conf
-
-# Expose ports
-EXPOSE 80 8000 9000
+# Expose port
+EXPOSE 8000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost/health || exit 1
+    CMD curl -f http://localhost:8000/health || exit 1
 
-# Start script
-COPY docker-entrypoint.sh /app/
-RUN chmod +x /app/docker-entrypoint.sh
-
-CMD ["/app/docker-entrypoint.sh"]
+# Start Django with Daphne
+CMD ["daphne", "-b", "0.0.0.0", "-p", "8000", "backend.asgi:application"]
