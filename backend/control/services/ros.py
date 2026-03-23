@@ -3,7 +3,8 @@
 
 from typing import Dict, Any
 import requests
-
+import cv2
+import numpy as np
 from django.conf import settings
 from ..models import Robot
 
@@ -160,7 +161,18 @@ class ROSClient:
         """
         base = self._get_base_url()
         return f"{base}/camera"
-
+    def get_frame(self):
+        stream_url = self.get_fpv_url()
+        cap = cv2.VideoCapture(stream_url)
+        if not cap.isOpened():
+            print(f"[ROSClient] Không mở được camera {stream_url}")
+            return None
+        ret, frame = cap.read()
+        cap.release()
+        if not ret:
+            print("[ROSClient] Không đọc được frame")
+            return None
+        return frame
     # ------------------------------------------------------------------
     # 4) Speed mode
     # ------------------------------------------------------------------

@@ -7,6 +7,43 @@ from .serializers import RobotSerializer
 from .services.ros import ROSClient
 from django.utils.timezone import now
 import json
+import cv2
+import base64
+import numpy as np
+from .line_tracking_backend import LineTrackingServer
+line_tracker = LineTrackingServer()
+
+class CameraProcessView(APIView):
+    """
+    Lấy frame từ robot hoặc webcam, xử lý line tracking, trả JSON:
+    frame base64 + mask base64 + tracking info
+    """
+    def get(self, request, robot_id):
+        client = ROSClient(robot_id)
+        try:
+            frame = client.get_frame()  # numpy array BGR từ robot
+        except Exception:
+            # fallback webcam laptop
+            cap = cv2.VideoCapture(0)
+            ret, frame = cap.read()
+            cap.release()
+            if not ret:
+                return Response({"ok": False, "error": "No frame"}, status=500)
+
+        frame_out, mask, tracking = line_tracker.process_frame(frame)
+
+        # Encode sang base64
+        _, fjpg = cv2.imencode(".jpg", frame_out)
+        _, mjpg = cv2.imencode(".jpg", mask)
+        frame_b64 = base64.b64encode(fjpg.tobytes()).decode("utf-8")
+        mask_b64  = base64.b64encode(mjpg.tobytes()).decode("utf-8")
+
+        return Response({
+            "ok": True,
+            "frame": frame_b64,
+            "mask": mask_b64,
+            "tracking": tracking
+        })
 # ===== Robots list =====
 class RobotListView(APIView):
     def get(self, request):
