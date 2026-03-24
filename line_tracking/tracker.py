@@ -5,6 +5,8 @@ import time
 
 from config import (
     CAMERA_INDEX,
+    CAMERA_SOURCE,
+    USE_REMOTE_CAMERA,
     FRAME_WIDTH,
     FRAME_HEIGHT,
     ROI_TOP_RATIO,
@@ -71,27 +73,34 @@ class LineTrackingServer:
                 self.turn_choice = choice
 
     def start_camera(self):
-        self.cap = cv2.VideoCapture(CAMERA_INDEX, cv2.CAP_DSHOW)
+        if USE_REMOTE_CAMERA:
+            self.cap = cv2.VideoCapture(CAMERA_SOURCE)
+        else:
+            self.cap = cv2.VideoCapture(CAMERA_INDEX, cv2.CAP_DSHOW)
 
         if not self.cap.isOpened():
-            raise RuntimeError(f"Không mở được camera với index {CAMERA_INDEX}")
+            source_info = CAMERA_SOURCE if USE_REMOTE_CAMERA else CAMERA_INDEX
+            raise RuntimeError(f"Không mở được camera với source: {source_info}")
 
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
-        self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+        if not USE_REMOTE_CAMERA:
+            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
+            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
+            self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
 
         time.sleep(1.0)
 
-        ret, test_frame = self.cap.read()
-        if not ret or test_frame is None:
+        ok, frame = self.cap.read()
+        if not ok or frame is None:
             self.cap.release()
-            raise RuntimeError(f"Mở được camera nhưng không đọc được frame với index {CAMERA_INDEX}")
+            source_info = CAMERA_SOURCE if USE_REMOTE_CAMERA else CAMERA_INDEX
+            raise RuntimeError(f"Mở được camera nhưng không đọc được frame từ source: {source_info}")
 
         print("Camera opened successfully")
-        print("Test frame shape:", test_frame.shape)
+        print("Camera source:", CAMERA_SOURCE if USE_REMOTE_CAMERA else CAMERA_INDEX)
+        print("Test frame shape:", frame.shape)
 
-        self.frame = test_frame.copy()
-        self.annotated_frame = test_frame.copy()
+        self.frame = frame.copy()
+        self.annotated_frame = frame.copy()
 
         self.running = True
         threading.Thread(target=self.update_loop, daemon=True).start()
@@ -479,11 +488,20 @@ class LineTrackingServer:
                 fail_count += 1
                 if fail_count % 10 == 1:
                     print(f"[WARN] Không đọc được frame. fail_count={fail_count}")
-                time.sleep(0.1)
-                continue
 
-            if fail_count > 0:
-                print("[INFO] Camera đọc frame lại bình thường")
+                if USE_REMOTE_CAMERA and fail_count >= 20:
+                    print("[INFO] Thử reconnect camera stream...")
+                    try:
+                        self.cap.release()
+                    except Exception:
+                        pass
+
+                    time.sleep(1.0)
+                    self.cap = cv2.VideoCapture(CAMERA_SOURCE)
+                    fail_count = 0
+
+                time.sleep(0.05)
+                continue
 
             fail_count = 0
             raw_frame, annotated, result = self.process_frame(frame)
