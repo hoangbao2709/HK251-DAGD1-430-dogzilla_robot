@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>QR Map 2D</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #0b1220;
+      color: #e5edf7;
+    }
+    .wrap {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 16px;
+      padding: 16px;
+      min-height: 100vh;
+    }
+    .panel {
+      background: #111a2b;
+      border: 1px solid #22314d;
+      border-radius: 18px;
+      padding: 14px;
+    }
+    .title {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 12px;
+      color: #ffd54a;
+    }
+    .video-box {
+      overflow: hidden;
+      border-radius: 14px;
+      border: 1px solid #2d4268;
+      background: #000;
+    }
+    .video-box img {
+      width: 100%;
+      display: block;
+    }
+    .canvas-wrap {
+      border: 1px solid #22314d;
+      border-radius: 14px;
+      overflow: hidden;
+      background: #0a0f1a;
+    }
+    #topdownCanvas {
+      width: 100%;
+      display: block;
+      background: #0a0f1a;
+    }
+    .list {
+      margin-top: 14px;
+      display: grid;
+      gap: 10px;
+    }
+    .item {
+      background: #0d1524;
+      border: 1px solid #22314d;
+      border-radius: 12px;
+      padding: 10px 12px;
+    }
+    @media (max-width: 980px) {
+      .wrap { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="panel">
+      <div class="title">Camera Feed</div>
+      <div class="video-box">
+        <img src="/video_feed" alt="video feed" />
+      </div>
+      <div class="list" id="qrList"></div>
+    </div>
+
+    <div class="panel">
+      <div class="title">Top-Down 2D Map</div>
+      <div class="canvas-wrap">
+        <canvas id="topdownCanvas" width="700" height="700"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("topdownCanvas");
+    const ctx = canvas.getContext("2d");
+    const qrList = document.getElementById("qrList");
+
+    let state = { ok: false, items: [] };
+
+    function drawGrid() {
+      const w = canvas.width;
+      const h = canvas.height;
+
+      ctx.clearRect(0, 0, w, h);
+      ctx.fillStyle = "#0a0f1a";
+      ctx.fillRect(0, 0, w, h);
+
+      ctx.strokeStyle = "rgba(80,120,180,0.18)";
+      ctx.lineWidth = 1;
+
+      for (let x = 0; x <= w; x += 50) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, h);
+        ctx.stroke();
+      }
+      for (let y = 0; y <= h; y += 50) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(w, y);
+        ctx.stroke();
+      }
+    }
+
+    function drawMap(data) {
+      drawGrid();
+
+      const w = canvas.width;
+      const h = canvas.height;
+      const camX = w / 2;
+      const camY = h - 90;
+      const scale = 220;
+
+      ctx.strokeStyle = "#ffd54a";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(camX, camY);
+      ctx.lineTo(camX, 80);
+      ctx.stroke();
+
+      ctx.fillStyle = "#3ec5ff";
+      ctx.beginPath();
+      ctx.arc(camX, camY, 22, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = "#d6f5ff";
+      ctx.font = "bold 16px Arial";
+      ctx.fillText("CAM", camX - 18, camY + 45);
+
+      if (!data.ok || !data.items.length) {
+        ctx.fillStyle = "#ff6b6b";
+        ctx.font = "bold 24px Arial";
+        ctx.fillText("QR NOT FOUND", w / 2 - 90, 50);
+        return;
+      }
+
+      for (const item of data.items) {
+        const tx = item.lateral_x_m;
+        const tz = item.forward_z_m;
+
+        const qrX = camX + tx * scale;
+        const qrY = camY - tz * scale;
+
+        ctx.strokeStyle = "#66ff9a";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(camX, camY);
+        ctx.lineTo(qrX, qrY);
+        ctx.stroke();
+
+        ctx.fillStyle = "#ff4d6d";
+        ctx.beginPath();
+        ctx.arc(qrX, qrY, 14, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "bold 18px Arial";
+        ctx.fillText(item.text, qrX + 16, qrY - 10);
+
+        ctx.fillStyle = "#cfe0ff";
+        ctx.font = "14px Arial";
+        ctx.fillText(`${item.angle_deg.toFixed(1)}°`, qrX + 16, qrY + 14);
+      }
+    }
+
+    function renderList(data) {
+      qrList.innerHTML = "";
+
+      if (!data.ok || !data.items.length) {
+        qrList.innerHTML = `<div class="item">Chưa đọc được QR</div>`;
+        return;
+      }
+
+      for (const item of data.items) {
+        const div = document.createElement("div");
+        div.className = "item";
+        div.innerHTML = `
+          <b>QR:</b> ${item.text}<br>
+          <b>Type:</b> ${item.qr_type}<br>
+          <b>Angle:</b> ${item.angle_deg.toFixed(2)}°<br>
+          <b>Distance:</b> ${item.distance_m.toFixed(3)} m<br>
+          <b>tx:</b> ${item.lateral_x_m.toFixed(3)} m<br>
+          <b>tz:</b> ${item.forward_z_m.toFixed(3)} m<br>
+          <b>Direction:</b> ${item.direction}
+        `;
+        qrList.appendChild(div);
+      }
+    }
+
+    async function fetchState() {
+      try {
+        const res = await fetch("/qr_state");
+        state = await res.json();
+        drawMap(state);
+        renderList(state);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    drawMap(state);
+    renderList(state);
+    fetchState();
+    setInterval(fetchState, 120);
+  </script>
+</body>
+</html>
