@@ -38,6 +38,31 @@ def get_qr_object_points(qr_size_m):
     ], dtype=np.float32)
 
 
+def build_effective_camera_matrix(camera_matrix, frame_shape):
+    """
+    Scale intrinsic matrix theo kích thước frame thực tế.
+    Ma trận config hiện tại đang ngầm cho frame chuẩn 1280x720
+    vì cx=640, cy=360. Nếu stream thực tế là 640x360 thì phải scale,
+    nếu không mọi điểm gần như luôn nằm bên trái tâm ảnh.
+    """
+    h, w = frame_shape[:2]
+
+    ref_cx = float(camera_matrix[0, 2])
+    ref_cy = float(camera_matrix[1, 2])
+    ref_w = ref_cx * 2.0 if ref_cx > 0 else float(w)
+    ref_h = ref_cy * 2.0 if ref_cy > 0 else float(h)
+
+    sx = float(w) / ref_w if ref_w > 1e-6 else 1.0
+    sy = float(h) / ref_h if ref_h > 1e-6 else 1.0
+
+    k = camera_matrix.astype(np.float32).copy()
+    k[0, 0] *= sx
+    k[0, 2] *= sx
+    k[1, 1] *= sy
+    k[1, 2] *= sy
+    return k
+
+
 def estimate_pose(img_points, camera_matrix, dist_coeffs, qr_size_m):
     obj_points = get_qr_object_points(qr_size_m)
 
@@ -46,7 +71,7 @@ def estimate_pose(img_points, camera_matrix, dist_coeffs, qr_size_m):
         img_points,
         camera_matrix,
         dist_coeffs,
-        flags=cv2.SOLVEPNP_IPPE_SQUARE
+        flags=cv2.SOLVEPNP_ITERATIVE
     )
 
     if not success:
@@ -55,7 +80,7 @@ def estimate_pose(img_points, camera_matrix, dist_coeffs, qr_size_m):
             img_points,
             camera_matrix,
             dist_coeffs,
-            flags=cv2.SOLVEPNP_ITERATIVE
+            flags=cv2.SOLVEPNP_IPPE_SQUARE
         )
 
     if not success:
@@ -72,9 +97,70 @@ def classify_direction(angle_deg, deadband_deg=5.0):
     return "center"
 
 
-def detect_qr_items(frame, camera_matrix, dist_coeffs, qr_size_m, deadband_deg=5.0):
-    decoded = decode(frame)
+def normalize_forward_pose(tz):
+    return abs(tz)
+
+
+def compute_lateral_from_image_center(center_x_px, tz, camera_matrix):
+    fx = float(camera_matrix[0, 0])
+    cx = float(camera_matrix[0, 2])
+
+    # Công thức pinhole: X = (u - cx) / fx * Z
+    tx = ((float(center_x_px) - cx) / fx) * tz
+    return tx
+
+
+def compute_target_point(tx, tz, push_m=0.35, min_target_distance_m=0.65):
+    dist = math.sqrt(tx * tx + tz * tz)
+
+    if dist < 1e-6:
+        return 0.0, min_target_distance_m, min_target_distance_m
+
+    ux = tx / dist
+    uz = tz / dist
+
+    target_dist = max(dist + push_m, min_target_distance_m)
+    target_x = ux * target_dist
+    target_z = uz * target_dist
+
+    return target_x, target_z, target_dist
+
+
+def preprocess_for_qr(frame, detect_width=640):
+    h, w = frame.shape[:2]
+
+    if w > detect_width:
+        scale = detect_width / float(w)
+        resized = cv2.resize(frame, (int(w * scale), int(h * scale)))
+    else:
+        scale = 1.0
+        resized = frame.copy()
+
+    gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
+    gray = cv2.GaussianBlur(gray, (3, 3), 0)
+
+    return gray, scale
+
+
+def decode_qr_fast(frame, detect_width=640):
+    gray, scale = preprocess_for_qr(frame, detect_width=detect_width)
+    decoded = decode(gray)
+    return decoded, scale
+
+
+def detect_qr_items(
+    frame,
+    camera_matrix,
+    dist_coeffs,
+    qr_size_m,
+    deadband_deg=5.0,
+    target_push_m=0.35,
+    min_target_distance_m=0.65,
+    detect_width=640,
+):
+    decoded, scale = decode_qr_fast(frame, detect_width=detect_width)
     items = []
+    effective_camera_matrix = build_effective_camera_matrix(camera_matrix, frame.shape)
 
     for qr in decoded:
         try:
@@ -95,19 +181,33 @@ def detect_qr_items(frame, camera_matrix, dist_coeffs, qr_size_m, deadband_deg=5
                 [x, y + h],
             ], dtype=np.float32)
 
-        ok, rvec, tvec = estimate_pose(img_points, camera_matrix, dist_coeffs, qr_size_m)
+        if scale > 0:
+            img_points = img_points / scale
+
+        ok, rvec, tvec = estimate_pose(img_points, effective_camera_matrix, dist_coeffs, qr_size_m)
         if not ok:
             continue
 
-        tx = float(tvec[0][0])
-        tz = float(tvec[2][0])
+        tz_raw = float(tvec[2][0])
+        tz = normalize_forward_pose(tz_raw)
+
+        center = np.mean(img_points, axis=0)
+        center_x = float(center[0])
+        center_y = float(center[1])
+
+        tx = compute_lateral_from_image_center(center_x, tz, effective_camera_matrix)
 
         angle_rad = math.atan2(tx, tz)
         angle_deg = math.degrees(angle_rad)
         distance_m = math.sqrt(tx * tx + tz * tz)
         direction = classify_direction(angle_deg, deadband_deg)
 
-        center = np.mean(img_points, axis=0).astype(int)
+        target_x, target_z, target_distance = compute_target_point(
+            tx,
+            tz,
+            push_m=target_push_m,
+            min_target_distance_m=min_target_distance_m,
+        )
 
         item = QRItem(
             text=qr_text,
@@ -117,10 +217,14 @@ def detect_qr_items(frame, camera_matrix, dist_coeffs, qr_size_m, deadband_deg=5
             distance_m=distance_m,
             lateral_x_m=tx,
             forward_z_m=tz,
+            target_x_m=target_x,
+            target_z_m=target_z,
+            target_distance_m=target_distance,
             direction=direction,
-            center_px=(int(center[0]), int(center[1])),
+            center_px=(int(center_x), int(center_y)),
             corners=img_points.astype(int).tolist(),
         )
         items.append(item)
 
+    items.sort(key=lambda it: it.distance_m)
     return DetectionResult(ok=len(items) > 0, items=items)

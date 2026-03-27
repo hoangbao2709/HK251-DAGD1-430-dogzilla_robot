@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List
 
 
 @dataclass
@@ -11,6 +11,9 @@ class QRItem:
     distance_m: float
     lateral_x_m: float
     forward_z_m: float
+    target_x_m: float
+    target_z_m: float
+    target_distance_m: float
     direction: str
     center_px: tuple[int, int]
     corners: list[list[int]]

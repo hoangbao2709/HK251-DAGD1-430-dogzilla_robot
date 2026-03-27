@@ -1,11 +1,14 @@
 import numpy as np
 
-CAMERA_SOURCE = 0
+CAMERA_SOURCE = "http://10.230.156.224:9000/camera"
 QR_SIZE_M = 0.12
 DEADBAND_DEG = 5.0
 FLASK_HOST = "0.0.0.0"
 FLASK_PORT = 8000
-FLIP_FRAME = False
+FLIP_FRAME = True
+
+TARGET_PUSH_M = 0.35
+MIN_TARGET_DISTANCE_M = 0.65
 
 CAMERA_MATRIX = np.array([
     [920.0,   0.0, 640.0],
@@ -14,3 +17,9 @@ CAMERA_MATRIX = np.array([
 ], dtype=np.float32)
 
 DIST_COEFFS = np.array([0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)
+
+DETECT_INTERVAL_SEC = 0.10
+LOST_HOLD_SEC = 0.50
+SMOOTH_ALPHA = 0.28
+DETECT_WIDTH = 640
+JPEG_QUALITY = 72

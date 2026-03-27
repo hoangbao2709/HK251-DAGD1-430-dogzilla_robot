@@ -9,7 +9,15 @@ def draw_overlay(frame, detection_result):
     cv2.line(out, (cx, 0), (cx, h), (0, 255, 255), 2)
 
     if not detection_result.ok:
-        cv2.putText(out, "QR not found", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 2)
+        cv2.putText(
+            out,
+            "QR not found",
+            (20, 40),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1.0,
+            (0, 0, 255),
+            2
+        )
         return out
 
     for item in detection_result.items:
@@ -20,18 +28,28 @@ def draw_overlay(frame, detection_result):
             p2 = tuple(corners[(i + 1) % 4])
             cv2.line(out, p1, p2, (0, 255, 0), 2)
 
-        cv2.circle(out, item.center_px, 5, (255, 0, 0), -1)
-
-        lines = [
-            f"{item.text}",
-            f"{item.angle_deg:.1f} deg",
-            f"{item.distance_m:.2f} m",
-        ]
+        cv2.circle(out, item.center_px, 6, (255, 0, 0), -1)
 
         x, y = item.center_px
-        yy = y - 35
+        lines = [
+            f"QR: {item.text}",
+            f"angle: {item.angle_deg:.1f} deg",
+            f"dist : {item.distance_m:.2f} m",
+            f"tx/tz: ({item.lateral_x_m:.2f}, {item.forward_z_m:.2f})",
+            f"target: ({item.target_x_m:.2f}, {item.target_z_m:.2f})",
+        ]
+
+        yy = y - 55
         for line in lines:
-            cv2.putText(out, line, (x + 10, yy), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2)
+            cv2.putText(
+                out,
+                line,
+                (x + 10, yy),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.55,
+                (255, 255, 255),
+                2
+            )
             yy += 20
 
     return out
