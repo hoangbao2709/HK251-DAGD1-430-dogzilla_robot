@@ -17,7 +17,7 @@ import requests
 from line_common import ManyImgs, color_follow, read_HSV, write_HSV, simplePID
 
 # ── Cấu hình kết nối robot ─────────────────────────────────────────────────────
-ROBOT_BASE_URL    = "http://192.168.1.7:9000"          # Flask server trên robot
+ROBOT_BASE_URL    = "http://10.28.129.110:9000"          # Flask server trên robot
 CAMERA_SOURCE     = ROBOT_BASE_URL + "/camera"         # HTTP MJPEG stream
 USE_REMOTE_CAMERA = True                               # False → dùng webcam local
 CAMERA_INDEX      = 0                                  # webcam local (dự phòng)
@@ -132,7 +132,7 @@ class LineDetect:
         self.PID_init()
 
         # Giới hạn tần suất gửi lệnh (giây) – tăng lên để robot di chuyển chậm hơn
-        self.CMD_INTERVAL = 0.6         # s giữa 2 lệnh liên tiếp (tăng để robot đi chậm hơn)
+        self.CMD_INTERVAL = 0.8         # s giữa 2 lệnh liên tiếp (tăng để robot đi chậm hơn)
         self._last_execute_time = 0.0
 
         # ── Thay DOGZILLALib bằng HTTP client ──
