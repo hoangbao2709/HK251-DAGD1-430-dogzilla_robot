@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Line Tracking Web</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="page">
+    <h1>Line Tracking Web Control</h1>
+
+    <div class="toolbar">
+      <button id="pauseBtn" class="btn btn-stop">Dừng</button>
+      <button id="resumeBtn" class="btn btn-run">Tiếp tục</button>
+      <div class="tracking-badge">
+        Tracking: <span id="trackingStatus">-</span>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <div class="card-title">Khung 1 - Ảnh gốc + ROI</div>
+        <img src="/video/original" alt="Original stream" />
+      </div>
+
+      <div class="card">
+        <div class="card-title">Khung 2 - Error View</div>
+        <img src="/video/error" alt="Error stream" />
+      </div>
+    </div>
+
+    <div class="info-grid">
+      <div class="info-box">status: <b id="status">-</b></div>
+      <div class="info-box">x_bottom: <b id="x_bottom">-</b></div>
+      <div class="info-box">x_mid: <b id="x_mid">-</b></div>
+      <div class="info-box">x_top: <b id="x_top">-</b></div>
+      <div class="info-box">e_lat: <b id="e_lat">-</b></div>
+      <div class="info-box">e_heading: <b id="e_heading">-</b></div>
+      <div class="info-box">e_mix: <b id="e_mix">-</b></div>
+      <div class="info-box">forward: <b id="forward">-</b></div>
+      <div class="info-box">turn: <b id="turn">-</b></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Robot response</div>
+      <pre id="robotResponse">-</pre>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

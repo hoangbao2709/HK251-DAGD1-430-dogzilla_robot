@@ -17,7 +17,7 @@ import requests
 from line_common import ManyImgs, color_follow, read_HSV, write_HSV, simplePID
 
 # ── Cấu hình kết nối robot ─────────────────────────────────────────────────────
-ROBOT_BASE_URL    = "http://192.168.1.7:9000"          # Flask server trên robot
+ROBOT_BASE_URL    = "http://10.28.128.171:9000"          # Flask server trên robot
 CAMERA_SOURCE     = ROBOT_BASE_URL + "/camera"         # HTTP MJPEG stream
 USE_REMOTE_CAMERA = True                               # False → dùng webcam local
 CAMERA_INDEX      = 0                                  # webcam local (dự phòng)

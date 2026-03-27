@@ -2,12 +2,11 @@ from flask import Flask
 from tracker import LineTrackingServer
 from web_routes import register_routes
 from mission_manager import MissionManager
-
+from config import ROBOT_BASE_URL
 app = Flask(__name__)
 tracker = LineTrackingServer()
 
 # Base URL của server robot nhận lệnh
-ROBOT_BASE_URL = "http://10.122.52.41:9000"
 
 mission_manager = MissionManager(
     tracker=tracker,

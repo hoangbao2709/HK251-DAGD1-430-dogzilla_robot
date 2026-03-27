@@ -10,6 +10,16 @@ class RobotAPIClient:
 
         self.last_command: Optional[str] = None
         self.last_payload: Optional[Dict[str, Any]] = None
+        self.current_speed_mode: str = "normal"
+
+        self.body_state: Dict[str, float] = {
+            "tx": 0.0,
+            "ty": 0.0,
+            "tz": 0.0,
+            "rx": 0.0,
+            "ry": 0.0,
+            "rz": 0.0,
+        }
 
     def _post_control(self, payload: Dict[str, Any]) -> bool:
         url = f"{self.base_url}/control"
@@ -60,3 +70,55 @@ class RobotAPIClient:
 
     def turnright(self) -> bool:
         return self.send_command("turnright")
+
+    def set_speed_mode(self, mode: str, force: bool = False) -> bool:
+        mode = str(mode).strip().lower()
+        if mode not in {"slow", "normal", "high"}:
+            return False
+
+        ok = self.send_command("speed_mode", force=force, mode=mode)
+        if ok:
+            self.current_speed_mode = mode
+        return ok
+
+    def speed_mode(self) -> str:
+        return self.current_speed_mode
+
+    def body_adjust(
+        self,
+        tx: Optional[float] = None,
+        ty: Optional[float] = None,
+        tz: Optional[float] = None,
+        rx: Optional[float] = None,
+        ry: Optional[float] = None,
+        rz: Optional[float] = None,
+        force: bool = False,
+    ) -> bool:
+        payload = dict(self.body_state)
+
+        if tx is not None:
+            payload["tx"] = float(tx)
+        if ty is not None:
+            payload["ty"] = float(ty)
+        if tz is not None:
+            payload["tz"] = float(tz)
+        if rx is not None:
+            payload["rx"] = float(rx)
+        if ry is not None:
+            payload["ry"] = float(ry)
+        if rz is not None:
+            payload["rz"] = float(rz)
+
+        ok = self.send_command("body_adjust", force=force, **payload)
+        if ok:
+            self.body_state = payload
+        return ok
+
+    def set_translation_z(self, z_value: float, force: bool = False) -> bool:
+        return self.body_adjust(tz=z_value, force=force)
+
+    def set_attitude_pitch(self, pitch_value: float, force: bool = False) -> bool:
+        return self.body_adjust(ry=pitch_value, force=force)
+
+    def get_body_state(self) -> Dict[str, float]:
+        return dict(self.body_state)

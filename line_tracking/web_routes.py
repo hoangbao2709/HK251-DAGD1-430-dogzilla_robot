@@ -105,7 +105,9 @@ def register_routes(app, tracker, mission_manager):
                 .turn-btn,
                 .target-btn,
                 .action-btn,
-                .manual-btn {
+                .manual-btn,
+                .speed-btn,
+                .pose-btn {
                     border: none;
                     border-radius: 14px;
                     padding: 13px 18px;
@@ -119,21 +121,21 @@ def register_routes(app, tracker, mission_manager):
                 .turn-btn:hover,
                 .target-btn:hover,
                 .action-btn:hover,
-                .manual-btn:hover {
+                .manual-btn:hover,
+                .speed-btn:hover,
+                .pose-btn:hover {
                     transform: translateY(-2px);
                     opacity: 0.95;
                 }
 
-                .turn-btn {
-                    min-width: 132px;
-                }
-
+                .turn-btn { min-width: 132px; }
                 .turn-btn.left { background: #2563eb; }
                 .turn-btn.straight { background: #16a34a; }
                 .turn-btn.right { background: #ea580c; }
 
                 .turn-btn.active,
-                .target-btn.active {
+                .target-btn.active,
+                .speed-btn.active {
                     outline: 3px solid white;
                     box-shadow: 0 0 0 4px rgba(255,255,255,0.12);
                 }
@@ -167,17 +169,25 @@ def register_routes(app, tracker, mission_manager):
                     flex-wrap: wrap;
                 }
 
-                .action-btn.cancel {
-                    background: #dc2626;
+                .action-btn.cancel { background: #dc2626; }
+                .action-btn.enable { background: #16a34a; }
+                .action-btn.disable { background: #b45309; }
+
+                .speed-row,
+                .pose-actions {
+                    margin-top: 16px;
+                    display: flex;
+                    justify-content: center;
+                    gap: 12px;
+                    flex-wrap: wrap;
                 }
 
-                .action-btn.enable {
-                    background: #16a34a;
-                }
+                .speed-btn.slow { background: #2563eb; }
+                .speed-btn.normal { background: #16a34a; }
+                .speed-btn.high { background: #dc2626; }
 
-                .action-btn.disable {
-                    background: #b45309;
-                }
+                .pose-btn.apply { background: #0891b2; }
+                .pose-btn.reset { background: #6b7280; }
 
                 .manual-pad {
                     display: grid;
@@ -202,6 +212,40 @@ def register_routes(app, tracker, mission_manager):
                 .manual-btn.turnleft { background: #7c3aed; }
                 .manual-btn.turnright { background: #9333ea; }
 
+                .pose-panel {
+                    margin-top: 18px;
+                    padding: 14px;
+                    border-radius: 16px;
+                    background: #0f172a;
+                    border: 1px solid rgba(148, 163, 184, 0.12);
+                }
+
+                .pose-grid {
+                    display: grid;
+                    grid-template-columns: 1fr;
+                    gap: 14px;
+                }
+
+                .slider-group label {
+                    display: flex;
+                    justify-content: space-between;
+                    gap: 12px;
+                    font-size: 15px;
+                    color: #e2e8f0;
+                    margin-bottom: 8px;
+                }
+
+                .slider-group input[type=range] {
+                    width: 100%;
+                }
+
+                .pose-note {
+                    margin-top: 8px;
+                    color: #cbd5e1;
+                    font-size: 13px;
+                    text-align: center;
+                }
+
                 .manual-status {
                     margin-top: 14px;
                     text-align: center;
@@ -212,7 +256,7 @@ def register_routes(app, tracker, mission_manager):
 
                 .mission-box {
                     display: grid;
-                    grid-template-columns: repeat(4, 1fr);
+                    grid-template-columns: repeat(6, 1fr);
                     gap: 14px;
                     margin-top: 14px;
                 }
@@ -267,13 +311,8 @@ def register_routes(app, tracker, mission_manager):
                 }
 
                 @media (max-width: 700px) {
-                    .container {
-                        padding: 16px;
-                    }
-
-                    h1 {
-                        font-size: 30px;
-                    }
+                    .container { padding: 16px; }
+                    h1 { font-size: 30px; }
 
                     .target-grid {
                         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -346,6 +385,12 @@ def register_routes(app, tracker, mission_manager):
                             <button class="turn-btn right" onclick="setTurnChoice('right')" id="btn-right">➡ Rẽ phải</button>
                         </div>
 
+                        <div class="speed-row">
+                            <button class="speed-btn slow" id="btn-speed-slow" onclick="setSpeedMode('slow')">Slow</button>
+                            <button class="speed-btn normal active" id="btn-speed-normal" onclick="setSpeedMode('normal')">Normal</button>
+                            <button class="speed-btn high" id="btn-speed-high" onclick="setSpeedMode('high')">High</button>
+                        </div>
+
                         <div class="manual-pad">
                             <button class="manual-btn turnleft" onclick="sendMove('turnleft')">↺</button>
                             <button class="manual-btn forward" onclick="sendMove('forward')">⬆</button>
@@ -360,12 +405,57 @@ def register_routes(app, tracker, mission_manager):
                             <div></div>
                         </div>
 
+                        <div class="pose-panel">
+                            <div class="pose-grid">
+                                <div class="slider-group">
+                                    <label>
+                                        <span>Attitude_pitch</span>
+                                        <strong id="pitch-value">0</strong>
+                                    </label>
+                                    <input
+                                        type="range"
+                                        id="pitch-slider"
+                                        min="-15"
+                                        max="15"
+                                        step="1"
+                                        value="0"
+                                        oninput="updatePoseLabels()"
+                                    />
+                                </div>
+
+                                <div class="slider-group">
+                                    <label>
+                                        <span>Translation_Z</span>
+                                        <strong id="z-value">95</strong>
+                                    </label>
+                                    <input
+                                        type="range"
+                                        id="z-slider"
+                                        min="75"
+                                        max="110"
+                                        step="1"
+                                        value="95"
+                                        oninput="updatePoseLabels()"
+                                    />
+                                </div>
+                            </div>
+
+                            <div class="pose-actions">
+                                <button class="pose-btn apply" onclick="applyBodyPose()">Áp dụng pitch + Z</button>
+                                <button class="pose-btn reset" onclick="resetBodyPose()">Reset</button>
+                            </div>
+
+                            <div class="pose-note">
+                                Pitch dùng khoảng -15 đến 15, Z dùng khoảng 75 đến 110.
+                            </div>
+                        </div>
+
                         <div class="manual-status" id="manual-status">
                             Chưa gửi lệnh tay
                         </div>
 
                         <div class="hint">
-                            Nút điều khiển tay sẽ gửi lệnh API trực tiếp tới robot thông qua mission manager.
+                            Có thể đổi tốc độ robot, chỉnh cúi/ngẩng thân và chỉnh độ cao ngay trên web.
                         </div>
                     </div>
                 </div>
@@ -389,6 +479,14 @@ def register_routes(app, tracker, mission_manager):
                             <div class="mission-label">Trạng thái</div>
                             <div class="mission-value small" id="mission-status">idle</div>
                         </div>
+                        <div class="mission-item">
+                            <div class="mission-label">Tốc độ</div>
+                            <div class="mission-value small" id="mission-speed">normal</div>
+                        </div>
+                        <div class="mission-item">
+                            <div class="mission-label">Pitch / Z</div>
+                            <div class="mission-value small" id="mission-pose">0 / 95</div>
+                        </div>
                     </div>
                 </div>
 
@@ -405,6 +503,14 @@ def register_routes(app, tracker, mission_manager):
 
             <script>
                 const TARGETS = ['A', 'B', 'C', 'D', 'E', 'F'];
+                const SPEEDS = ['slow', 'normal', 'high'];
+
+                function updatePoseLabels() {
+                    const pitch = document.getElementById('pitch-slider').value;
+                    const z = document.getElementById('z-slider').value;
+                    document.getElementById('pitch-value').textContent = pitch;
+                    document.getElementById('z-value').textContent = z;
+                }
 
                 async function setTurnChoice(choice) {
                     try {
@@ -424,6 +530,65 @@ def register_routes(app, tracker, mission_manager):
                     } catch (e) {
                         alert('Lỗi kết nối tới server');
                     }
+                }
+
+                async function setSpeedMode(mode) {
+                    try {
+                        const res = await fetch('/robot/speed', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ mode })
+                        });
+
+                        const data = await res.json();
+                        if (!res.ok) {
+                            alert(data.error || 'Không đổi được tốc độ');
+                            return;
+                        }
+
+                        updateActiveSpeedButton(data.speed_mode || mode);
+                        document.getElementById('mission-speed').textContent = data.speed_mode || mode;
+                        document.getElementById('manual-status').textContent = 'Đã đổi tốc độ: ' + (data.speed_mode || mode);
+                        await updateMission();
+                    } catch (e) {
+                        alert('Lỗi kết nối tới server');
+                    }
+                }
+
+                async function applyBodyPose() {
+                    const attitude_pitch = Number(document.getElementById('pitch-slider').value);
+                    const translation_z = Number(document.getElementById('z-slider').value);
+
+                    try {
+                        const res = await fetch('/robot/body_pose', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ attitude_pitch, translation_z })
+                        });
+
+                        const data = await res.json();
+                        if (!res.ok) {
+                            alert(data.error || 'Không cập nhật được body pose');
+                            return;
+                        }
+
+                        document.getElementById('manual-status').textContent =
+                            'Đã áp dụng pitch=' + data.attitude_pitch + ' | Z=' + data.translation_z;
+
+                        document.getElementById('mission-pose').textContent =
+                            data.attitude_pitch + ' / ' + data.translation_z;
+
+                        await updateMission();
+                    } catch (e) {
+                        alert('Lỗi kết nối tới server');
+                    }
+                }
+
+                async function resetBodyPose() {
+                    document.getElementById('pitch-slider').value = 0;
+                    document.getElementById('z-slider').value = 95;
+                    updatePoseLabels();
+                    await applyBodyPose();
                 }
 
                 async function setTarget(target) {
@@ -524,7 +689,7 @@ def register_routes(app, tracker, mission_manager):
                         }
 
                         document.getElementById('manual-status').textContent =
-                            'Đã gửi lệnh: ' + data.command;
+                            'Đã gửi lệnh: ' + data.command + ' | speed=' + (data.speed_mode || '-');
                     } catch (e) {
                         alert('Lỗi kết nối tới server');
                     }
@@ -543,8 +708,7 @@ def register_routes(app, tracker, mission_manager):
                             return;
                         }
 
-                        document.getElementById('manual-status').textContent =
-                            'Robot đã dừng';
+                        document.getElementById('manual-status').textContent = 'Robot đã dừng';
                     } catch (e) {
                         alert('Lỗi kết nối tới server');
                     }
@@ -570,6 +734,16 @@ def register_routes(app, tracker, mission_manager):
                         const btn = document.getElementById('btn-target-' + target);
                         if (btn) btn.classList.add('active');
                     }
+                }
+
+                function updateActiveSpeedButton(mode) {
+                    SPEEDS.forEach(name => {
+                        const el = document.getElementById('btn-speed-' + name);
+                        if (el) el.classList.remove('active');
+                    });
+
+                    const btn = document.getElementById('btn-speed-' + mode);
+                    if (btn) btn.classList.add('active');
                 }
 
                 async function updateControl() {
@@ -609,6 +783,21 @@ def register_routes(app, tracker, mission_manager):
                         document.getElementById('mission-status').textContent =
                             data.status || 'idle';
 
+                        document.getElementById('mission-speed').textContent =
+                            data.speed_mode || 'normal';
+
+                        updateActiveSpeedButton(data.speed_mode || 'normal');
+
+                        const pitch = Number(data.attitude_pitch ?? 0);
+                        const z = Number(data.translation_z ?? 95);
+
+                        document.getElementById('pitch-slider').value = pitch;
+                        document.getElementById('z-slider').value = z;
+                        updatePoseLabels();
+
+                        document.getElementById('mission-pose').textContent =
+                            pitch + ' / ' + z;
+
                         if (data.current_junction) {
                             document.getElementById('mission-junction').textContent =
                                 data.current_junction;
@@ -634,6 +823,7 @@ def register_routes(app, tracker, mission_manager):
                 setInterval(updateControl, 200);
                 setInterval(updateMission, 300);
 
+                updatePoseLabels();
                 updateControl();
                 updateMission();
             </script>
@@ -664,29 +854,19 @@ def register_routes(app, tracker, mission_manager):
     @app.route("/mission", methods=["GET"])
     def mission_state():
         if mission_manager is None:
-            return jsonify({
-                "ok": False,
-                "error": "mission_manager is not configured"
-            }), 500
-
+            return jsonify({"ok": False, "error": "mission_manager is not configured"}), 500
         return jsonify(mission_manager.get_state())
 
     @app.route("/mission/target", methods=["POST"])
     def mission_target():
         if mission_manager is None:
-            return jsonify({
-                "ok": False,
-                "error": "mission_manager is not configured"
-            }), 500
+            return jsonify({"ok": False, "error": "mission_manager is not configured"}), 500
 
         data = request.get_json(silent=True) or {}
         target = data.get("target")
 
         if target is None:
-            return jsonify({
-                "ok": False,
-                "error": "target is required"
-            }), 400
+            return jsonify({"ok": False, "error": "target is required"}), 400
 
         try:
             state = mission_manager.set_target(target)
@@ -696,18 +876,12 @@ def register_routes(app, tracker, mission_manager):
                 "mission": state
             })
         except Exception as e:
-            return jsonify({
-                "ok": False,
-                "error": str(e)
-            }), 400
+            return jsonify({"ok": False, "error": str(e)}), 400
 
     @app.route("/mission/cancel", methods=["POST"])
     def mission_cancel():
         if mission_manager is None:
-            return jsonify({
-                "ok": False,
-                "error": "mission_manager is not configured"
-            }), 500
+            return jsonify({"ok": False, "error": "mission_manager is not configured"}), 500
 
         state = mission_manager.cancel()
         return jsonify({
@@ -719,48 +893,77 @@ def register_routes(app, tracker, mission_manager):
     @app.route("/mission/enable", methods=["POST"])
     def mission_enable():
         if mission_manager is None:
-            return jsonify({
-                "ok": False,
-                "error": "mission_manager is not configured"
-            }), 500
+            return jsonify({"ok": False, "error": "mission_manager is not configured"}), 500
 
         if hasattr(mission_manager, "enable"):
             mission_manager.enable()
 
-        return jsonify({
-            "ok": True,
-            "message": "Mission enabled"
-        })
+        return jsonify({"ok": True, "message": "Mission enabled"})
 
     @app.route("/mission/disable", methods=["POST"])
     def mission_disable():
         if mission_manager is None:
-            return jsonify({
-                "ok": False,
-                "error": "mission_manager is not configured"
-            }), 500
+            return jsonify({"ok": False, "error": "mission_manager is not configured"}), 500
 
         if hasattr(mission_manager, "disable"):
             mission_manager.disable()
 
-        return jsonify({
-            "ok": True,
-            "message": "Mission disabled"
-        })
+        return jsonify({"ok": True, "message": "Mission disabled"})
+
+    @app.route("/robot/speed", methods=["POST"])
+    def robot_speed():
+        if mission_manager is None:
+            return jsonify({"ok": False, "error": "mission_manager is not configured"}), 500
+
+        data = request.get_json(silent=True) or {}
+        mode = str(data.get("mode", "")).strip().lower()
+
+        if mode not in {"slow", "normal", "high"}:
+            return jsonify({"ok": False, "error": "mode must be one of slow/normal/high"}), 400
+
+        try:
+            state = mission_manager.set_speed_mode(mode)
+            return jsonify({
+                "ok": True,
+                "message": f"Speed mode set to {mode}",
+                "speed_mode": state.get("speed_mode", mode),
+                "mission": state
+            })
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)}), 500
+
+    @app.route("/robot/body_pose", methods=["POST"])
+    def robot_body_pose():
+        if mission_manager is None:
+            return jsonify({"ok": False, "error": "mission_manager is not configured"}), 500
+
+        data = request.get_json(silent=True) or {}
+
+        try:
+            attitude_pitch = float(data.get("attitude_pitch", 0))
+            translation_z = float(data.get("translation_z", 95))
+        except Exception:
+            return jsonify({"ok": False, "error": "attitude_pitch and translation_z must be numeric"}), 400
+
+        try:
+            state = mission_manager.set_body_pose(translation_z, attitude_pitch)
+            return jsonify({
+                "ok": True,
+                "message": "Body pose updated",
+                "attitude_pitch": state.get("attitude_pitch", attitude_pitch),
+                "translation_z": state.get("translation_z", translation_z),
+                "mission": state,
+            })
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)}), 500
 
     @app.route("/robot/move", methods=["POST"])
     def robot_move():
         if mission_manager is None:
-            return jsonify({
-                "ok": False,
-                "error": "mission_manager is not configured"
-            }), 500
+            return jsonify({"ok": False, "error": "mission_manager is not configured"}), 500
 
         if not hasattr(mission_manager, "robot"):
-            return jsonify({
-                "ok": False,
-                "error": "mission_manager.robot is not configured"
-            }), 500
+            return jsonify({"ok": False, "error": "mission_manager.robot is not configured"}), 500
 
         data = request.get_json(silent=True) or {}
         command = data.get("command")
@@ -793,27 +996,19 @@ def register_routes(app, tracker, mission_manager):
 
             return jsonify({
                 "ok": bool(ok),
-                "command": command
+                "command": command,
+                "speed_mode": getattr(mission_manager, "speed_mode", "normal")
             })
         except Exception as e:
-            return jsonify({
-                "ok": False,
-                "error": str(e)
-            }), 500
+            return jsonify({"ok": False, "error": str(e)}), 500
 
     @app.route("/robot/stop", methods=["POST"])
     def robot_stop():
         if mission_manager is None:
-            return jsonify({
-                "ok": False,
-                "error": "mission_manager is not configured"
-            }), 500
+            return jsonify({"ok": False, "error": "mission_manager is not configured"}), 500
 
         if not hasattr(mission_manager, "robot"):
-            return jsonify({
-                "ok": False,
-                "error": "mission_manager.robot is not configured"
-            }), 500
+            return jsonify({"ok": False, "error": "mission_manager.robot is not configured"}), 500
 
         try:
             if hasattr(mission_manager, "disable"):
@@ -822,13 +1017,11 @@ def register_routes(app, tracker, mission_manager):
             ok = mission_manager.robot.stop(force=True)
             return jsonify({
                 "ok": bool(ok),
-                "command": "stop"
+                "command": "stop",
+                "speed_mode": getattr(mission_manager, "speed_mode", "normal")
             })
         except Exception as e:
-            return jsonify({
-                "ok": False,
-                "error": str(e)
-            }), 500
+            return jsonify({"ok": False, "error": str(e)}), 500
 
     @app.route("/raw_feed")
     def raw_feed():

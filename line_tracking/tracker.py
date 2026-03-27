@@ -13,6 +13,7 @@ from config import (
     SEARCH_WINDOW_HALF_WIDTH,
     JUNCTION_WINDOW_HALF_WIDTH,
     BOTTOM_SCAN_RATIO,
+    MID_SCAN_RATIO,
     TOP_SCAN_RATIO,
     KP,
     KD,
@@ -20,15 +21,26 @@ from config import (
     MAX_ANGULAR,
     SMOOTHING_ALPHA_NORMAL,
     SMOOTHING_ALPHA_JUNCTION,
+    TURNING_SMOOTHING_ALPHA,
     JUNCTION_SPEED_SCALE,
+    ERROR_DEADBAND_PX,
+    ERROR_SMOOTH_ALPHA,
+    MAX_ANGULAR_STEP,
+    APPROACH_BIAS_PIXELS,
+    PREPARE_BIAS_PIXELS,
+    TURN_BIAS_PIXELS,
+    APPROACH_HOLD_FRAMES,
+    JUNCTION_HOLD_FRAMES,
+    COMMIT_TURN_FRAMES,
+    LINE_WIDTH_APPROACH_RATIO,
+    MID_WIDTH_APPROACH_RATIO,
+    TOP_LOST_MIN_FRAMES,
+    CROSS_WIDE_THRESHOLD,
+    APPROACH_SPEED_SCALE,
+    TURN_SPEED_SCALE,
+    COMMIT_LINEAR_SCALE,
 )
 from image_utils import build_mask, get_segments_on_row, filter_segments_in_window
-
-
-MID_SCAN_RATIO = 0.58
-TURN_BIAS_PIXELS = 120
-CROSS_BIAS_PIXELS = 220
-JUNCTION_HOLD_FRAMES = 14
 
 
 class LineTrackingServer:
@@ -44,33 +56,52 @@ class LineTrackingServer:
         self.turn_choice = "straight"
 
         self.prev_error = 0.0
+        self.prev_smooth_error = 0.0
+        self.prev_angular_z = 0.0
         self.prev_target_x = None
         self.prev_target_y = None
 
         self.waiting_at_junction = False
+
         self.junction_hold_frames = 0
-        self.turn_state = "follow"   # follow | prepare_turn | turning
+        self.approach_hold_frames = 0
+        self.commit_turn_frames = 0
+        self.top_lost_frames = 0
+        self.normal_line_width = None
+
+        self.turn_state = "follow"
 
         self.result = {
             "found": False,
             "junction": False,
             "cross": False,
+            "approach": False,
             "waiting_at_junction": False,
             "turn_choice": self.turn_choice,
             "target_x": None,
             "target_y": None,
             "error": 0.0,
+            "error_px": 0,
             "linear_x": 0.0,
             "angular_z": 0.0,
             "base_center": None,
             "mode": "idle",
             "turn_state": self.turn_state,
+            "action_label": "STOP",
         }
 
     def set_turn_choice(self, choice):
         if choice in ["left", "straight", "right"]:
             with self.lock:
                 self.turn_choice = choice
+                if choice == "straight" and self.commit_turn_frames == 0:
+                    self.turn_state = "follow"
+
+    def get_main_segment_width(self, segments, base_center):
+        if not segments:
+            return 0
+        seg = min(segments, key=lambda s: abs(s[2] - base_center))
+        return int(seg[1] - seg[0] + 1)
 
     def start_camera(self):
         if USE_REMOTE_CAMERA:
@@ -105,21 +136,26 @@ class LineTrackingServer:
         self.running = True
         threading.Thread(target=self.update_loop, daemon=True).start()
 
-    def smooth_target(self, raw_x, raw_y, special_zone):
+    def smooth_target(self, raw_x, raw_y, turn_state):
         if raw_x is None or raw_y is None:
             self.prev_target_x = None
             self.prev_target_y = None
             return None, None
 
-        alpha = SMOOTHING_ALPHA_JUNCTION if special_zone else SMOOTHING_ALPHA_NORMAL
+        if turn_state in ("prepare_turn", "turning", "commit_turn"):
+            alpha = TURNING_SMOOTHING_ALPHA
+        elif turn_state == "approach_turn":
+            alpha = min(0.82, SMOOTHING_ALPHA_JUNCTION)
+        else:
+            alpha = SMOOTHING_ALPHA_NORMAL
 
         if self.prev_target_x is None:
-            smooth_x = raw_x
+            smooth_x = int(raw_x)
         else:
             smooth_x = int(alpha * self.prev_target_x + (1.0 - alpha) * raw_x)
 
         if self.prev_target_y is None:
-            smooth_y = raw_y
+            smooth_y = int(raw_y)
         else:
             smooth_y = int(alpha * self.prev_target_y + (1.0 - alpha) * raw_y)
 
@@ -128,32 +164,55 @@ class LineTrackingServer:
 
         return smooth_x, smooth_y
 
-    def detect_structure(self, seg_top, seg_mid, seg_bottom, image_center):
-        """
-        Phân biệt:
-        - normal line
-        - junction
-        - cross intersection
-        """
+    def detect_structure(self, seg_top, seg_mid, seg_bottom):
         junction = False
         cross = False
 
         if len(seg_top) >= 2:
             junction = True
 
-        # dấu hiệu ngã tư: giữa ảnh có thanh ngang rộng + dưới vẫn có thân dọc
         if len(seg_mid) >= 2 and len(seg_bottom) >= 1:
             cross = True
             junction = True
 
-        # nếu có 1 segment giữa rất rộng cũng xem như giao cắt
-        for x1, x2, cx in seg_mid:
-            if (x2 - x1) > 220:
+        for x1, x2, _ in seg_mid:
+            if (x2 - x1) >= CROSS_WIDE_THRESHOLD:
                 cross = True
                 junction = True
                 break
 
         return junction, cross
+
+    def detect_approach_turn(self, seg_top, seg_mid, seg_bottom, base_center, turn_choice):
+        if turn_choice == "straight":
+            self.top_lost_frames = 0
+            return False
+
+        if not seg_bottom:
+            self.top_lost_frames = 0
+            return False
+
+        bottom_w = self.get_main_segment_width(seg_bottom, base_center)
+        mid_w = self.get_main_segment_width(seg_mid, base_center) if seg_mid else 0
+
+        if bottom_w > 0:
+            if self.normal_line_width is None:
+                self.normal_line_width = float(bottom_w)
+            else:
+                self.normal_line_width = 0.92 * self.normal_line_width + 0.08 * bottom_w
+
+        normal_w = self.normal_line_width or max(bottom_w, 1)
+
+        if len(seg_top) == 0:
+            self.top_lost_frames += 1
+        else:
+            self.top_lost_frames = 0
+
+        width_expand = bottom_w > normal_w * LINE_WIDTH_APPROACH_RATIO
+        mid_expand = mid_w > 0 and mid_w > normal_w * MID_WIDTH_APPROACH_RATIO
+        top_lost = self.top_lost_frames >= TOP_LOST_MIN_FRAMES
+
+        return width_expand or mid_expand or top_lost
 
     def choose_branch_segment(self, segments, turn_choice, image_center):
         if not segments:
@@ -179,26 +238,17 @@ class LineTrackingServer:
         seg_mid_all = get_segments_on_row(mask, y_mid)
         seg_top_all = get_segments_on_row(mask, y_top)
 
-        if self.prev_target_x is not None:
-            base_center = int(self.prev_target_x)
-        else:
-            base_center = image_center
+        base_center = int(self.prev_target_x) if self.prev_target_x is not None else image_center
 
-        seg_bottom = filter_segments_in_window(
-            seg_bottom_all, base_center, SEARCH_WINDOW_HALF_WIDTH
-        )
+        seg_bottom = filter_segments_in_window(seg_bottom_all, base_center, SEARCH_WINDOW_HALF_WIDTH)
         if not seg_bottom and seg_bottom_all:
             seg_bottom = seg_bottom_all
 
-        seg_mid = filter_segments_in_window(
-            seg_mid_all, base_center, JUNCTION_WINDOW_HALF_WIDTH
-        )
+        seg_mid = filter_segments_in_window(seg_mid_all, base_center, JUNCTION_WINDOW_HALF_WIDTH)
         if not seg_mid and seg_mid_all:
             seg_mid = seg_mid_all
 
-        seg_top = filter_segments_in_window(
-            seg_top_all, base_center, JUNCTION_WINDOW_HALF_WIDTH
-        )
+        seg_top = filter_segments_in_window(seg_top_all, base_center, JUNCTION_WINDOW_HALF_WIDTH)
         if not seg_top and seg_top_all:
             seg_top = seg_top_all
 
@@ -206,79 +256,80 @@ class LineTrackingServer:
         if seg_bottom:
             bottom_choice = min(seg_bottom, key=lambda s: abs(s[2] - base_center))
 
-        junction_detected, cross_detected = self.detect_structure(
-            seg_top, seg_mid, seg_bottom, image_center
+        junction_detected, cross_detected = self.detect_structure(seg_top, seg_mid, seg_bottom)
+        approach_detected = self.detect_approach_turn(
+            seg_top, seg_mid, seg_bottom, base_center, turn_choice
         )
 
         top_choice = self.choose_branch_segment(seg_top, turn_choice, image_center)
 
         target_x = None
         target_y = None
+        state_hint = "follow"
 
-        # ===== CASE 1: bình thường =====
         if not junction_detected:
             if bottom_choice is not None:
                 target_x = int(bottom_choice[2])
                 target_y = int(y_bottom)
 
-        # ===== CASE 2: ngã rẽ / chữ Y =====
+                if turn_choice == "right" and approach_detected:
+                    target_x = min(w - 1, target_x + APPROACH_BIAS_PIXELS)
+                    target_y = int(y_mid)
+                    state_hint = "approach_turn"
+                elif turn_choice == "left" and approach_detected:
+                    target_x = max(0, target_x - APPROACH_BIAS_PIXELS)
+                    target_y = int(y_mid)
+                    state_hint = "approach_turn"
+                else:
+                    state_hint = "follow"
+
         elif junction_detected and not cross_detected:
             if top_choice is not None and bottom_choice is not None:
-                if turn_choice in ["left", "right"]:
-                    alpha = 0.78
+                if turn_choice == "right":
+                    biased_top = min(w - 1, top_choice[2] + PREPARE_BIAS_PIXELS)
+                    target_x = int(0.82 * biased_top + 0.18 * bottom_choice[2])
+                    state_hint = "prepare_turn"
+                elif turn_choice == "left":
+                    biased_top = max(0, top_choice[2] - PREPARE_BIAS_PIXELS)
+                    target_x = int(0.82 * biased_top + 0.18 * bottom_choice[2])
+                    state_hint = "prepare_turn"
                 else:
-                    alpha = 0.58
+                    target_x = int(0.60 * top_choice[2] + 0.40 * bottom_choice[2])
+                    state_hint = "follow"
 
-                target_x = int(alpha * top_choice[2] + (1.0 - alpha) * bottom_choice[2])
-                target_y = int(alpha * y_top + (1.0 - alpha) * y_bottom)
+                target_y = int(0.78 * y_top + 0.22 * y_bottom)
+
             elif top_choice is not None:
                 target_x = int(top_choice[2])
                 target_y = int(y_top)
+                state_hint = "prepare_turn" if turn_choice in ("left", "right") else "follow"
+
             elif bottom_choice is not None:
                 target_x = int(bottom_choice[2])
                 target_y = int(y_bottom)
+                state_hint = "approach_turn" if turn_choice in ("left", "right") else "follow"
 
-        # ===== CASE 3: ngã tư =====
         else:
-            # nếu rẽ phải / trái thì phải tạo bias mạnh
-            if bottom_choice is not None:
-                base_x = bottom_choice[2]
-            else:
-                base_x = base_center
+            base_x = bottom_choice[2] if bottom_choice is not None else base_center
 
             if turn_choice == "right":
-                if self.turn_state == "follow":
-                    target_x = int(base_x + TURN_BIAS_PIXELS)
-                    self.turn_state = "prepare_turn"
-                else:
-                    target_x = int(base_x + CROSS_BIAS_PIXELS)
-                    self.turn_state = "turning"
-
-                target_x = min(w - 1, target_x)
+                target_x = min(w - 1, base_x + TURN_BIAS_PIXELS)
                 target_y = int(y_mid)
-
+                state_hint = "turning"
             elif turn_choice == "left":
-                if self.turn_state == "follow":
-                    target_x = int(base_x - TURN_BIAS_PIXELS)
-                    self.turn_state = "prepare_turn"
-                else:
-                    target_x = int(base_x - CROSS_BIAS_PIXELS)
-                    self.turn_state = "turning"
-
-                target_x = max(0, target_x)
+                target_x = max(0, base_x - TURN_BIAS_PIXELS)
                 target_y = int(y_mid)
-
+                state_hint = "turning"
             else:
-                # đi thẳng thì vẫn bám giữa
                 if bottom_choice is not None:
                     target_x = int(bottom_choice[2])
                     target_y = int(y_bottom)
                 elif top_choice is not None:
                     target_x = int(top_choice[2])
                     target_y = int(y_top)
+                state_hint = "follow"
 
-        # clamp bình thường
-        if target_x is not None and not junction_detected:
+        if target_x is not None and state_hint == "follow" and not junction_detected:
             x_min = max(0, base_center - SEARCH_WINDOW_HALF_WIDTH)
             x_max = min(w - 1, base_center + SEARCH_WINDOW_HALF_WIDTH)
             target_x = int(np.clip(target_x, x_min, x_max))
@@ -288,6 +339,7 @@ class LineTrackingServer:
             "target_y": target_y,
             "junction": junction_detected,
             "cross": cross_detected,
+            "approach": approach_detected,
             "seg_top": seg_top,
             "seg_mid": seg_mid,
             "seg_bottom": seg_bottom,
@@ -296,31 +348,92 @@ class LineTrackingServer:
             "y_mid": y_mid,
             "y_bottom": y_bottom,
             "image_center": image_center,
+            "state_hint": state_hint,
         }
 
-    def compute_control(self, roi_width, target_x, special_zone):
+    def compute_action_label(self, error):
+        ae = abs(error)
+        if ae < 0.05:
+            return "STRAIGHT"
+        if error > 0.24:
+            return "RIGHT_HARD"
+        if error > 0.10:
+            return "RIGHT_SOFT"
+        if error < -0.24:
+            return "LEFT_HARD"
+        if error < -0.10:
+            return "LEFT_SOFT"
+        return "STRAIGHT"
+
+    def compute_control(self, roi_width, target_x, turn_state):
         center_x = roi_width / 2.0
-        error = (target_x - center_x) / center_x
+        error_px = int(target_x - center_x)
+
+        if abs(error_px) <= ERROR_DEADBAND_PX:
+            error_px = 0
+
+        raw_error = error_px / center_x
+        error = ERROR_SMOOTH_ALPHA * self.prev_smooth_error + (1.0 - ERROR_SMOOTH_ALPHA) * raw_error
         d_error = error - self.prev_error
+
         self.prev_error = error
+        self.prev_smooth_error = error
 
-        angular_z = float(np.clip(-(KP * error + KD * d_error), -MAX_ANGULAR, MAX_ANGULAR))
+        angular_z = -(KP * error + KD * d_error)
 
-        if special_zone:
-            angular_z = float(np.clip(angular_z * 1.20, -MAX_ANGULAR, MAX_ANGULAR))
+        if turn_state == "approach_turn":
+            angular_z *= 1.08
+            base_speed = LINEAR_SPEED * APPROACH_SPEED_SCALE
+            mode = "approach"
+        elif turn_state in ("prepare_turn", "turning", "commit_turn"):
+            angular_z *= 1.18
+            base_speed = LINEAR_SPEED * TURN_SPEED_SCALE
+            mode = "turn"
+        elif turn_state != "follow":
+            angular_z *= 1.10
             base_speed = LINEAR_SPEED * JUNCTION_SPEED_SCALE
             mode = "junction"
         else:
             base_speed = LINEAR_SPEED
             mode = "follow"
 
-        linear_x = float(base_speed * max(0.35, 1.0 - abs(error) * 0.7))
+        angular_z = float(np.clip(angular_z, -MAX_ANGULAR, MAX_ANGULAR))
+
+        delta = angular_z - self.prev_angular_z
+        delta = float(np.clip(delta, -MAX_ANGULAR_STEP, MAX_ANGULAR_STEP))
+        angular_z = float(np.clip(self.prev_angular_z + delta, -MAX_ANGULAR, MAX_ANGULAR))
+        self.prev_angular_z = angular_z
+
+        ae = abs(error)
+        if turn_state in ("prepare_turn", "turning", "commit_turn"):
+            if ae < 0.10:
+                linear_scale = 0.74
+            elif ae < 0.20:
+                linear_scale = 0.60
+            elif ae < 0.30:
+                linear_scale = 0.48
+            else:
+                linear_scale = 0.38
+        else:
+            if ae < 0.08:
+                linear_scale = 1.00
+            elif ae < 0.18:
+                linear_scale = 0.82
+            elif ae < 0.30:
+                linear_scale = 0.64
+            else:
+                linear_scale = 0.46
+
+        linear_x = float(base_speed * linear_scale)
+        action_label = self.compute_action_label(error)
 
         return {
             "error": float(error),
+            "error_px": int(error_px),
             "linear_x": linear_x,
             "angular_z": angular_z,
             "mode": mode,
+            "action_label": action_label,
         }
 
     def draw_segments(self, roi, segs, y, color_line, color_dot):
@@ -352,50 +465,81 @@ class LineTrackingServer:
         roi = annotated[roi_start:h, :]
 
         mask = build_mask(roi)
-
         choice_info = self.choose_target_point(mask, self.turn_choice)
 
         raw_target_x = choice_info["target_x"]
         raw_target_y = choice_info["target_y"]
         junction_detected = choice_info["junction"]
         cross_detected = choice_info["cross"]
+        approach_detected = choice_info["approach"]
+
         seg_top = choice_info["seg_top"]
         seg_mid = choice_info["seg_mid"]
         seg_bottom = choice_info["seg_bottom"]
+
         base_center = choice_info["base_center"]
         y_top = choice_info["y_top"]
         y_mid = choice_info["y_mid"]
         y_bottom = choice_info["y_bottom"]
         image_center = choice_info["image_center"]
+        state_hint = choice_info["state_hint"]
+
+        if approach_detected and self.turn_choice in ("left", "right"):
+            self.approach_hold_frames = APPROACH_HOLD_FRAMES
+        else:
+            self.approach_hold_frames = max(0, self.approach_hold_frames - 1)
 
         if junction_detected:
             self.junction_hold_frames = JUNCTION_HOLD_FRAMES
         else:
             self.junction_hold_frames = max(0, self.junction_hold_frames - 1)
-            if self.junction_hold_frames == 0:
+
+        if state_hint == "turning" and self.turn_choice in ("left", "right"):
+            self.commit_turn_frames = max(self.commit_turn_frames, COMMIT_TURN_FRAMES)
+
+        if self.commit_turn_frames > 0:
+            self.commit_turn_frames -= 1
+
+        if self.turn_choice in ("left", "right"):
+            if state_hint in ("approach_turn", "prepare_turn", "turning"):
+                self.turn_state = state_hint
+            elif self.commit_turn_frames > 0 and state_hint == "follow":
+                self.turn_state = "commit_turn"
+            elif self.junction_hold_frames == 0 and self.approach_hold_frames == 0 and self.commit_turn_frames == 0:
+                self.turn_state = "follow"
+        else:
+            if self.junction_hold_frames == 0 and self.approach_hold_frames == 0 and self.commit_turn_frames == 0:
                 self.turn_state = "follow"
 
-        effective_special = junction_detected or (self.junction_hold_frames > 0)
+        effective_special = (
+            junction_detected
+            or cross_detected
+            or (self.approach_hold_frames > 0)
+            or (self.junction_hold_frames > 0)
+            or (self.commit_turn_frames > 0 and self.turn_choice in ("left", "right"))
+        )
+
         self.waiting_at_junction = effective_special
 
-        smooth_target_x, smooth_target_y = self.smooth_target(
-            raw_target_x, raw_target_y, effective_special
-        )
+        smooth_target_x, smooth_target_y = self.smooth_target(raw_target_x, raw_target_y, self.turn_state)
 
         result = {
             "found": False,
             "junction": effective_special,
             "cross": cross_detected,
+            "approach": approach_detected or (self.approach_hold_frames > 0),
             "waiting_at_junction": effective_special,
             "turn_choice": self.turn_choice,
             "target_x": None,
             "target_y": None,
             "error": 0.0,
+            "error_px": 0,
             "linear_x": 0.0,
             "angular_z": 0.0,
             "base_center": int(base_center),
             "mode": "search",
             "turn_state": self.turn_state,
+            "action_label": "STOP",
         }
 
         cv2.rectangle(annotated, (0, roi_start), (w, h), (255, 255, 0), 2)
@@ -412,22 +556,25 @@ class LineTrackingServer:
         cv2.line(roi, (image_center, 0), (image_center, roi.shape[0]), (255, 0, 0), 2)
 
         if smooth_target_x is not None and smooth_target_y is not None:
-            control = self.compute_control(roi.shape[1], smooth_target_x, effective_special)
+            control = self.compute_control(roi.shape[1], smooth_target_x, self.turn_state)
 
             result = {
                 "found": True,
                 "junction": effective_special,
                 "cross": cross_detected,
+                "approach": approach_detected or (self.approach_hold_frames > 0),
                 "waiting_at_junction": effective_special,
                 "turn_choice": self.turn_choice,
                 "target_x": int(smooth_target_x),
                 "target_y": int(smooth_target_y + roi_start),
                 "error": control["error"],
+                "error_px": control["error_px"],
                 "linear_x": control["linear_x"],
                 "angular_z": control["angular_z"],
                 "base_center": int(base_center),
                 "mode": control["mode"],
                 "turn_state": self.turn_state,
+                "action_label": control["action_label"],
             }
 
             if raw_target_x is not None and raw_target_y is not None:
@@ -438,24 +585,64 @@ class LineTrackingServer:
 
             cv2.putText(
                 annotated,
-                f"FOUND | err={control['error']:.3f} lin={control['linear_x']:.3f} ang={control['angular_z']:.3f}",
+                f"FOUND | err={control['error']:.3f} err_px={control['error_px']} lin={control['linear_x']:.3f} ang={control['angular_z']:.3f}",
                 (10, 30),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.65,
+                0.60,
                 (0, 255, 0),
                 2,
             )
             cv2.putText(
                 annotated,
-                f"target=({smooth_target_x},{smooth_target_y}) cross={cross_detected} state={self.turn_state}",
+                f"target=({smooth_target_x},{smooth_target_y}) action={control['action_label']} state={self.turn_state}",
                 (10, 60),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.65,
+                0.60,
                 (0, 255, 255),
                 2,
             )
+
+        elif self.commit_turn_frames > 0 and self.turn_choice in ("left", "right"):
+            self.prev_error = 0.0
+            self.prev_smooth_error = 0.0
+            self.turn_state = "commit_turn"
+
+            forced_angular = -0.42 if self.turn_choice == "right" else 0.42
+            forced_linear = LINEAR_SPEED * TURN_SPEED_SCALE * COMMIT_LINEAR_SCALE
+
+            result = {
+                "found": True,
+                "junction": True,
+                "cross": cross_detected,
+                "approach": True,
+                "waiting_at_junction": True,
+                "turn_choice": self.turn_choice,
+                "target_x": None,
+                "target_y": None,
+                "error": 0.0,
+                "error_px": 0,
+                "linear_x": float(forced_linear),
+                "angular_z": float(forced_angular),
+                "base_center": int(base_center),
+                "mode": "commit_turn",
+                "turn_state": self.turn_state,
+                "action_label": "COMMIT_RIGHT" if self.turn_choice == "right" else "COMMIT_LEFT",
+            }
+
+            cv2.putText(
+                annotated,
+                "TEMP LOST | COMMIT TURN",
+                (10, 30),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.8,
+                (0, 165, 255),
+                2,
+            )
+
         else:
             self.prev_error = 0.0
+            self.prev_smooth_error = 0.0
+            self.prev_angular_z = 0.0
             cv2.putText(
                 annotated,
                 "LINE NOT FOUND",

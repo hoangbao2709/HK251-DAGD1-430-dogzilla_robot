@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Line Tracking Web</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #0f1117;
+      color: #fff;
+    }
+    .wrap {
+      max-width: 1500px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    h1 {
+      margin: 0 0 16px;
+      font-size: 28px;
+    }
+    .topbar {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+    .card {
+      background: #171b24;
+      border: 1px solid #2a3242;
+      border-radius: 16px;
+      padding: 16px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 16px;
+    }
+    .video-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .video-box img {
+      width: 100%;
+      border-radius: 12px;
+      border: 1px solid #2a3242;
+      background: #000;
+    }
+    .video-box h3 {
+      margin: 0 0 10px;
+      font-size: 16px;
+      color: #9ecbff;
+    }
+    .btns {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+    button {
+      background: #232b3b;
+      color: #fff;
+      border: 1px solid #33405a;
+      padding: 12px 14px;
+      border-radius: 10px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    button:hover {
+      background: #2d3850;
+    }
+    .primary { background: #0d6efd; border-color: #0d6efd; }
+    .danger { background: #dc3545; border-color: #dc3545; }
+    .success { background: #198754; border-color: #198754; }
+    .yellow { background: #8a6d00; border-color: #8a6d00; }
+
+    .info p {
+      margin: 8px 0;
+      color: #d6dbe6;
+    }
+    .row {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    input {
+      width: 100%;
+      padding: 10px;
+      border-radius: 10px;
+      border: 1px solid #33405a;
+      background: #0f1117;
+      color: #fff;
+    }
+    .footer-note {
+      margin-top: 14px;
+      font-size: 13px;
+      color: #9aa5b5;
+    }
+    @media (max-width: 1100px) {
+      .grid { grid-template-columns: 1fr; }
+      .video-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Line Tracking Web Dashboard</h1>
+
+    <div class="topbar">
+      <div class="card" style="flex:1">
+        <strong>Robot Base URL:</strong>
+        <div style="display:flex; gap:10px; margin-top:10px;">
+          <input id="robotBase" value="http://10.28.128.167:9000" />
+          <button onclick="saveConfig()">Lưu URL</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <div class="video-grid">
+          <div class="video-box">
+            <h3>Processed Frame</h3>
+            <img src="/stream/processed" alt="processed"/>
+          </div>
+          <div class="video-box">
+            <h3>Binary Mask</h3>
+            <img src="/stream/mask" alt="mask"/>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Trạng thái</h3>
+        <div class="info">
+          <p><strong>Status:</strong> <span id="status">...</span></p>
+          <p><strong>FPS:</strong> <span id="fps">0</span></p>
+          <p><strong>Track:</strong> <span id="track">false</span></p>
+          <p><strong>Circle:</strong> <span id="circle">x=0 y=0 r=0</span></p>
+          <p><strong>z_pid:</strong> <span id="zpid">0</span></p>
+        </div>
+
+        <h3>Tracking</h3>
+        <div class="btns" style="margin-bottom:16px;">
+          <button class="success" onclick="sendAction('start')">Start</button>
+          <button class="danger" onclick="sendAction('stop')">Stop</button>
+          <button class="yellow" onclick="sendAction('reset')">Reset</button>
+          <button onclick="sendAction('identify')">Identify</button>
+          <button onclick="sendAction('pace_slow')">Pace Slow</button>
+          <button onclick="refreshState()">Refresh</button>
+        </div>
+
+        <h3>Điều khiển tay</h3>
+        <div class="btns">
+          <button onclick="sendAction('forward')">Forward</button>
+          <button onclick="sendAction('back')">Back</button>
+          <button onclick="sendAction('left')">Left</button>
+          <button onclick="sendAction('right')">Right</button>
+          <button onclick="sendAction('turnleft')">Turn Left</button>
+          <button onclick="sendAction('turnright')">Turn Right</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px;">
+      <h3>HSV chỉnh trực tiếp trên web</h3>
+      <div class="row">
+        <div class="field">
+          <label>H min</label>
+          <input id="h_min" type="number" min="0" max="255">
+        </div>
+        <div class="field">
+          <label>H max</label>
+          <input id="h_max" type="number" min="0" max="255">
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label>S min</label>
+          <input id="s_min" type="number" min="0" max="255">
+        </div>
+        <div class="field">
+          <label>S max</label>
+          <input id="s_max" type="number" min="0" max="255">
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label>V min</label>
+          <input id="v_min" type="number" min="0" max="255">
+        </div>
+        <div class="field">
+          <label>V max</label>
+          <input id="v_max" type="number" min="0" max="255">
+        </div>
+      </div>
+
+      <button class="primary" onclick="saveHSV()">Lưu HSV</button>
+      <div class="footer-note">
+        Nếu bạn đã có sẵn <code>LineFollowHSV.text</code> thì web sẽ tự nạp lên.
+      </div>
+    </div>
+  </div>
+
+  <script>
+    async function sendAction(action) {
+      await fetch('/api/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action })
+      });
+      refreshState();
+    }
+
+    async function saveHSV() {
+      const payload = {
+        h_min: +document.getElementById('h_min').value,
+        s_min: +document.getElementById('s_min').value,
+        v_min: +document.getElementById('v_min').value,
+        h_max: +document.getElementById('h_max').value,
+        s_max: +document.getElementById('s_max').value,
+        v_max: +document.getElementById('v_max').value,
+      };
+
+      await fetch('/api/hsv', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      refreshState();
+    }
+
+    async function saveConfig() {
+      const robot_base_url = document.getElementById('robotBase').value.trim();
+      await fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ robot_base_url })
+      });
+      refreshState();
+    }
+
+    async function refreshState() {
+      const res = await fetch('/api/state');
+      const data = await res.json();
+
+      document.getElementById('status').innerText = data.status;
+      document.getElementById('fps').innerText = Number(data.fps || 0).toFixed(1);
+      document.getElementById('track').innerText = String(data.track_enabled);
+      document.getElementById('circle').innerText =
+        `x=${data.circle.x} y=${data.circle.y} r=${data.circle.r}`;
+      document.getElementById('zpid').innerText = parseInt(data.z_pid || 0);
+
+      document.getElementById('h_min').value = data.hsv.h_min;
+      document.getElementById('s_min').value = data.hsv.s_min;
+      document.getElementById('v_min').value = data.hsv.v_min;
+      document.getElementById('h_max').value = data.hsv.h_max;
+      document.getElementById('s_max').value = data.hsv.s_max;
+      document.getElementById('v_max').value = data.hsv.v_max;
+    }
+
+    refreshState();
+    setInterval(refreshState, 1000);
+  </script>
+</body>
+</html>
