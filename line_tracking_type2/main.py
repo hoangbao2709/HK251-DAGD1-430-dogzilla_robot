@@ -6,7 +6,7 @@ from line_error import compute_line_errors
 
 
 def main():
-    cap = cv2.VideoCapture(1)
+    cap = cv2.VideoCapture("http://192.168.1.6:9000/camera")
 
     if not cap.isOpened():
         print("Khong mo duoc camera")

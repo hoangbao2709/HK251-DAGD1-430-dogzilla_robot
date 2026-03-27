@@ -5,37 +5,37 @@ from typing import Optional, Dict, Any
 class RobotAPIClient:
     def __init__(self, base_url: str, timeout: float = 1.5):
         self.base_url = base_url.rstrip("/")
-        self.timeout = timeout
+        self.timeout = float(timeout)
         self.session = requests.Session()
 
         self.last_command: Optional[str] = None
         self.last_payload: Optional[Dict[str, Any]] = None
-        self.current_speed_mode: str = "normal"
+        self.last_drive_payload: Optional[Dict[str, float]] = None
+        self.current_speed_mode: str = "slow"
 
         self.body_state: Dict[str, float] = {
             "tx": 0.0,
             "ty": 0.0,
-            "tz": 0.0,
+            "tz": 75.0,
             "rx": 0.0,
-            "ry": 0.0,
+            "ry": 18.0,
             "rz": 0.0,
         }
 
-    def _post_control(self, payload: Dict[str, Any]) -> bool:
-        url = f"{self.base_url}/control"
+    def _post_json(self, path: str, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        url = f"{self.base_url}{path}"
+        data = payload or {}
         try:
-            resp = self.session.post(url, json=payload, timeout=self.timeout)
-            ok = resp.ok
-            text = ""
+            resp = self.session.post(url, json=data, timeout=self.timeout)
             try:
-                text = resp.text[:200]
+                body = resp.json()
             except Exception:
-                pass
-            print(f"[RobotAPI] POST {url} {payload} -> {resp.status_code} {text}")
-            return ok
+                body = {"raw_text": resp.text[:300]}
+            print(f"[RobotAPI] POST {url} {data} -> {resp.status_code} {body}")
+            return {"ok": bool(resp.ok), "status_code": resp.status_code, "data": body}
         except requests.RequestException as e:
-            print(f"[RobotAPI] control error: {e}")
-            return False
+            print(f"[RobotAPI] request error: {e}")
+            return {"ok": False, "status_code": 0, "data": {"error": str(e)}}
 
     def send_command(self, command: str, force: bool = False, **extra) -> bool:
         payload = {"command": command}
@@ -44,13 +44,31 @@ class RobotAPIClient:
         if not force and self.last_command == command and self.last_payload == payload:
             return True
 
-        ok = self._post_control(payload)
-        if ok:
+        result = self._post_json("/control", payload)
+        if result["ok"]:
             self.last_command = command
             self.last_payload = payload
-        return ok
+        return bool(result["ok"])
+
+    def drive(self, linear_x: float, angular_z: float, force: bool = False) -> bool:
+        payload = {
+            "linear_x": float(linear_x),
+            "angular_z": float(angular_z),
+        }
+
+        if not force and self.last_drive_payload == payload:
+            return True
+
+        result = self._post_json("/drive", payload)
+        if result["ok"]:
+            self.last_drive_payload = payload
+        return bool(result["ok"])
 
     def stop(self, force: bool = False) -> bool:
+        self.last_drive_payload = None
+        if force:
+            result = self._post_json("/stop", {})
+            return bool(result["ok"])
         return self.send_command("stop", force=force)
 
     def forward(self) -> bool:
@@ -95,7 +113,6 @@ class RobotAPIClient:
         force: bool = False,
     ) -> bool:
         payload = dict(self.body_state)
-
         if tx is not None:
             payload["tx"] = float(tx)
         if ty is not None:
@@ -114,11 +131,24 @@ class RobotAPIClient:
             self.body_state = payload
         return ok
 
-    def set_translation_z(self, z_value: float, force: bool = False) -> bool:
-        return self.body_adjust(tz=z_value, force=force)
+    def set_body_pose(self, translation_z: float, attitude_pitch: float, force: bool = False) -> bool:
+        payload = {
+            "translation_z": float(translation_z),
+            "attitude_pitch": float(attitude_pitch),
+        }
+        result = self._post_json("/pose", payload)
+        if result["ok"]:
+            self.body_state["tz"] = float(translation_z)
+            self.body_state["ry"] = float(attitude_pitch)
+            return True
 
-    def set_attitude_pitch(self, pitch_value: float, force: bool = False) -> bool:
-        return self.body_adjust(ry=pitch_value, force=force)
+        body = result.get("data", {}) or {}
+        if body.get("error") == "pose locked":
+            if "translation_z" in body:
+                self.body_state["tz"] = float(body["translation_z"])
+            if "attitude_pitch" in body:
+                self.body_state["ry"] = float(body["attitude_pitch"])
+        return False
 
     def get_body_state(self) -> Dict[str, float]:
         return dict(self.body_state)

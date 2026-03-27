@@ -2,7 +2,7 @@ import requests
 
 
 class RobotAPI:
-    def __init__(self, base_url="http://10.28.129.110:8000", timeout=0.2):
+    def __init__(self, base_url="http://192.168.1.6:8000", timeout=0.2):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
 
