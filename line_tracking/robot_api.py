@@ -11,15 +11,42 @@ class RobotAPIClient:
         self.last_command: Optional[str] = None
         self.last_payload: Optional[Dict[str, Any]] = None
         self.last_drive_payload: Optional[Dict[str, float]] = None
-        self.current_speed_mode: str = "slow"
+        self.current_speed_mode: str = "normal"
 
         self.body_state: Dict[str, float] = {
             "tx": 0.0,
             "ty": 0.0,
             "tz": 75.0,
             "rx": 0.0,
-            "ry": 18.0,
+            "ry": 15.0,
             "rz": 0.0,
+        }
+
+        self.manual_presets = {
+            "slow": {
+                "forward": {"linear_x": 0.030, "angular_z": 0.0},
+                "back": {"linear_x": -0.025, "angular_z": 0.0},
+                "left": {"linear_x": 0.0, "angular_z": 0.18},
+                "right": {"linear_x": 0.0, "angular_z": -0.18},
+                "turnleft": {"linear_x": 0.0, "angular_z": 0.32},
+                "turnright": {"linear_x": 0.0, "angular_z": -0.32},
+            },
+            "normal": {
+                "forward": {"linear_x": 0.050, "angular_z": 0.0},
+                "back": {"linear_x": -0.040, "angular_z": 0.0},
+                "left": {"linear_x": 0.0, "angular_z": 0.24},
+                "right": {"linear_x": 0.0, "angular_z": -0.24},
+                "turnleft": {"linear_x": 0.0, "angular_z": 0.42},
+                "turnright": {"linear_x": 0.0, "angular_z": -0.42},
+            },
+            "high": {
+                "forward": {"linear_x": 0.065, "angular_z": 0.0},
+                "back": {"linear_x": -0.050, "angular_z": 0.0},
+                "left": {"linear_x": 0.0, "angular_z": 0.30},
+                "right": {"linear_x": 0.0, "angular_z": -0.30},
+                "turnleft": {"linear_x": 0.0, "angular_z": 0.52},
+                "turnright": {"linear_x": 0.0, "angular_z": -0.52},
+            },
         }
 
     def _post_json(self, path: str, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -52,8 +79,8 @@ class RobotAPIClient:
 
     def drive(self, linear_x: float, angular_z: float, force: bool = False) -> bool:
         payload = {
-            "linear_x": float(linear_x),
-            "angular_z": float(angular_z),
+            "linear_x": round(float(linear_x), 4),
+            "angular_z": round(float(angular_z), 4),
         }
 
         if not force and self.last_drive_payload == payload:
@@ -66,28 +93,37 @@ class RobotAPIClient:
 
     def stop(self, force: bool = False) -> bool:
         self.last_drive_payload = None
-        if force:
-            result = self._post_json("/stop", {})
-            return bool(result["ok"])
-        return self.send_command("stop", force=force)
+        result = self._post_json("/stop", {})
+        return bool(result["ok"])
+
+    def _drive_preset(self, name: str) -> bool:
+        mode = self.current_speed_mode if self.current_speed_mode in self.manual_presets else "normal"
+        preset = self.manual_presets[mode].get(name)
+        if preset is None:
+            return False
+        return self.drive(
+            linear_x=preset["linear_x"],
+            angular_z=preset["angular_z"],
+            force=True,
+        )
 
     def forward(self) -> bool:
-        return self.send_command("forward")
+        return self._drive_preset("forward")
 
     def back(self) -> bool:
-        return self.send_command("back")
+        return self._drive_preset("back")
 
     def left(self) -> bool:
-        return self.send_command("left")
+        return self._drive_preset("left")
 
     def right(self) -> bool:
-        return self.send_command("right")
+        return self._drive_preset("right")
 
     def turnleft(self) -> bool:
-        return self.send_command("turnleft")
+        return self._drive_preset("turnleft")
 
     def turnright(self) -> bool:
-        return self.send_command("turnright")
+        return self._drive_preset("turnright")
 
     def set_speed_mode(self, mode: str, force: bool = False) -> bool:
         mode = str(mode).strip().lower()

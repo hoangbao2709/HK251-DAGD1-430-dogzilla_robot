@@ -18,7 +18,7 @@ class MissionManager:
         self.thread: Optional[threading.Thread] = None
         self.lock = threading.Lock()
 
-        self.enabled = True
+        self.enabled = False
         self.loop_dt = 0.06
 
         self.target: Optional[str] = None
@@ -38,11 +38,11 @@ class MissionManager:
 
         self.speed_mode = str(DEFAULT_SPEED_MODE).lower().strip()
         if self.speed_mode not in {"slow", "normal", "high"}:
-            self.speed_mode = "slow"
+            self.speed_mode = "normal"
         self.robot.set_speed_mode(self.speed_mode, force=True)
 
         self.translation_z = 75.0
-        self.attitude_pitch = 18.0
+        self.attitude_pitch = 15.0
         self.robot.set_body_pose(self.translation_z, self.attitude_pitch, force=True)
 
         self.drive_linear_x = 0.0
@@ -72,14 +72,18 @@ class MissionManager:
 
     def enable(self):
         with self.lock:
+            if not self.target:
+                self.enabled = False
+                self.status = "idle"
+                return
             self.enabled = True
-            self.status = "running" if self.target else "idle"
+            self.status = "running"
         print("[MissionManager] enabled")
 
     def disable(self):
         with self.lock:
             self.enabled = False
-            self.status = "paused" if self.target else "idle"
+            self.status = "ready" if self.target else "idle"
         self._send_drive(0.0, 0.0, force=True)
         self.robot.stop(force=True)
         self.current_command = "stop"
@@ -246,11 +250,21 @@ class MissionManager:
         turn_state = str(result.get("turn_state", "follow"))
         turn_choice = str(result.get("turn_choice", "straight"))
         confidence = float(result.get("confidence", 0.0))
+        action_label = str(result.get("action_label", "STOP"))
 
         if not found:
             self.not_found_frames += 1
+
+            if action_label == "SEARCH_LEFT":
+                return 0.0, 0.24, "search_left"
+            if action_label == "SEARCH_RIGHT":
+                return 0.0, -0.24, "search_right"
+            if action_label == "MARK_TIME":
+                return 0.0, 0.0, "mark_time"
+
             if self.not_found_frames >= self.max_not_found_frames:
                 return 0.0, 0.0, "stop_lost"
+
             return self.drive_linear_x * 0.65, self.drive_angular_z * 0.65, "hold_lost"
 
         self.not_found_frames = 0
@@ -260,6 +274,38 @@ class MissionManager:
 
         if confidence > 0.0:
             lin *= min(1.0, 0.45 + confidence)
+
+        if action_label == "STRAIGHT":
+            ang = 0.0 if abs(ang) < 0.03 else ang
+            lin = max(lin, 0.040)
+
+        elif action_label in {"LEFT_SHIFT_SOFT", "RIGHT_SHIFT_SOFT"}:
+            if action_label == "LEFT_SHIFT_SOFT":
+                ang = max(ang, 0.08)
+            else:
+                ang = min(ang, -0.08)
+            lin = max(lin, 0.038)
+
+        elif action_label in {"LEFT_SHIFT_HARD", "RIGHT_SHIFT_HARD"}:
+            if action_label == "LEFT_SHIFT_HARD":
+                ang = max(ang, 0.15)
+            else:
+                ang = min(ang, -0.15)
+            lin = min(max(lin, 0.028), 0.038)
+
+        elif action_label in {"TURN_LEFT_SOFT", "TURN_RIGHT_SOFT"}:
+            if action_label == "TURN_LEFT_SOFT":
+                ang = max(ang, 0.24)
+            else:
+                ang = min(ang, -0.24)
+            lin = min(lin, 0.026)
+
+        elif action_label in {"TURN_LEFT_HARD", "TURN_RIGHT_HARD", "COMMIT_LEFT", "COMMIT_RIGHT"}:
+            if action_label in {"TURN_LEFT_HARD", "COMMIT_LEFT"}:
+                ang = max(ang, 0.36)
+            else:
+                ang = min(ang, -0.36)
+            lin = min(lin, 0.018 if action_label.startswith("TURN_") else 0.024)
 
         if turn_state in {"prepare_turn", "turning", "commit_turn"}:
             lin = min(lin, 0.032)
@@ -279,7 +325,7 @@ class MissionManager:
         if lin < 0.012:
             lin = 0.0
 
-        return lin, ang, label
+        return float(lin), float(ang), label
 
     def _send_drive(self, linear_x: float, angular_z: float, force: bool = False):
         payload = (round(float(linear_x), 4), round(float(angular_z), 4))
@@ -300,6 +346,7 @@ class MissionManager:
             try:
                 if not self.enabled:
                     self._send_drive(0.0, 0.0, force=True)
+                    self.current_command = "stop"
                     time.sleep(self.loop_dt)
                     continue
 

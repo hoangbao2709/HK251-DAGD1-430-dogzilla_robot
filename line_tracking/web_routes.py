@@ -940,8 +940,8 @@ def register_routes(app, tracker, mission_manager):
         data = request.get_json(silent=True) or {}
 
         try:
-            attitude_pitch = float(data.get("attitude_pitch", 0))
-            translation_z = float(data.get("translation_z", 95))
+            attitude_pitch = float(data.get("attitude_pitch", 15))
+            translation_z = float(data.get("translation_z", 75))
         except Exception:
             return jsonify({"ok": False, "error": "attitude_pitch and translation_z must be numeric"}), 400
 

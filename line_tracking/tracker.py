@@ -95,7 +95,7 @@ class LineTrackingServer:
             "base_center": None,
             "mode": "idle",
             "turn_state": self.turn_state,
-            "action_label": "STOP",
+            "action_label": self.compute_action_label(0.0, line_found=False),
             "confidence": 0.0,
         }
 
@@ -478,24 +478,48 @@ class LineTrackingServer:
         ry = int(np.clip(self.last_good_target_y + self.prev_target_vy * min(self.line_lost_frames, 4), 0, roi_h - 1))
         return rx, ry
 
-    def compute_action_label(self, error):
+
+    def compute_action_label(self, error, line_found=True):
+        if not line_found:
+            if self.line_lost_frames <= 3:
+                return "STOP"
+            if self.line_lost_frames <= 6:
+                return "MARK_TIME"
+            if self.turn_choice == "right":
+                return "SEARCH_RIGHT"
+            if self.turn_choice == "left":
+                return "SEARCH_LEFT"
+            return "SEARCH_LEFT" if (self.line_lost_frames % 2 == 0) else "SEARCH_RIGHT"
+
         ae = abs(error)
+
         if ae < 0.05:
             return "STRAIGHT"
-        if error > 0.24:
-            return "RIGHT_HARD"
-        if error > 0.10:
-            return "RIGHT_SOFT"
-        if error < -0.24:
-            return "LEFT_HARD"
-        if error < -0.10:
-            return "LEFT_SOFT"
+
+        if 0.05 <= error < 0.12:
+            return "RIGHT_SHIFT_SOFT"
+        if -0.12 < error <= -0.05:
+            return "LEFT_SHIFT_SOFT"
+
+        if 0.12 <= error < 0.22:
+            return "RIGHT_SHIFT_HARD"
+        if -0.22 < error <= -0.12:
+            return "LEFT_SHIFT_HARD"
+
+        if 0.22 <= error < 0.32:
+            return "TURN_RIGHT_SOFT"
+        if -0.32 < error <= -0.22:
+            return "TURN_LEFT_SOFT"
+
+        if error >= 0.32:
+            return "TURN_RIGHT_HARD"
+        if error <= -0.32:
+            return "TURN_LEFT_HARD"
+
         return "STRAIGHT"
 
     def compute_control(self, roi_width, target_x, turn_state):
         center_x = roi_width / 2.0
-
-        # luôn khởi tạo error_px trước khi dùng
         error_px = int(target_x - center_x)
 
         if abs(error_px) <= ERROR_DEADBAND_PX:
@@ -557,16 +581,57 @@ class LineTrackingServer:
                 linear_scale = 0.12
 
         linear_x = float(base_speed * linear_scale)
-        action_label = self.compute_action_label(error)
+        action_label = self.compute_action_label(error, line_found=True)
+
+        if action_label == "STRAIGHT":
+            angular_z = 0.0 if abs(angular_z) < 0.03 else angular_z
+            linear_x = max(linear_x, LINEAR_SPEED * 0.72)
+
+        elif action_label in ("LEFT_SHIFT_SOFT", "RIGHT_SHIFT_SOFT"):
+            min_turn = 0.08
+            max_turn = 0.14
+            if action_label == "LEFT_SHIFT_SOFT":
+                angular_z = float(np.clip(max(angular_z, min_turn), min_turn, max_turn))
+            else:
+                angular_z = float(np.clip(min(angular_z, -min_turn), -max_turn, -min_turn))
+            linear_x = max(linear_x, base_speed * 0.70)
+
+        elif action_label in ("LEFT_SHIFT_HARD", "RIGHT_SHIFT_HARD"):
+            min_turn = 0.14
+            max_turn = 0.22
+            if action_label == "LEFT_SHIFT_HARD":
+                angular_z = float(np.clip(max(angular_z, min_turn), min_turn, max_turn))
+            else:
+                angular_z = float(np.clip(min(angular_z, -min_turn), -max_turn, -min_turn))
+            linear_x = min(max(linear_x, base_speed * 0.45), base_speed * 0.70)
+
+        elif action_label in ("TURN_LEFT_SOFT", "TURN_RIGHT_SOFT"):
+            min_turn = 0.22
+            max_turn = 0.32
+            if action_label == "TURN_LEFT_SOFT":
+                angular_z = float(np.clip(max(angular_z, min_turn), min_turn, max_turn))
+            else:
+                angular_z = float(np.clip(min(angular_z, -min_turn), -max_turn, -min_turn))
+            linear_x = min(linear_x, base_speed * 0.40)
+
+        elif action_label in ("TURN_LEFT_HARD", "TURN_RIGHT_HARD"):
+            min_turn = 0.34
+            if action_label == "TURN_LEFT_HARD":
+                angular_z = max(angular_z, min_turn)
+            else:
+                angular_z = min(angular_z, -min_turn)
+            angular_z = float(np.clip(angular_z, -MAX_ANGULAR, MAX_ANGULAR))
+            linear_x = min(linear_x, base_speed * 0.20)
 
         return {
             "error": float(error),
             "error_px": int(error_px),
-            "linear_x": linear_x,
-            "angular_z": angular_z,
+            "linear_x": float(linear_x),
+            "angular_z": float(angular_z),
             "mode": mode,
             "action_label": action_label,
         }
+
     def draw_segments(self, roi, segs, y, color_line, color_dot):
         for x1, x2, cx in segs:
             cv2.line(roi, (x1, y), (x2, y), color_line, 3)
@@ -683,7 +748,7 @@ class LineTrackingServer:
             "base_center": int(base_center),
             "mode": "search",
             "turn_state": self.turn_state,
-            "action_label": "STOP",
+            "action_label": self.compute_action_label(0.0, line_found=False),
             "confidence": float(confidence),
         }
 
