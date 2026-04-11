@@ -12,7 +12,9 @@ import base64
 import numpy as np
 from .line_tracking_backend import LineTrackingServer
 line_tracker = LineTrackingServer()
-
+from .services.mcp_voice import process_text_command
+import logging
+logger = logging.getLogger(__name__)
 class CameraProcessView(APIView):
     """
     Lấy frame từ robot hoặc webcam, xử lý line tracking, trả JSON:
@@ -247,3 +249,68 @@ def build_log(robot_id: str, action: str, payload, ok: bool, error: str | None =
         return f"[{ts}] {robot_id} {action} {payload_str} → OK"
     else:
         return f"[{ts}] {robot_id} {action} {payload_str} → ERROR: {error}"
+class TextCommandView(APIView):
+    def post(self, request, *args, **kwargs):
+        robot_addr = (
+            request.data.get("addr")
+            or request.data.get("robot_ip")
+            or request.data.get("robot_addr")
+            or ""
+        ).strip()
+
+        text = (request.data.get("text") or "").strip()
+
+        if not robot_addr:
+            return Response(
+                {
+                    "success": False,
+                    "error": "robot addr is required",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not text:
+            return Response(
+                {
+                    "success": False,
+                    "error": "text is required",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            result = process_text_command(robot_addr=robot_addr, text=text)
+
+            log_line = (
+                f'TEXT_COMMAND {json.dumps({"addr": robot_addr, "text": text}, ensure_ascii=False)} → OK'
+            )
+
+            return Response(
+                {
+                    "success": True,
+                    "robot_addr": robot_addr,
+                    "input_text": text,
+                    "result": result,
+                    "log": log_line,
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        except Exception as e:
+            logger.exception("TextCommandView error")
+
+            log_line = (
+                f'TEXT_COMMAND {json.dumps({"addr": robot_addr, "text": text}, ensure_ascii=False)} '
+                f'→ ERROR: {str(e)}'
+            )
+
+            return Response(
+                {
+                    "success": False,
+                    "robot_addr": robot_addr,
+                    "input_text": text,
+                    "error": str(e),
+                    "log": log_line,
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
