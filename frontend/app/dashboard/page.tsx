@@ -3,6 +3,8 @@
 import React, { useMemo, useState, useEffect } from "react";
 import ConnectionCard from "@/components/ConnectionCard";
 import { useRouter } from "next/navigation";
+import { saveRobotSession } from "./../lib/robotSession";
+import { RobotAPI } from "./../lib/robotApi";
 
 export type Device = {
   id: number;
@@ -13,29 +15,26 @@ export type Device = {
   status: "online" | "offline" | "unknown";
   source?: "manual" | "cloudflare";
 };
-import { RobotAPI } from "./../lib/robotApi";
 
 const BACKEND_BASE =
   process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
-
-// Base cho các API điều khiển robot (Django app "control")
-const CONTROL_BASE = `${BACKEND_BASE}`;
 
 const robotId = "robot-a";
 const DEVICES_COOKIE_KEY = "dogzilla_devices";
 
 // ========================
-// Helpers cookie
+// Helpers cookie cho danh sách device
 // ========================
 function saveDevicesToCookie(devices: Device[]) {
   if (typeof document === "undefined") return;
+
   try {
-    // chỉ lưu device do user tự nhập (manual)
     const manualDevices = devices.filter((d) => d.source !== "cloudflare");
     const raw = JSON.stringify(manualDevices);
+
     document.cookie = `${DEVICES_COOKIE_KEY}=${encodeURIComponent(
       raw
-    )}; path=/; max-age=31536000`;
+    )}; path=/; max-age=31536000; samesite=lax`;
   } catch (err) {
     console.error("Cannot save devices to cookie:", err);
   }
@@ -43,6 +42,7 @@ function saveDevicesToCookie(devices: Device[]) {
 
 function loadDevicesFromCookie(): Device[] | null {
   if (typeof document === "undefined") return null;
+
   try {
     const cookies = document.cookie.split(";").map((c) => c.trim());
     const found = cookies.find((c) => c.startsWith(`${DEVICES_COOKIE_KEY}=`));
@@ -51,25 +51,41 @@ function loadDevicesFromCookie(): Device[] | null {
     const value = decodeURIComponent(found.split("=")[1] || "");
     if (!value) return null;
 
-    const parsed = JSON.parse(value);
-    return parsed as Device[];
+    return JSON.parse(value) as Device[];
   } catch (err) {
     console.error("Cannot parse devices cookie:", err);
     return null;
   }
 }
 
+// Chuẩn hóa addr robot
+function normalizeRobotAddress(raw: string) {
+  const value = raw.trim();
 
+  if (!value) return "";
+
+  // đã có http/https
+  if (value.startsWith("http://") || value.startsWith("https://")) {
+    return value.replace(/\/+$/, "");
+  }
+
+  // có ip:port
+  if (value.includes(":")) {
+    return `http://${value.replace(/\/+$/, "")}`;
+  }
+
+  // chỉ là ip
+  return `http://${value}:9000`;
+}
 
 export default function DashboardPage() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [addr, setAddr] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [isPortrait, setIsPortrait] = useState(false); 
+  const [isPortrait, setIsPortrait] = useState(false);
 
   const router = useRouter();
-
   const canAdd = useMemo(() => addr.trim().length > 0, [addr]);
 
   useEffect(() => {
@@ -90,7 +106,7 @@ export default function DashboardPage() {
     };
   }, []);
 
-  // 1) Load manual devices từ cookie
+  // 1) load manual devices từ cookie
   useEffect(() => {
     const stored = loadDevicesFromCookie();
     if (stored && stored.length > 0) {
@@ -98,35 +114,27 @@ export default function DashboardPage() {
     }
   }, []);
 
-  // 2) Hỏi backend xem robot_url mới nhất là gì (Cloudflare)
+  // 2) hỏi backend lấy robot_url mới nhất từ account
   useEffect(() => {
     if (typeof window === "undefined") return;
 
     async function fetchProfile() {
       try {
-        // lấy token nếu có (nếu chưa làm login thì token có thể null, vẫn chạy bình thường)
         const token = localStorage.getItem("access_token");
         const headers: HeadersInit = {};
+
         if (token) {
           headers["Authorization"] = `Bearer ${token}`;
         }
 
-        const res = await fetch(`${BACKEND_BASE}/api/auth/me/`, {
-          headers,
-        });
-
-        console.log("[me] status =", res.status);
-
+        const res = await fetch(`${BACKEND_BASE}/api/auth/me/`, { headers });
         const json = await res.json().catch(() => null);
-        console.log("[me] json =", json);
 
         if (!res.ok || !json) {
-          // Nếu token sai / hết hạn -> xoá token luôn
           if (res.status === 401 && json?.code === "token_not_valid") {
             localStorage.removeItem("access_token");
             localStorage.removeItem("refresh_token");
           }
-          console.warn("[me] backend returned error, skip cloudflare card");
           return;
         }
 
@@ -134,16 +142,11 @@ export default function DashboardPage() {
         const robotDeviceId =
           (json.robot_device_id as string | null) ?? "rpi5-dogzilla";
 
-        if (!robotUrl) {
-          console.log("[me] No robot_url for this user -> no Cloudflare card");
-          return;
-        }
+        if (!robotUrl) return;
 
-        // lưu vào localStorage để chỗ khác dùng nếu cần
         localStorage.setItem("robot_url", robotUrl);
         localStorage.setItem("robot_device_id", robotDeviceId);
 
-        // cập nhật / tạo card Cloudflare trong danh sách devices
         setDevices((prev) => {
           const cfId = 0;
           const exists = prev.find((d) => d.id === cfId);
@@ -151,17 +154,16 @@ export default function DashboardPage() {
           const cfDevice: Device = {
             id: cfId,
             name: "My Robot (Cloudflare)",
-            ip: robotUrl, // full URL: https://xxx.trycloudflare.com
+            ip: robotUrl,
             battery: exists?.battery ?? 100,
             status: exists?.status ?? "unknown",
             source: "cloudflare",
           };
 
           if (exists) {
-            // update card cũ
             return prev.map((d) => (d.id === cfId ? cfDevice : d));
           }
-          // luôn đưa Cloudflare card lên đầu
+
           return [cfDevice, ...prev];
         });
       } catch (err) {
@@ -172,93 +174,80 @@ export default function DashboardPage() {
     fetchProfile();
   }, []);
 
-  // 3) Mỗi khi devices thay đổi -> lưu lại cookie (chỉ manual)
+  // 3) mỗi khi devices đổi thì lưu lại cookie
   useEffect(() => {
     saveDevicesToCookie(devices);
   }, [devices]);
 
-const handleConnectDevice = async (device: Device) => {
-  if (loading) return;
+  const handleConnectDevice = async (device: Device) => {
+    if (loading) return;
 
-  setErrorMsg(null);
-  setLoading(true);
+    setErrorMsg(null);
+    setLoading(true);
 
-  let dogzillaAddr = device.ip.trim();
+    const dogzillaAddr = normalizeRobotAddress(device.ip);
 
-  // Nếu không phải URL đầy đủ thì coi là IP nội bộ -> thêm http + port 9000
-  if (
-    !dogzillaAddr.startsWith("http://") &&
-    !dogzillaAddr.startsWith("https://")
-  ) {
-    dogzillaAddr = `http://${dogzillaAddr}:9000`;
-  }
+    const isCloudflare =
+      device.source === "cloudflare" ||
+      dogzillaAddr.includes("trycloudflare.com") ||
+      dogzillaAddr.startsWith("https://");
 
-  const isCloudflare =
-    device.source === "cloudflare" ||
-    dogzillaAddr.includes("trycloudflare.com") ||
-    dogzillaAddr.startsWith("https://");
+    try {
+      let connected = false;
+      let newStatus: Device["status"] = "offline";
 
-  try {
-    let connected = false;
-    let newStatus: Device["status"] = "offline";
+      if (isCloudflare) {
+        // kiểm tra trực tiếp
+        const statusUrl = `${dogzillaAddr.replace(/\/+$/, "")}/status`;
+        const resp = await fetch(statusUrl, { cache: "no-store" });
 
-    if (isCloudflare) {
-      // 🔵 Cloudflare: check trực tiếp từ browser
-      const healthUrl = dogzillaAddr.replace(/\/+$/, "") + "/status"; 
-      // nếu robot của bạn dùng /health thì đổi lại chỗ này
+        if (!resp.ok) {
+          throw new Error(`Cloudflare status HTTP ${resp.status}`);
+        }
 
-      const resp = await fetch(healthUrl, { cache: "no-store" });
-      if (!resp.ok) {
-        throw new Error(`Cloudflare status HTTP ${resp.status}`);
+        connected = true;
+        newStatus = "online";
+      } else {
+        // LAN -> nhờ Django connect & lưu addr
+        const res = await RobotAPI.connect(dogzillaAddr);
+        connected = !!res.connected;
+        newStatus = connected ? "online" : "offline";
+
+        if (!connected) {
+          throw new Error(res.error || "Không kết nối được tới robot.");
+        }
       }
 
-      // có thể đọc thêm data nếu cần
-      // const data = await resp.json().catch(() => ({} as any));
-
-      connected = true;
-      newStatus = "online";
-    } else {
-      // 🟢 LAN: để Django kiểm tra & lưu addr
-      const res = await RobotAPI.connect(dogzillaAddr);
-      connected = res.connected;
-      newStatus = connected ? "online" : "offline";
+      setDevices((prev) =>
+        prev.map((d) =>
+          d.id === device.id ? { ...d, status: newStatus } : d
+        )
+      );
 
       if (!connected) {
-        throw new Error(res.error || "Không kết nối được tới robot.");
+        setErrorMsg("Không kết nối được tới robot.");
+        return;
       }
+
+      // QUAN TRỌNG: lưu session robot vào cookie
+      saveRobotSession(dogzillaAddr, robotId);
+
+      // sau đó sang trang control, không cần ?ip=...
+      router.push("/control");
+    } catch (e: any) {
+      console.error("Connect error:", e);
+
+      setDevices((prev) =>
+        prev.map((d) =>
+          d.id === device.id ? { ...d, status: "offline" } : d
+        )
+      );
+
+      setErrorMsg(e?.message || "Không kết nối được tới backend/robot");
+    } finally {
+      setLoading(false);
     }
-
-    // cập nhật trạng thái card
-    setDevices((prev) =>
-      prev.map((d) =>
-        d.id === device.id ? { ...d, status: newStatus } : d
-      )
-    );
-
-    if (!connected) {
-      // đề phòng nhánh nào đó set connected = false
-      setErrorMsg("Không kết nối được tới robot.");
-      return;
-    }
-
-    // thành công -> sang trang điều khiển
-    router.push(`/control?ip=${encodeURIComponent(dogzillaAddr)}`);
-  } catch (e: any) {
-    console.error("Connect error:", e);
-
-    setDevices((prev) =>
-      prev.map((d) =>
-        d.id === device.id ? { ...d, status: "offline" } : d
-      )
-    );
-    setErrorMsg(e?.message || "Không kết nối được tới backend/robot");
-  } finally {
-    setLoading(false);
-  }
-};
-
-
-
+  };
 
   const handleDeleteDevice = (device: Device) => {
     setDevices((prev) => prev.filter((d) => d.id !== device.id));
@@ -281,7 +270,7 @@ const handleConnectDevice = async (device: Device) => {
 
     const nextDevice: Device = {
       id: nextId,
-      name: `Robot ${String.fromCharCode(64 + devices.length + 1)}`, // Robot A/B/C...
+      name: `Robot ${String.fromCharCode(64 + devices.length + 1)}`,
       ip,
       battery: 100,
       status: "unknown",
@@ -294,7 +283,6 @@ const handleConnectDevice = async (device: Device) => {
 
   return (
     <section className="h-full w-full p-4 md:p-6">
-      {/* Thanh nhắc xoay ngang trên điện thoại khi đang cầm dọc */}
       {isPortrait && (
         <div className="mb-3 rounded-xl bg-amber-500/10 border border-amber-400/40 px-3 py-2 text-xs md:text-sm text-amber-200">
           For best control experience, please rotate your phone to{" "}
@@ -302,7 +290,9 @@ const handleConnectDevice = async (device: Device) => {
         </div>
       )}
 
-      <h1 className={`gradient-title mb-6 ${isPortrait? "" : "hidden"}`}>Connection Manager</h1>
+      <h1 className={`gradient-title mb-6 ${isPortrait ? "" : "hidden"}`}>
+        Connection Manager
+      </h1>
 
       <div className="mb-6 flex flex-col sm:flex-row gap-2">
         <input

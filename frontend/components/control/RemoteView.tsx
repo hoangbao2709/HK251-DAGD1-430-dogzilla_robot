@@ -1,4 +1,3 @@
-// components/control/RemoteView.tsx
 "use client";
 
 import {
@@ -8,7 +7,6 @@ import {
   useCallback,
   useMemo,
 } from "react";
-import { useSearchParams } from "next/navigation";
 import { HalfCircleJoystick } from "@/components/HalfCircleJoystick";
 import HeaderControl from "@/components/header_control";
 import MouselookPad from "@/components/MouselookPad";
@@ -18,6 +16,7 @@ import {
   DEFAULT_DOG_SERVER,
   robotId,
 } from "@/app/lib/robotApi";
+import { getRobotSession } from "./../../app/lib/robotSession";
 
 import {
   Panel,
@@ -45,32 +44,12 @@ export default function RemoteView({
   mode: "remote" | "fpv";
   toggleMode: () => void;
 }) {
-  const searchParams = useSearchParams();
-  const ipParam = searchParams.get("ip");
-  const DOG_SERVER = ipParam || DEFAULT_DOG_SERVER;
+  const [dogServer, setDogServer] = useState(DEFAULT_DOG_SERVER);
+  const [selectedRobotId, setSelectedRobotId] = useState(robotId);
 
   const isCheckingRef = useRef(false);
-
-  const lidarUrl = useMemo(() => {
-    try {
-      const url = new URL(DOG_SERVER);
-      const host = url.hostname;
-      const port = url.port;
-
-      const isCloudflare = host.endsWith("trycloudflare.com");
-      if (isCloudflare) return `${url.origin.replace(/\/$/, "")}/lidar/`;
-
-      if (port === "9000" || port === "") {
-        return `${url.protocol}//${host}:8080`;
-      }
-      if (port === "9002") {
-        return `${url.protocol}//${host}:9002/lidar/`;
-      }
-      return `${url.origin.replace(/\/$/, "")}/lidar/`;
-    } catch {
-      return "";
-    }
-  }, [DOG_SERVER]);
+  const hasResetBody = useRef(false);
+  const bodyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [isRunning, setIsRunning] = useState(false);
   const [speed, setSpeed] = useState<"slow" | "normal" | "high">("normal");
@@ -83,6 +62,7 @@ export default function RemoteView({
   const [righting, setRighting] = useState(false);
   const [mouseLook, setMouseLook] = useState(false);
   const [commandLog, setCommandLog] = useState<string[]>([]);
+  const wasConnectedRef = useRef(false);
   const postureBtns = ["Lie_Down", "Stand_Up", "Sit_Down", "Squat", "Crawl"];
   const axisMotionBtns = [
     "Turn_Roll",
@@ -94,15 +74,10 @@ export default function RemoteView({
   const behavior1 = ["Wave_Hand", "Handshake", "Pray", "Stretch", "Swing"];
   const behavior2 = ["Wave_Body", "Handshake", "Pee", "Play_Ball", "Mark_Time"];
 
-  const hasResetBody = useRef(false);
   const [isMobile, setIsMobile] = useState(false);
   const [isPortrait, setIsPortrait] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const appendLog = useCallback((line: string | undefined) => {
-    if (!line) return;
-    setCommandLog(prev => [line, ...prev].slice(0, 50)); 
-  }, []);
-  // body sliders
+
   const [sliders, setSliders] = useState<BodyState>({
     tx: 0,
     ty: 0,
@@ -111,9 +86,7 @@ export default function RemoteView({
     ry: 0,
     rz: 0,
   });
-  const bodyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // joystick state
   const joyRef = useRef<{ vx: number; vy: number; active: boolean }>({
     vx: 0,
     vy: 0,
@@ -122,6 +95,50 @@ export default function RemoteView({
 
   const maxV = 0.25;
   const maxSideV = 0.25;
+
+  const appendLog = useCallback((line: string | undefined) => {
+    if (!line) return;
+    setCommandLog((prev) => [line, ...prev].slice(0, 50));
+  }, []);
+
+  // ==== đọc robot session từ cookie ====
+  useEffect(() => {
+    const session = getRobotSession();
+
+    if (session.ip) {
+      setDogServer(session.ip);
+    } else {
+      setConnectError("Chưa chọn robot. Hãy quay lại Dashboard để Connect.");
+    }
+
+    if (session.robotId) {
+      setSelectedRobotId(session.robotId);
+    }
+  }, []);
+
+  // ==== tính lidar URL từ dogServer ====
+  const lidarUrl = useMemo(() => {
+    try {
+      const url = new URL(dogServer);
+      const host = url.hostname;
+      const port = url.port;
+
+      const isCloudflare = host.endsWith("trycloudflare.com");
+      if (isCloudflare) return `${url.origin.replace(/\/$/, "")}/lidar/`;
+
+      if (port === "9000" || port === "") {
+        return `${url.protocol}//${host}:8080`;
+      }
+
+      if (port === "9002") {
+        return `${url.protocol}//${host}:9002/lidar/`;
+      }
+
+      return `${url.origin.replace(/\/$/, "")}/lidar/`;
+    } catch {
+      return "";
+    }
+  }, [dogServer]);
 
   // ==== responsive ====
   useEffect(() => {
@@ -137,6 +154,7 @@ export default function RemoteView({
     update();
     window.addEventListener("resize", update);
     window.addEventListener("orientationchange", update);
+
     return () => {
       window.removeEventListener("resize", update);
       window.removeEventListener("orientationchange", update);
@@ -174,22 +192,32 @@ export default function RemoteView({
 
   // ==== connect Django -> Dogzilla + lấy stream_url ====
   useEffect(() => {
+    if (!dogServer) return;
+
     let stop = false;
     let iv: ReturnType<typeof setInterval> | null = null;
 
     const checkAndConnect = async () => {
       if (stop) return;
       if (isCheckingRef.current) return;
+
       isCheckingRef.current = true;
 
       try {
-        const res = await RobotAPI.connect(DOG_SERVER);
+        const res = await RobotAPI.connect(dogServer);
         if (stop) return;
 
         if (res?.connected) {
           setConnected(true);
           setConnectError(null);
-          appendLog(`[CONNECT] Connected to ${DOG_SERVER}`);
+
+          // chỉ log khi vừa chuyển từ disconnected -> connected
+          if (!wasConnectedRef.current) {
+            appendLog(`[CONNECT] Connected to ${dogServer}`);
+          }
+
+          wasConnectedRef.current = true;
+
           if (!hasResetBody.current) {
             try {
               await resetBody();
@@ -202,7 +230,9 @@ export default function RemoteView({
           if (!streamUrl) {
             try {
               const f = await RobotAPI.fpv();
-              if (!stop) setStreamUrl(f?.stream_url || null);
+              if (!stop) {
+                setStreamUrl(f?.stream_url || null);
+              }
             } catch (e) {
               console.error("FPV error:", e);
               if (!stop) {
@@ -212,17 +242,23 @@ export default function RemoteView({
           }
         } else {
           setConnected(false);
+
           const msg = res?.error || "Không kết nối được tới Dogzilla server";
-          appendLog(`[CONNECT ERROR] ${msg}`);
-          setConnectError(
-            res?.error || "Không kết nối được tới Dogzilla server"
-          );
+          setConnectError(msg);
+
+          // chỉ log khi vừa chuyển từ connected -> disconnected
+          if (wasConnectedRef.current) {
+            appendLog(`[DISCONNECT] ${msg}`);
+          }
+
+          wasConnectedRef.current = false;
         }
       } catch (e: any) {
         console.error("Connect error:", e);
         if (!stop) {
           setConnected(false);
           setConnectError(e?.message || "Lỗi kết nối");
+          appendLog(`[CONNECT ERROR] ${e?.message || String(e)}`);
         }
       } finally {
         isCheckingRef.current = false;
@@ -237,11 +273,12 @@ export default function RemoteView({
       if (iv) clearInterval(iv);
       onEmergencyStop?.();
     };
-  }, [DOG_SERVER, onEmergencyStop, streamUrl]);
+  }, [dogServer, onEmergencyStop, streamUrl, appendLog]);
 
-  // ==== poll fps từ /status (nếu backend có) ====
+  // ==== poll fps từ backend /status ====
   useEffect(() => {
     let stop = false;
+
     const iv = setInterval(async () => {
       try {
         const s: any = await RobotAPI.status();
@@ -289,11 +326,11 @@ export default function RemoteView({
     }
   }, [isRunning, appendLog]);
 
-
   // ==== stabilizing toggle ====
   const handleToggleStabilizing = useCallback(async () => {
     const next = !stabilizing;
     setStabilizing(next);
+
     try {
       const res: any = await RobotAPI.stabilizingMode(next ? "on" : "off");
       appendLog(
@@ -306,7 +343,6 @@ export default function RemoteView({
       setStabilizing((prev) => !prev);
     }
   }, [stabilizing, appendLog]);
-
 
   // ==== joystick send loop ====
   useEffect(() => {
@@ -336,6 +372,7 @@ export default function RemoteView({
 
   const onJoyRelease = useCallback(async () => {
     joyRef.current = { vx: 0, vy: 0, active: false };
+
     try {
       await RobotAPI.move({
         vx: 0,
@@ -346,11 +383,11 @@ export default function RemoteView({
         rz: 0,
       });
     } catch {
-      /* ignore */
+      // ignore
     }
   }, []);
 
-  // ==== quay trái / phải + stop ====
+  // ==== stop / turn ====
   const stopMove = useCallback(() => {
     RobotAPI.move({ vx: 0, vy: 0, vz: 0, rx: 0, ry: 0, rz: 0 })
       .then((res: any) => {
@@ -359,6 +396,7 @@ export default function RemoteView({
       .catch((e: any) => {
         appendLog(`[MOVE ERROR] stop: ${e?.message || String(e)}`);
       });
+
     setRighting(false);
     setLefting(false);
   }, [appendLog]);
@@ -366,50 +404,53 @@ export default function RemoteView({
   const turnLeft = () => {
     if (lefting) {
       stopMove();
-    } else {
-      RobotAPI.move({
-        vx: 0,
-        vy: 0,
-        vz: 0,
-        rx: 0,
-        ry: 0,
-        rz: +0.8,
-      })
-        .then((res: any) => {
-          appendLog(res?.log || "[MOVE] turn left (rz=+0.8)");
-        })
-        .catch((e: any) => {
-          appendLog(`[MOVE ERROR] left: ${e?.message || String(e)}`);
-        });
-
-      setLefting(true);
-      setRighting(false);
+      return;
     }
+
+    RobotAPI.move({
+      vx: 0,
+      vy: 0,
+      vz: 0,
+      rx: 0,
+      ry: 0,
+      rz: +0.8,
+    })
+      .then((res: any) => {
+        appendLog(res?.log || "[MOVE] turn left (rz=+0.8)");
+      })
+      .catch((e: any) => {
+        appendLog(`[MOVE ERROR] left: ${e?.message || String(e)}`);
+      });
+
+    setLefting(true);
+    setRighting(false);
   };
 
   const turnRight = () => {
     if (righting) {
       stopMove();
-    } else {
-      RobotAPI.move({
-        vx: 0,
-        vy: 0,
-        vz: 0,
-        rx: 0,
-        ry: 0,
-        rz: -0.8,
-      })
-        .then((res: any) => {
-          appendLog(res?.log || "[MOVE] turn right (rz=-0.8)");
-        })
-        .catch((e: any) => {
-          appendLog(`[MOVE ERROR] right: ${e?.message || String(e)}`);
-        });
-
-      setRighting(true);
-      setLefting(false);
+      return;
     }
+
+    RobotAPI.move({
+      vx: 0,
+      vy: 0,
+      vz: 0,
+      rx: 0,
+      ry: 0,
+      rz: -0.8,
+    })
+      .then((res: any) => {
+        appendLog(res?.log || "[MOVE] turn right (rz=-0.8)");
+      })
+      .catch((e: any) => {
+        appendLog(`[MOVE ERROR] right: ${e?.message || String(e)}`);
+      });
+
+    setRighting(true);
+    setLefting(false);
   };
+
   // ==== body adjust ====
   const updateBody = useCallback(
     (partial: Partial<BodyState>) => {
@@ -436,8 +477,7 @@ export default function RemoteView({
     [appendLog]
   );
 
-
-  const resetBody = useCallback(() => {
+  const resetBody = useCallback(async () => {
     const zero: BodyState = {
       tx: 0,
       ty: 0,
@@ -450,20 +490,18 @@ export default function RemoteView({
     if (bodyTimer.current) clearTimeout(bodyTimer.current);
     setSliders(zero);
 
-    RobotAPI.body(zero)
-      .then((res: any) => {
-        appendLog(res?.log || "[BODY] reset to center");
-      })
-      .catch((e: any) => {
-        appendLog(`[BODY ERROR] reset: ${e?.message || String(e)}`);
-      });
+    try {
+      const res: any = await RobotAPI.body(zero);
+      appendLog(res?.log || "[BODY] reset to center");
+    } catch (e: any) {
+      appendLog(`[BODY ERROR] reset: ${e?.message || String(e)}`);
+    }
   }, [appendLog]);
 
-
-  // gamepad điều khiển chung
+  // ==== gamepad ====
   useGamepadMove();
 
-  /* ========== MOBILE LAYOUT ========== */
+  /* ========== MOBILE ========== */
   if (isMobile) {
     return (
       <section className="h-screen w-full bg-slate-50 text-slate-900 dark:bg-[#0c0520] dark:text-white relative">
@@ -486,6 +524,10 @@ export default function RemoteView({
 
               <div className="text-[11px] text-emerald-700 dark:text-emerald-300 mb-1">
                 {connected ? "Robot connected" : "Not connected"}
+              </div>
+
+              <div className="text-[11px] text-white/60 mb-2 break-all">
+                {dogServer}
               </div>
 
               <div className="flex-1 overflow-y-auto space-y-4 pr-1">
@@ -520,6 +562,7 @@ export default function RemoteView({
                   <div className="text-xs mb-2 opacity-80">
                     Body Adjustment
                   </div>
+
                   <SliderRow
                     label="Translation_X"
                     value={sliders.tx}
@@ -587,6 +630,7 @@ export default function RemoteView({
                 </span>
               )}
             </div>
+
             <button
               onClick={() => setMobileMenuOpen(true)}
               className="w-9 h-9 rounded-full border border-slate-300 dark:border-white/20 bg-white/70 dark:bg-white/10 flex items-center justify-center text-lg leading-none active:scale-95"
@@ -602,6 +646,8 @@ export default function RemoteView({
               <span className="font-semibold">landscape</span>.
             </div>
           )}
+
+          <div className="text-[11px] text-white/60 break-all">{dogServer}</div>
 
           <div className="flex-1">
             <div className="relative w-full h-full rounded-2xl border border-slate-200 dark:border-white/10 bg-black overflow-hidden">
@@ -661,9 +707,13 @@ export default function RemoteView({
     );
   }
 
-  /* ========== DESKTOP LAYOUT ========== */
+  /* ========== DESKTOP ========== */
   return (
     <section className="min-h-screen w-full bg-slate-50 text-slate-900 dark:bg-[#0c0520] dark:text-white">
+      <div className="mb-3 text-xs text-white/60 break-all">
+        Robot ID: {selectedRobotId} | Server: {dogServer}
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
           <HeaderControl
@@ -671,22 +721,22 @@ export default function RemoteView({
             onToggle={toggleMode}
             lidarUrl={lidarUrl}
             connected={connected}
-            errorExternal={connectError}   
-            commandLog={commandLog}  
+            errorExternal={connectError}
+            commandLog={commandLog}
           />
-
 
           <div className="relative overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10 bg-black">
             <div className="absolute left-3 top-2 text-green-600 dark:text-green-300 text-xl font-bold drop-shadow z-10">
               FPS:{fps}
             </div>
+
             <img
               src={streamUrl || "/placeholder.svg?height=360&width=640"}
               alt="FPV"
               className="w-full aspect-video object-cover opacity-80"
             />
 
-            <MouselookPad robotId={robotId} enabled={mouseLook} />
+            <MouselookPad robotId={selectedRobotId} enabled={mouseLook} />
           </div>
 
           <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -696,12 +746,14 @@ export default function RemoteView({
                   <Btn
                     key={b}
                     label={b.replaceAll("_", " ")}
-                        onClick={() => {
-                          appendLog(`[POSTURE] ${b}`);
-                          RobotAPI.posture(b).catch((e: any) =>
-                            appendLog(`[POSTURE ERROR] ${b}: ${e?.message || String(e)}`)
-                          );
-                        }}
+                    onClick={() => {
+                      appendLog(`[POSTURE] ${b}`);
+                      RobotAPI.posture(b).catch((e: any) =>
+                        appendLog(
+                          `[POSTURE ERROR] ${b}: ${e?.message || String(e)}`
+                        )
+                      );
+                    }}
                     variant="default"
                   />
                 ))}
@@ -714,12 +766,14 @@ export default function RemoteView({
                   <Btn
                     key={b}
                     label={b.replaceAll("_", " ")}
-                        onClick={() => {
-                          appendLog(`[AXIS] ${b}`);
-                          RobotAPI.behavior(b).catch((e: any) =>
-                            appendLog(`[AXIS ERROR] ${b}: ${e?.message || String(e)}`)
-                          );
-                        }}
+                    onClick={() => {
+                      appendLog(`[AXIS] ${b}`);
+                      RobotAPI.behavior(b).catch((e: any) =>
+                        appendLog(
+                          `[AXIS ERROR] ${b}: ${e?.message || String(e)}`
+                        )
+                      );
+                    }}
                     variant="default"
                   />
                 ))}
@@ -737,7 +791,9 @@ export default function RemoteView({
                     onClick={() => {
                       appendLog(`[BEHAVIOR] ${b}`);
                       RobotAPI.behavior(b).catch((e: any) =>
-                        appendLog(`[BEHAVIOR ERROR] ${b}: ${e?.message || String(e)}`)
+                        appendLog(
+                          `[BEHAVIOR ERROR] ${b}: ${e?.message || String(e)}`
+                        )
                       );
                     }}
                     variant="default"

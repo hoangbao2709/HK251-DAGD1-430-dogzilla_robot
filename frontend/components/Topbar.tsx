@@ -1,12 +1,23 @@
 "use client";
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 
 export default function Topbar() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
   const [username, setUsername] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState(false);
+
+  const currentIp = searchParams.get("ip");
+  const currentRobotId = searchParams.get("robotId");
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setUsername(localStorage.getItem("username"));
+    }
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -14,9 +25,10 @@ export default function Topbar() {
     const detect = () => {
       const ua =
         typeof navigator !== "undefined" ? navigator.userAgent || "" : "";
-      const uaMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobi/i.test(
-        ua
-      );
+      const uaMobile =
+        /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobi/i.test(
+          ua
+        );
 
       const vw = window.innerWidth;
       const vh = window.innerHeight;
@@ -34,24 +46,43 @@ export default function Topbar() {
     };
   }, []);
 
+  const buildUrlWithCurrentQuery = useCallback(
+    (path: string) => {
+      const params = new URLSearchParams();
+
+      if (currentIp) {
+        params.set("ip", currentIp);
+      }
+
+      if (currentRobotId) {
+        params.set("robotId", currentRobotId);
+      }
+
+      const query = params.toString();
+      return query ? `${path}?${query}` : path;
+    },
+    [currentIp, currentRobotId]
+  );
+
   function logout() {
     if (typeof window !== "undefined") {
       localStorage.removeItem("access_token");
       localStorage.removeItem("username");
     }
     setUsername(null);
+
     setTimeout(() => {
-      router.push("/login");
+      router.push(buildUrlWithCurrentQuery("/login"));
     }, 200);
   }
 
   function goLogin() {
-    router.push("/login");
+    router.push(buildUrlWithCurrentQuery("/login"));
   }
 
-  if (isMobile){
+  if (isMobile) {
     return null;
-  } 
+  }
 
   return (
     <header className="flex items-center justify-between px-6 py-4 bg-[#1A0F28] border-b border-white/10">
