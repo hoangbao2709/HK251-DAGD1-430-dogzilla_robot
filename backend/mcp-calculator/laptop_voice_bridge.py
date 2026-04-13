@@ -65,6 +65,7 @@ DIRECT_COMMANDS = {
 
 
 def strip_accents(text: str) -> str:
+    text = text.replace("đ", "d").replace("Đ", "D")
     normalized = unicodedata.normalize("NFD", text)
     return "".join(ch for ch in normalized if unicodedata.category(ch) != "Mn")
 
@@ -79,16 +80,17 @@ def normalize_text(text: str) -> str:
 
 
 def find_first_match(normalized: str, mapping: dict[str, list[str]]) -> str | None:
+    padded = f" {normalized} "
     for target, keywords in mapping.items():
         for keyword in keywords:
-            if normalize_text(keyword) in normalized:
+            candidate = normalize_text(keyword)
+            if f" {candidate} " in padded:
                 return target
     return None
 
 def parse_navigation_command(text: str) -> dict[str, Any] | None:
     normalized = normalize_text(text)
 
-    # đi tới điểm A
     m = re.search(r"\b(di toi|di den)\s+(diem\s+)?([a-z])\b", normalized)
     if m:
         point = m.group(3).upper()
@@ -100,11 +102,9 @@ def parse_navigation_command(text: str) -> dict[str, Any] | None:
             "intent": "navigation",
         }
 
-    # đi qua A B C
-    m = re.search(r"\b(di qua|toi qua)\s+((?:[a-z]\s*)+)$", normalized)
+    m = re.search(r"\b(di toi|di den)\s+(diem\s+)?((?:[a-z]\s*,?\s*){2,})$", normalized)
     if m:
-        points = re.findall(r"[a-z]", m.group(2))
-        points = [p.upper() for p in points]
+        points = [p.upper() for p in re.findall(r"[a-z]", m.group(3))]
         if points:
             return {
                 "tool": "goto_waypoints",
@@ -114,8 +114,24 @@ def parse_navigation_command(text: str) -> dict[str, Any] | None:
                 "intent": "navigation",
             }
 
-    # dừng di chuyển
-    if "dung di chuyen" in normalized or "dung lai" in normalized:
+    m = re.search(r"\b(di qua|toi qua)\s+((?:[a-z]\s*,?\s*)+)$", normalized)
+    if m:
+        points = [p.upper() for p in re.findall(r"[a-z]", m.group(2))]
+        if points:
+            return {
+                "tool": "goto_waypoints",
+                "arguments": {"points": points},
+                "matched": points,
+                "normalized_text": normalized,
+                "intent": "navigation",
+            }
+
+    if (
+        "dung di chuyen" in normalized
+        or "dung lai" in normalized
+        or "dung dieu huong" in normalized
+        or "huy dieu huong" in normalized
+    ):
         return {
             "tool": "stop_navigation",
             "arguments": {},

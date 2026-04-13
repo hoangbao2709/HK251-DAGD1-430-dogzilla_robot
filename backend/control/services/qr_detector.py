@@ -2,7 +2,7 @@ import math
 import cv2
 import numpy as np
 from pyzbar.pyzbar import decode
-from models import QRItem, DetectionResult
+from .models import QRItem, DetectionResult
 
 
 def order_points_from_polygon(polygon):

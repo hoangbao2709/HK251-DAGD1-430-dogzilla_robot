@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import sys
+import unicodedata
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 from urllib.parse import urlparse
@@ -13,14 +14,15 @@ from django.conf import settings
 
 from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
-
+from fastmcp import Client
+from fastmcp.client.transports import StdioTransport
 logger = logging.getLogger(__name__)
 
 TEXT_TOOL_MAP = [
     (["đứng lên", "stand up"], ("set_posture", {"name": "Stand_Up"})),
     (["nằm xuống", "lie down"], ("set_posture", {"name": "Lie_Down"})),
     (["bò", "crawl"], ("set_posture", {"name": "Crawl"})),
-    (["ngồi", "squat"], ("set_posture", {"name": "Squat"})),
+    (["ngồi", "ngồi xuống", "squat", "sit down"], ("set_posture", {"name": "Squat"})),
     (["bắt tay", "handshake"], ("play_behavior", {"name": "Handshake"})),
     (["vẫy tay", "wave hand"], ("play_behavior", {"name": "Wave_Hand"})),
     (["đánh dấu", "pee"], ("play_behavior", {"name": "Pee"})),
@@ -41,28 +43,48 @@ TEXT_TOOL_MAP = [
 ]
 
 
+def strip_accents(text: str) -> str:
+    text = text.replace("đ", "d").replace("Đ", "D")
+    normalized = unicodedata.normalize("NFD", text)
+    return "".join(ch for ch in normalized if unicodedata.category(ch) != "Mn")
+
+
 def normalize_text(text: str) -> str:
-    text = (text or "").strip().lower()
-    text = re.sub(r"\s+", " ", text)
+    text = strip_accents((text or "").strip().lower())
+    text = re.sub(r"[^a-z0-9\s,_-]", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
     return text
 
 
 def extract_waypoints(text: str) -> List[str]:
     """
-    Hỗ trợ:
+    Hỗ trợ các dạng:
+    - hãy cho robot đi đến điểm A
     - đi đến điểm A
-    - đi tới điểm A
+    - đi tới điểm B
     - đi đến A, B, C
     - đi qua A, B, C
-    - go to point A, B, C
+    - tới điểm A và B
+    - go to point A
+    - move to point A, B
     """
     normalized = normalize_text(text)
 
+    stop_phrases = [
+        "dung lai",
+        "dung dieu huong",
+        "huy dieu huong",
+        "stop navigation",
+        "stop moving",
+    ]
+    for phrase in stop_phrases:
+        if phrase in normalized:
+            return []
+
     patterns = [
-        r"^(?:đi đến|đi tới|đến|tới)\s+(?:điểm\s+)?(.+)$",
-        r"^đi qua\s+(.+)$",
-        r"^go to\s+(?:point\s+)?(.+)$",
-        r"^move to\s+(?:point\s+)?(.+)$",
+        r"^(?:hay cho robot\s+)?(?:di den|di toi|den|toi)\s+(?:diem\s+)?(.+)$",
+        r"^(?:hay cho robot\s+)?di qua\s+(.+)$",
+        r"^(?:please\s+)?(?:go to|move to)\s+(?:point\s+)?(.+)$",
     ]
 
     raw_points = None
@@ -75,16 +97,13 @@ def extract_waypoints(text: str) -> List[str]:
     if not raw_points:
         return []
 
-    # đổi "và" / "and" thành dấu phẩy để tách đều
-    raw_points = re.sub(r"\s+(và|and)\s+", ",", raw_points)
+    raw_points = re.sub(r"\s+(va|and)\s+", ",", raw_points)
 
-    points = []
+    points: List[str] = []
     for item in raw_points.split(","):
         point = item.strip().upper()
-        point = re.sub(r"^điểm\s+", "", point, flags=re.IGNORECASE)
-        point = re.sub(r"^point\s+", "", point, flags=re.IGNORECASE)
-
-        # bỏ ký tự thừa, giữ chữ/số/_/-
+        point = re.sub(r"^DIEM\s+", "", point, flags=re.IGNORECASE)
+        point = re.sub(r"^POINT\s+", "", point, flags=re.IGNORECASE)
         point = re.sub(r"[^A-Z0-9_-]", "", point)
 
         if point:
@@ -96,20 +115,30 @@ def extract_waypoints(text: str) -> List[str]:
 def map_text_to_tool(text: str) -> Tuple[str, Dict[str, Any]]:
     normalized = normalize_text(text)
 
-    # Ưu tiên parse lệnh điều hướng trước
-    points = extract_waypoints(normalized)
+    stop_phrases = [
+        "dung lai",
+        "dung dieu huong",
+        "huy dieu huong",
+        "stop navigation",
+        "stop moving",
+    ]
+    for phrase in stop_phrases:
+        if phrase in normalized:
+            return "stop_navigation", {}
+
+    points = extract_waypoints(text)
     if points:
         if len(points) == 1:
-            return "navigate_to_point", {"point": points[0]}
-        return "navigate_waypoints", {"points": points}
+            return "goto_point", {"name": points[0]}
+        return "goto_waypoints", {"points": points}
 
     for phrases, target in TEXT_TOOL_MAP:
-        if normalized in phrases:
+        if normalized in [normalize_text(p) for p in phrases]:
             return target
 
     for phrases, target in TEXT_TOOL_MAP:
         for phrase in phrases:
-            if phrase in normalized:
+            if normalize_text(phrase) in normalized:
                 return target
 
     raise ValueError(f"Không map được text command: {text}")
@@ -126,7 +155,7 @@ def parse_robot_addr(addr: str) -> Tuple[str, str, str]:
     parsed = urlparse(raw)
 
     host = parsed.hostname
-    port = parsed.port or 9000
+    port = parsed.port or 8080
     scheme = parsed.scheme or "http"
 
     if not host:
@@ -155,12 +184,17 @@ async def _call_mcp_tool(robot_addr: str, text: str) -> Dict[str, Any]:
     env["ROBOT_IP"] = host
     env["ROBOT_PORT"] = port
     env["ROBOT_BASE_URL"] = base_url
+    env["MAP_SERVER_PORT"] = env.get("MAP_SERVER_PORT", "8080")
 
-    server_params = StdioServerParameters(
+    transport = StdioTransport(
         command=sys.executable,
         args=[script_path],
         env=env,
+        cwd=str(Path(script_path).parent),
+        keep_alive=False,
     )
+
+    client = Client(transport)
 
     logger.info(
         "MCP text command | robot=%s | tool=%s | args=%s",
@@ -169,33 +203,31 @@ async def _call_mcp_tool(robot_addr: str, text: str) -> Dict[str, Any]:
         arguments,
     )
 
-    async with stdio_client(server_params) as (read, write):
-        async with ClientSession(read, write) as session:
-            await session.initialize()
-            result = await session.call_tool(tool_name, arguments=arguments)
+    async with client:
+        result = await client.call_tool(tool_name, arguments)
 
-            content = []
-            if hasattr(result, "content") and result.content:
-                for item in result.content:
-                    if hasattr(item, "text"):
-                        content.append(item.text)
-                    else:
-                        content.append(str(item))
+        if hasattr(result, "data"):
+            payload = result.data
+        elif hasattr(result, "structured_content"):
+            payload = result.structured_content
+        else:
+            payload = str(result)
 
-            return {
-                "ok": True,
-                "robot_addr": base_url,
-                "tool": tool_name,
-                "arguments": arguments,
-                "content": content,
-                "raw": str(result),
-            }
-
+        return {
+            "ok": True,
+            "robot_addr": base_url,
+            "tool": tool_name,
+            "arguments": arguments,
+            "content": payload,
+            "raw": str(result),
+        }
 
 def process_text_command(robot_addr: str, text: str) -> Dict[str, Any]:
     if not robot_addr:
         raise ValueError("robot_addr is required")
     if not text or not text.strip():
         raise ValueError("text is required")
-
+    tool_name, arguments = map_text_to_tool(text)
+    print("[mcp_voice] mapped tool =", tool_name)
+    print("[mcp_voice] mapped args =", arguments)
     return asyncio.run(_call_mcp_tool(robot_addr=robot_addr, text=text))

@@ -1,28 +1,32 @@
-# control/services/ros.py
-# Hoặc control/ros.py nếu bạn không dùng folder services
-
 from typing import Dict, Any
-import requests
+from urllib.parse import urlparse
+
 import cv2
-import numpy as np
+import requests
 from django.conf import settings
+
 from ..models import Robot
 
 
 class ROSClient:
     """
     Thay vì nói chuyện trực tiếp với ROS2,
-    lớp này sẽ gọi HTTP tới Flask server Dogzilla (server bạn gửi lúc trước).
+    lớp này gọi HTTP tới các service đang chạy trên robot:
 
-    Mặc định:
-      - Địa chỉ server Dogzilla của từng robot được lưu trong Robot.addr
-      - ConnectView sẽ nhận "addr" từ frontend và lưu vào Robot.addr
-      - Các method còn lại đọc Robot.addr để biết base URL.
+    - Dogzilla control/camera:   http://<host>:9000
+    - QR service:               http://<host>:8888
+    - SLAM/navigation service:  http://<host>:8080
+
+    Robot.addr trong DB vẫn lưu base Dogzilla URL, ví dụ:
+        http://192.168.1.50:9000
+
+    Từ đó class này sẽ tự suy ra host và build các URL còn lại.
     """
 
     def __init__(self, robot_id: str):
         self.robot_id = robot_id
         self.timeout = getattr(settings, "DOGZILLA_TIMEOUT", 5)
+        self.stream_timeout = getattr(settings, "DOGZILLA_STREAM_TIMEOUT", 30)
         self.session = requests.Session()
 
     # ------------------------------------------------------------------
@@ -33,47 +37,75 @@ class ROSClient:
 
     def _get_base_url(self) -> str:
         """
-        Lấy base URL của Dogzilla server từ Robot.addr.
+        Base URL của Dogzilla server từ Robot.addr.
         Ví dụ: http://192.168.1.50:9000
         """
         robot = self._get_robot()
         base = (robot.addr or "").strip().rstrip("/")
         if not base:
-            # Chưa connect => chưa có addr
             raise RuntimeError(
                 f"Robot {self.robot_id} chưa có addr. "
                 "Hãy gọi /api/robots/<id>/connect/ trước."
             )
         return base
 
+    def _parse_base(self):
+        base = self._get_base_url()
+        parsed = urlparse(base)
+        scheme = parsed.scheme or "http"
+        host = parsed.hostname
+        if not host:
+            raise RuntimeError("Không parse được host từ robot.addr")
+        return scheme, host
+
+    def _build_url(self, port: int, path: str) -> str:
+        scheme, host = self._parse_base()
+        normalized_path = path if path.startswith("/") else f"/{path}"
+        return f"{scheme}://{host}:{port}{normalized_path}"
+
     def _get_json(self, path: str) -> Dict[str, Any]:
         """
-        GET base_url + path  và parse JSON.
+        GET base_url + path và parse JSON.
         path: "/status", "/health", ...
         """
-        base = self._get_base_url()
-        url = f"{base}{path}"
+        url = f"{self._get_base_url()}{path}"
         resp = self.session.get(url, timeout=self.timeout)
         resp.raise_for_status()
         return resp.json()
 
+    def _get_json_by_url(self, url: str) -> Dict[str, Any]:
+        resp = self.session.get(url, timeout=self.timeout)
+        resp.raise_for_status()
+        return resp.json()
+
+    def _post_json_by_url(self, url: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        resp = self.session.post(url, json=payload, timeout=self.timeout)
+
+        try:
+            data = resp.json()
+        except Exception:
+            data = {
+                "success": False,
+                "message": resp.text,
+            }
+
+        if not resp.ok:
+            raise RuntimeError(f"Request failed: {data}")
+
+        return data
+
     def _post_control(self, payload: Dict[str, Any]) -> None:
         """
         Gửi POST tới /control trên Flask server Dogzilla.
-        payload dạng:
-          {"command": "forward"}
-          {"command": "setz", "value": 100}
-          {"command": "setpitch", "value": -5}
-          ...
         """
-        base = self._get_base_url()
-        url = f"{base}/control"
+        url = f"{self._get_base_url()}/control"
         resp = self.session.post(url, json=payload, timeout=self.timeout)
-        # Nếu muốn log:
+
         try:
             text = resp.text[:200]
         except Exception:
             text = "<binary>"
+
         print(f"[ROSClient] POST {url} {payload} -> {resp.status_code} {text}")
         resp.raise_for_status()
 
@@ -86,7 +118,7 @@ class ROSClient:
         Ta:
           - làm sạch addr
           - thử ping /health trên Flask server Dogzilla
-          - trả kết quả connect cho view (view sẽ lưu robot.addr)
+          - trả kết quả connect cho view
         """
         addr_clean = (addr or "").strip().rstrip("/")
         if not addr_clean:
@@ -107,29 +139,7 @@ class ROSClient:
     # ------------------------------------------------------------------
     def get_status(self) -> Dict[str, Any]:
         """
-        Đọc /status từ Flask server Dogzilla và TRẢ NGUYÊN JSON của nó.
-
-        Flask /status hiện tại trả kiểu:
-
-        {
-          "robot_connected": true,
-          "turn_speed_range": [-70, 70],
-          "step_default": 8,
-          "z_range": [75, 110],
-          "z_current": 105,
-          "pitch_range": [-30.0, 30.0],
-          "pitch_current": 0.0,
-          "battery": 73,
-          "fw": "4.0.1-Y",
-          "fps": 30,
-          "system": {
-            "cpu_percent": 100,
-            "disk": "SDC:67% -> 53.0GB",
-            "ip": "x.x.x.x",
-            "ram": "RAM:69% -> 4.0GB",
-            "time": "13:57:02"
-          }
-        }
+        Đọc /status từ Dogzilla server và trả nguyên JSON.
         """
         robot = self._get_robot()
 
@@ -139,7 +149,6 @@ class ROSClient:
             print(f"[ROSClient] get_status() error: {e}")
             s = {}
 
-        # fallback battery/fps từ DB nếu server không trả
         if s.get("battery") is None and getattr(robot, "battery", None) is not None:
             s["battery"] = robot.battery
 
@@ -149,39 +158,51 @@ class ROSClient:
         return s
 
     # ------------------------------------------------------------------
-    # 3) FPV (camera stream)
+    # 3) FPV / camera stream
     # ------------------------------------------------------------------
     def get_fpv_url(self) -> str:
         """
-        Frontend sẽ dùng URL này để nhúng stream.
-        Với Dogzilla Flask server:
-          - /camera: stream MJPEG
-          - /frame : single JPEG (nếu cần)
-        Ở đây trả về /camera.
+        Camera stream từ Dogzilla server.
         """
-        base = self._get_base_url()
-        return f"{base}/camera"
+        return f"{self._get_base_url()}/camera"
+
     def get_frame(self):
         stream_url = self.get_fpv_url()
         cap = cv2.VideoCapture(stream_url)
+
         if not cap.isOpened():
             print(f"[ROSClient] Không mở được camera {stream_url}")
             return None
+
         ret, frame = cap.read()
         cap.release()
+
         if not ret:
             print("[ROSClient] Không đọc được frame")
             return None
+
         return frame
+
+    def stream_slam_map_png(self):
+        """
+        Lấy map.png từ service SLAM trên cổng 8080.
+        """
+        url = self._build_url(8080, "/map.png")
+        resp = self.session.get(
+            url,
+            stream=True,
+            timeout=(self.timeout, self.stream_timeout),
+        )
+        resp.raise_for_status()
+        return resp
+
     # ------------------------------------------------------------------
     # 4) Speed mode
     # ------------------------------------------------------------------
     def set_speed_mode(self, mode: str) -> None:
         """
         Django API đang hỗ trợ "slow" | "normal" | "high".
-        Flask server Dogzilla hiện không có khái niệm speed mode global,
-        nên tạm thời mình để no-op (không làm gì).
-        Bạn có thể sau này map sang step_default hoặc speed riêng nếu muốn.
+        Dogzilla server hiện chưa có speed mode global.
         """
         assert mode in ("slow", "normal", "high")
         print(f"[ROSClient] set_speed_mode({mode}) (no-op for Dogzilla server)")
@@ -191,19 +212,8 @@ class ROSClient:
     # ------------------------------------------------------------------
     def move(self, payload: Dict[str, Any]) -> None:
         """
-        Body từ Django view:
-          {
-            "vx": 0.1, "vy": 0.0, "vz": 0.0,
-            "rx": 0.0, "ry": 0.0, "rz": 0.3
-          }
-
-        Dogzilla Flask server chỉ có lệnh rời rạc:
+        Map body move từ Django sang lệnh rời rạc của Dogzilla:
           - forward, back, left, right, turnleft, turnright, stop
-
-        Ở đây ta sẽ:
-          - lấy vx, vy, rz
-          - chọn thành phần có độ lớn lớn nhất
-          - map sang 1 lệnh tương ứng
         """
 
         def _f(v):
@@ -216,18 +226,17 @@ class ROSClient:
         vy = _f(payload.get("vy"))
         rz = _f(payload.get("rz"))
 
-        # Nếu rất nhỏ -> dừng
         mags = [
             (abs(vx), "vx"),
             (abs(vy), "vy"),
             (abs(rz), "rz"),
         ]
         mag, axis = max(mags, key=lambda t: t[0])
+
         if mag < 1e-3:
             self._post_control({"command": "stop"})
             return
 
-        # Map sang lệnh Dogzilla
         if axis == "vx":
             cmd = "forward" if vx > 0 else "back"
         elif axis == "vy":
@@ -238,50 +247,24 @@ class ROSClient:
         self._post_control({"command": cmd})
 
     # ------------------------------------------------------------------
-    # 6) Posture / Behavior / Lidar / Body adjust
-    #    Hiện server Flask của bạn chưa có API tương ứng, nên tạm thời
-    #    để no-op hoặc sau này có thể map sang control khác.
+    # 6) Posture / Behavior / Lidar / Body adjust / Stabilizing
     # ------------------------------------------------------------------
     def posture(self, name: str) -> None:
-        """
-        Ví dụ name: 'Stand_Up', 'Lie_Down', ...
-        Gửi sang Flask: {"command": "posture", "name": name}
-        """
-        payload = {"command": "posture", "name": name}
-        self._post_control(payload)
+        self._post_control({"command": "posture", "name": name})
 
     def behavior(self, name: str) -> None:
-        """
-        Ví dụ name: 'Wave_Hand', 'Pee', 'Turn_Roll', ...
-        Gửi sang Flask: {"command": "behavior", "name": name}
-        """
-        payload = {"command": "behavior", "name": name}
-        self._post_control(payload)
+        self._post_control({"command": "behavior", "name": name})
 
     def lidar(self, action: str) -> None:
-        """
-        action: 'start' | 'stop'
-        Gửi sang Flask: {"command": "lidar", "action": action}
-        """
         assert action in ("start", "stop")
-        payload = {"command": "lidar", "action": action}
-        self._post_control(payload)
+        self._post_control({"command": "lidar", "action": action})
 
     def body_adjust(self, sliders: Dict[str, float]) -> None:
-        """
-        sliders: {"tx":..., "ty":..., "tz":..., "rx":..., "ry":..., "rz":...}
-        Gửi thẳng sang Flask, để server map sang translation/attitude.
-        """
         payload: Dict[str, Any] = {"command": "body_adjust"}
         payload.update(sliders)
         self._post_control(payload)
-        
-    def stabilizing_mode(self, action: str) -> None:
-        """
-        action: 'on' | 'off' | 'toggle'
-        Gửi sang Flask: {"command": "stabilizing_mode", "action": action}
-        """
 
+    def stabilizing_mode(self, action: str) -> None:
         assert action in ("on", "off", "toggle")
         payload: Dict[str, Any] = {
             "command": "stabilizing_mode",
@@ -289,5 +272,77 @@ class ROSClient:
         }
         self._post_control(payload)
 
+    # ------------------------------------------------------------------
+    # 7) Base URL cho QR / SLAM
+    # ------------------------------------------------------------------
 
+    def _build_slam_base_url(self) -> str:
+        """
+        SLAM / navigation service đang chạy ở cổng 8080.
+        """
+        return self._build_url(8080, "")
 
+    def get_slam_state(self) -> Dict[str, Any]:
+        url = f"{self._build_slam_base_url()}/state"
+        return self._get_json_by_url(url)
+
+    def get_points(self) -> Dict[str, Any]:
+        """
+        Lấy danh sách marker/point đã lưu trên robot.
+        Endpoint gốc: GET /points
+        """
+        url = f"{self._build_slam_base_url()}/points"
+        return self._get_json_by_url(url)
+
+    def create_point(self, name: str, x: float, y: float, yaw: float = 0.0) -> Dict[str, Any]:
+        """
+        Lưu point mới trên robot.
+        Endpoint gốc: POST /points
+        """
+        url = f"{self._build_slam_base_url()}/points"
+        payload = {
+            "name": name,
+            "x": x,
+            "y": y,
+            "yaw": yaw,
+        }
+        return self._post_json_by_url(url, payload)
+
+    def delete_point(self, name: str) -> Dict[str, Any]:
+        """
+        Xóa point trên robot.
+        Theo code test ngoài của bạn: POST /delete_point
+        """
+        url = f"{self._build_slam_base_url()}/delete_point"
+        payload = {"name": name}
+        return self._post_json_by_url(url, payload)
+
+    def go_to_point(self, name: str) -> Dict[str, Any]:
+        """
+        Đi tới point đã lưu sẵn theo tên.
+        Theo code test ngoài của bạn: POST /go_to_point
+        """
+        url = f"{self._build_slam_base_url()}/go_to_point"
+        payload = {"name": name}
+        return self._post_json_by_url(url, payload)
+
+    def go_to_marker(
+        self,
+        label: str,
+        x: float,
+        y: float,
+        yaw: float = 0.0,
+    ) -> Dict[str, Any]:
+        """
+        Đi trực tiếp tới marker/toạ độ.
+        Chức năng cũ được giữ lại, nhưng sửa lại cho đúng service.
+        Endpoint đúng phải là SLAM/navigation service, không phải QR service.
+        """
+        url = f"{self._build_slam_base_url()}/go_to_marker"
+        payload = {
+            "label": label,
+            "x": x,
+            "y": y,
+            "yaw": yaw,
+        }
+        return self._post_json_by_url(url, payload)
