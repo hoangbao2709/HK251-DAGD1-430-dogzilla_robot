@@ -418,26 +418,49 @@ class ROSClient:
         """
         Best-effort network telemetry between Django backend and robot server.
         Measures:
-        - latency/jitter/loss from repeated GET /status probes
-        - downlink from GET /frame download throughput
-        - uplink from POST /status with an inert JSON payload
+        - latency/jitter/loss from repeated GET /health probes
+        - downlink from a bounded GET /frame stream
+        - uplink from POST /control with a valid status command payload
         """
         samples = max(1, min(int(samples), 10))
-        status_url = f"{self._get_base_url()}/status"
+        health_url = f"{self._get_base_url()}/health"
+        control_url = f"{self._get_base_url()}/control"
         frame_url = f"{self._get_base_url()}/frame"
+        probe_size_bytes = 32 * 1024
+        frame_sample_bytes = 256 * 1024
+
+        def _score_ratio(value: float | None, good: float, bad: float) -> float:
+            if value is None:
+                return 0.0
+            if value <= good:
+                return 1.0
+            if value >= bad:
+                return 0.0
+            return 1.0 - ((value - good) / (bad - good))
+
+        def _throughput_score(value: float | None, target_kbps: float) -> float:
+            if value is None or value <= 0:
+                return 0.0
+            return min(1.0, value / target_kbps)
 
         latencies_ms: list[float] = []
         failures = 0
 
         for _ in range(samples):
+            resp = None
             started = time.perf_counter()
             try:
-                resp = self.session.get(status_url, timeout=self.timeout)
+                resp = self.session.get(health_url, timeout=self.timeout)
                 resp.raise_for_status()
                 _ = resp.content
                 latencies_ms.append((time.perf_counter() - started) * 1000.0)
             except Exception:
                 failures += 1
+            finally:
+                try:
+                    resp.close()
+                except Exception:
+                    pass
 
         latency_ms = round(sum(latencies_ms) / len(latencies_ms), 2) if latencies_ms else None
         if len(latencies_ms) > 1:
@@ -452,6 +475,7 @@ class ROSClient:
         packet_loss_pct = round((failures / samples) * 100.0, 2)
 
         downlink_kbps = None
+        resp = None
         try:
             started = time.perf_counter()
             resp = self.session.get(
@@ -465,25 +489,31 @@ class ROSClient:
                 if not chunk:
                     continue
                 downloaded += len(chunk)
+                if downloaded >= frame_sample_bytes:
+                    break
             elapsed = max(time.perf_counter() - started, 1e-3)
             downlink_kbps = round((downloaded * 8.0) / 1000.0 / elapsed, 2)
         except Exception:
             downlink_kbps = None
+        finally:
+            try:
+                resp.close()
+            except Exception:
+                pass
 
         uplink_kbps = None
+        resp = None
         try:
-            probe_body = json.dumps(
-                {
-                    "probe": "uplink",
-                    "blob": "x" * (128 * 1024),
-                },
-                ensure_ascii=False,
-            ).encode("utf-8")
+            probe_payload = {
+                "command": "status",
+                "probe": "uplink",
+                "blob": "x" * probe_size_bytes,
+            }
+            probe_body = json.dumps(probe_payload, ensure_ascii=False).encode("utf-8")
             started = time.perf_counter()
             resp = self.session.post(
-                status_url,
-                data=probe_body,
-                headers={"Content-Type": "application/json"},
+                control_url,
+                json=probe_payload,
                 timeout=self.timeout,
             )
             resp.raise_for_status()
@@ -491,14 +521,25 @@ class ROSClient:
             uplink_kbps = round((len(probe_body) * 8.0) / 1000.0 / elapsed, 2)
         except Exception:
             uplink_kbps = None
+        finally:
+            try:
+                resp.close()
+            except Exception:
+                pass
 
-        signal_quality = 0
-        if latency_ms is not None:
-            signal_quality += max(0, 55 - int(latency_ms / 2))
-        if packet_loss_pct is not None:
-            signal_quality += max(0, 30 - int(packet_loss_pct * 3))
-        if downlink_kbps is not None:
-            signal_quality += min(15, int(downlink_kbps / 1000))
+        reliability_score = _score_ratio(packet_loss_pct, good=0.0, bad=20.0)
+        latency_score = _score_ratio(latency_ms, good=25.0, bad=250.0)
+        jitter_score = _score_ratio(jitter_ms, good=5.0, bad=120.0)
+        downlink_score = _throughput_score(downlink_kbps, target_kbps=8000.0)
+        uplink_score = _throughput_score(uplink_kbps, target_kbps=4000.0)
+
+        signal_quality = round(
+            (reliability_score * 40.0)
+            + (latency_score * 25.0)
+            + (jitter_score * 15.0)
+            + (downlink_score * 12.0)
+            + (uplink_score * 8.0)
+        )
         signal_quality = max(0, min(100, signal_quality))
 
         return {
@@ -523,6 +564,30 @@ class ROSClient:
     def get_slam_state(self) -> Dict[str, Any]:
         url = f"{self._build_slam_base_url()}/state"
         return self._get_json_by_url(url)
+
+    def get_evaluation_metrics(
+        self,
+        *,
+        full: bool = True,
+        trajectory: bool = False,
+        pose_traces: bool = False,
+        reference_trajectory: bool = False,
+    ) -> Dict[str, Any]:
+        url = f"{self._build_slam_base_url()}/metrics"
+        params: Dict[str, Any] = {}
+        if full:
+            params["full"] = 1
+        else:
+            if trajectory:
+                params["trajectory"] = 1
+            if pose_traces:
+                params["pose_traces"] = 1
+            if reference_trajectory:
+                params["reference_trajectory"] = 1
+
+        resp = self.session.get(url, params=params or None, timeout=self.timeout)
+        resp.raise_for_status()
+        return resp.json()
 
     def get_robot_pose(self) -> Dict[str, Any]:
         state = self.get_slam_state() or {}

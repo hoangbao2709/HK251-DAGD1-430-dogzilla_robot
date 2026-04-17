@@ -2,6 +2,7 @@ from django.urls import path
 from .views import (
     RobotListView,
     NetworkMetricsView,
+    EvaluationMetricsView,
     ActionEventListView,
     ConnectView,
     RobotRootInfoView,
@@ -50,6 +51,7 @@ from .views import (
 urlpatterns = [
     path("api/robots/", RobotListView.as_view(), name="robots-list"),
     path("api/robots/<str:robot_id>/network/metrics/", NetworkMetricsView.as_view(), name="robot-network-metrics"),
+    path("api/robots/<str:robot_id>/evaluation/metrics/", EvaluationMetricsView.as_view(), name="robot-evaluation-metrics"),
     path("api/robots/<str:robot_id>/events/", ActionEventListView.as_view(), name="robot-events"),
     path("api/robots/<str:robot_id>/server/", RobotRootInfoView.as_view(), name="robot-server-root"),
     path("api/robots/<str:robot_id>/health/", RobotHealthView.as_view(), name="robot-health"),
