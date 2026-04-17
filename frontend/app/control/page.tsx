@@ -106,7 +106,6 @@ export default function ManualControlPage() {
       <div className="flex min-h-screen">
         <Sidebar />
         <div className="flex flex-col flex-1">
-          <Topbar />
           <section className="flex-1 w-full bg-[var(--background)] text-[var(--foreground)] p-6">
             <div className="">
               {mode === "remote" ? (

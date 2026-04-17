@@ -205,6 +205,9 @@ export const RobotAPI = {
   networkMetrics: () =>
     api<any>(`${CONTROL_PREFIX}/${robotId}/network/metrics/`),
 
+  evaluationMetrics: () =>
+    api<any>(`${CONTROL_PREFIX}/${robotId}/evaluation/metrics/`),
+
   frameUrl: (ts?: number) =>
     `${API_BASE}${CONTROL_PREFIX}/${robotId}/frame/${ts ? `?t=${ts}` : ""}`,
 
