@@ -1,3 +1,4 @@
+import json
 from typing import Dict, Any
 from urllib.parse import urlparse
 import time
@@ -29,12 +30,19 @@ class ROSClient:
         self.timeout = getattr(settings, "DOGZILLA_TIMEOUT", 5)
         self.stream_timeout = getattr(settings, "DOGZILLA_STREAM_TIMEOUT", 30)
         self.session = requests.Session()
+        self.session.trust_env = False
 
     # ------------------------------------------------------------------
     # Helpers nội bộ
     # ------------------------------------------------------------------
     def _get_robot(self) -> Robot:
-        return Robot.objects.get(pk=self.robot_id)
+        robot, _ = Robot.objects.get_or_create(
+            pk=self.robot_id,
+            defaults={
+                "name": self.robot_id.replace("-", " ").title(),
+            },
+        )
+        return robot
 
     def _get_base_url(self) -> str:
         """
@@ -406,6 +414,102 @@ class ROSClient:
     def raw_control(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         return self._post_control_with_response(payload)
 
+    def get_network_metrics(self, samples: int = 5) -> Dict[str, Any]:
+        """
+        Best-effort network telemetry between Django backend and robot server.
+        Measures:
+        - latency/jitter/loss from repeated GET /status probes
+        - downlink from GET /frame download throughput
+        - uplink from POST /status with an inert JSON payload
+        """
+        samples = max(1, min(int(samples), 10))
+        status_url = f"{self._get_base_url()}/status"
+        frame_url = f"{self._get_base_url()}/frame"
+
+        latencies_ms: list[float] = []
+        failures = 0
+
+        for _ in range(samples):
+            started = time.perf_counter()
+            try:
+                resp = self.session.get(status_url, timeout=self.timeout)
+                resp.raise_for_status()
+                _ = resp.content
+                latencies_ms.append((time.perf_counter() - started) * 1000.0)
+            except Exception:
+                failures += 1
+
+        latency_ms = round(sum(latencies_ms) / len(latencies_ms), 2) if latencies_ms else None
+        if len(latencies_ms) > 1:
+            jitter_ms = round(
+                sum(abs(latencies_ms[i] - latencies_ms[i - 1]) for i in range(1, len(latencies_ms)))
+                / (len(latencies_ms) - 1),
+                2,
+            )
+        else:
+            jitter_ms = 0.0 if latencies_ms else None
+
+        packet_loss_pct = round((failures / samples) * 100.0, 2)
+
+        downlink_kbps = None
+        try:
+            started = time.perf_counter()
+            resp = self.session.get(
+                frame_url,
+                timeout=(self.timeout, self.stream_timeout),
+                stream=True,
+            )
+            resp.raise_for_status()
+            downloaded = 0
+            for chunk in resp.iter_content(chunk_size=64 * 1024):
+                if not chunk:
+                    continue
+                downloaded += len(chunk)
+            elapsed = max(time.perf_counter() - started, 1e-3)
+            downlink_kbps = round((downloaded * 8.0) / 1000.0 / elapsed, 2)
+        except Exception:
+            downlink_kbps = None
+
+        uplink_kbps = None
+        try:
+            probe_body = json.dumps(
+                {
+                    "probe": "uplink",
+                    "blob": "x" * (128 * 1024),
+                },
+                ensure_ascii=False,
+            ).encode("utf-8")
+            started = time.perf_counter()
+            resp = self.session.post(
+                status_url,
+                data=probe_body,
+                headers={"Content-Type": "application/json"},
+                timeout=self.timeout,
+            )
+            resp.raise_for_status()
+            elapsed = max(time.perf_counter() - started, 1e-3)
+            uplink_kbps = round((len(probe_body) * 8.0) / 1000.0 / elapsed, 2)
+        except Exception:
+            uplink_kbps = None
+
+        signal_quality = 0
+        if latency_ms is not None:
+            signal_quality += max(0, 55 - int(latency_ms / 2))
+        if packet_loss_pct is not None:
+            signal_quality += max(0, 30 - int(packet_loss_pct * 3))
+        if downlink_kbps is not None:
+            signal_quality += min(15, int(downlink_kbps / 1000))
+        signal_quality = max(0, min(100, signal_quality))
+
+        return {
+            "uplink_kbps": uplink_kbps,
+            "downlink_kbps": downlink_kbps,
+            "latency_ms": latency_ms,
+            "jitter_ms": jitter_ms,
+            "packet_loss_pct": packet_loss_pct,
+            "signal_quality": signal_quality,
+        }
+
     # ------------------------------------------------------------------
     # 7) Base URL cho QR / SLAM
     # ------------------------------------------------------------------
@@ -418,6 +522,15 @@ class ROSClient:
 
     def get_slam_state(self) -> Dict[str, Any]:
         url = f"{self._build_slam_base_url()}/state"
+        return self._get_json_by_url(url)
+
+    def get_robot_pose(self) -> Dict[str, Any]:
+        state = self.get_slam_state() or {}
+        pose = state.get("pose") or {}
+        return pose
+
+    def clear_navigation(self) -> Dict[str, Any]:
+        url = f"{self._build_slam_base_url()}/clear_path"
         return self._get_json_by_url(url)
 
     def get_points(self) -> Dict[str, Any]:

@@ -81,8 +81,8 @@ export default function Sidebar() {
     <aside
       className={`
         ${isDark
-          ? "bg-[linear-gradient(180deg,rgba(22,6,38,0.98),rgba(12,5,32,0.96))]"
-          : "bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(245,242,255,0.96))]"
+          ? "bg-[#12071d]"
+          : "bg-[#fcfbff]"
         }
         border-r border-[var(--border)] flex flex-col justify-between
         transition-all duration-300 z-50 h-screen
@@ -90,7 +90,12 @@ export default function Sidebar() {
         ${collapsed ? "w-16" : "w-64"}
       `}
     >
-      <div className="flex flex-col items-center pt-4 pb-4 relative">
+      <div
+        className={`
+          flex flex-col items-center pt-4 pb-4 relative
+          ${isDark ? "bg-transparent" : "bg-[#fcfbff]/95"}
+        `}
+      >
         {!isMobile && (
           <button
             onClick={() => setCollapsed((prev) => !prev)}
@@ -119,8 +124,8 @@ export default function Sidebar() {
           <Image
             src="/logo_hongtrang.png"
             alt="RobotControl Logo"
-            width={collapsed ? 40 : 56}
-            height={collapsed ? 40 : 56}
+            width={collapsed ? 40 : 120}
+            height={collapsed ? 40 : 120}
             className="rounded-full mb-2 transition-all duration-300"
           />
           {!collapsed && (
@@ -137,7 +142,7 @@ export default function Sidebar() {
         </div>
       </div>
 
-      <nav className="flex-1 w-full mt-1 space-y-1 px-2 sm:px-3">
+      <nav className={`flex-1 w-full mt-1 space-y-1 px-2 sm:px-3 ${isDark ? "" : "bg-transparent"}`}>
         {menu.map((item) => {
           const Icon = item.icon;
           const active = path.startsWith(item.href);
@@ -165,7 +170,12 @@ export default function Sidebar() {
         })}
       </nav>
 
-      <div className="p-2 sm:p-3 border-t border-[var(--border)] space-y-2">
+      <div
+        className={`
+          p-2 sm:p-3 border-t border-[var(--border)] space-y-2
+          ${isDark ? "bg-transparent" : "bg-[#f6f2ff]/95"}
+        `}
+      >
         <div className="flex items-center justify-between gap-2 px-2">
           {!collapsed && (
             <span className="text-[10px] uppercase tracking-[0.22em] text-[var(--muted-2)]">

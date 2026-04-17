@@ -180,15 +180,20 @@ def me_view(request):
     try:
         auth_result = jwt_auth.authenticate(request)
     except AuthenticationFailed as e:
-        return Response(
-            {"detail": e.detail},
-            status=status.HTTP_401_UNAUTHORIZED,
-        )
+        auth_result = None
 
     if auth_result is None:
         return Response(
-            {"detail": "No authentication credentials found"},
-            status=status.HTTP_401_UNAUTHORIZED,
+            {
+                "ok": True,
+                "authenticated": False,
+                "email": None,
+                "username": "Guest",
+                "robot_url": None,
+                "robot_device_id": None,
+                "robot_updated_at": None,
+            },
+            status=status.HTTP_200_OK,
         )
 
     user, _validated_token = auth_result

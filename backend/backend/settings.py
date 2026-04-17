@@ -34,7 +34,7 @@ LOGGING = {
 
 SECRET_KEY = 'django-insecure-cvbsxx-n%x%^40af+8^9-h+mbry(76cia18(sykids23d9=0b%'
 DEBUG = True
-ALLOWED_HOSTS = ["127.0.0.1", "192.168.1.26", "localhost", "<IP-PC-TRONG-LAN>"]
+ALLOWED_HOSTS = ["127.0.0.1", "192.168.1.26", "localhost", "testserver", "<IP-PC-TRONG-LAN>"]
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -58,6 +58,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'control.middleware.RobotActionEventMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]

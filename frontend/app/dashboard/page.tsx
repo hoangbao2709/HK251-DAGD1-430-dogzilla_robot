@@ -3,6 +3,7 @@
 import React, { useMemo, useState, useEffect } from "react";
 import ConnectionCard from "@/components/ConnectionCard";
 import { useRouter } from "next/navigation";
+import { useTheme } from "next-themes";
 import { setSelectedRobotAddr } from "@/app/lib/selectedRobot";
 
 export type Device = {
@@ -63,6 +64,8 @@ function loadDevicesFromCookie(): Device[] | null {
 
 
 export default function DashboardPage() {
+  const { resolvedTheme } = useTheme();
+  const [themeMounted, setThemeMounted] = useState(false);
   const [devices, setDevices] = useState<Device[]>([]);
   const [addr, setAddr] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -72,6 +75,11 @@ export default function DashboardPage() {
   const router = useRouter();
 
   const canAdd = useMemo(() => addr.trim().length > 0, [addr]);
+
+  useEffect(() => {
+    setThemeMounted(true);
+  }, []);
+  const isDark = themeMounted && resolvedTheme === "dark";
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -304,7 +312,7 @@ const handleConnectDevice = async (device: Device) => {
         </div>
       )}
 
-      <h1 className={`gradient-title mb-6 ${isPortrait? "" : "hidden"}`}>Connection Manager</h1>
+      <h1 className={`gradient-title mb-6 ${isPortrait ? "" : "hidden"}`}>Connection Manager</h1>
 
       <div className="mb-6 flex flex-col sm:flex-row gap-2">
         <input
@@ -313,21 +321,35 @@ const handleConnectDevice = async (device: Device) => {
           value={addr}
           onChange={(e) => setAddr(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && canAdd && handleAdd()}
-          className="flex-1 rounded-xl bg-[var(--surface-2)] px-4 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted)] focus:outline-none focus:ring-2 focus:ring-pink-400/60 min-h-[44px]"
+          className={`flex-1 min-h-[44px] rounded-xl px-4 py-2 text-sm outline-none focus:ring-2 ${
+            isDark
+              ? "border border-white/10 bg-[#160a28] text-white placeholder:text-white/35 focus:ring-cyan-400/30"
+              : "border border-[#d8cbff] bg-[#fffdfd] text-[#1f1640] placeholder:text-[#8d84a8] focus:ring-pink-400/30"
+          }`}
         />
         <button
           onClick={handleAdd}
           disabled={!canAdd || loading}
-          className={`gradient-button1 px-4 py-2 rounded-xl cursor-pointer text-sm font-medium min-h-[44px] ${
-            !canAdd || loading ? "opacity-50 cursor-not-allowed" : ""
-          }`}
+          className={`min-h-[44px] rounded-xl px-4 py-2 text-sm font-medium cursor-pointer transition ${
+            isDark
+              ? "bg-[#7c4dff] text-white hover:bg-[#6b3dff]"
+              : "bg-[#7c4dff] text-white hover:bg-[#6b3dff]"
+          } ${!canAdd || loading ? "cursor-not-allowed opacity-50" : ""}`}
         >
           Add
         </button>
       </div>
 
       {errorMsg && (
-        <div className="mb-4 text-xs text-rose-400">Error: {errorMsg}</div>
+        <div
+          className={`mb-4 rounded-xl border px-3 py-2 text-xs ${
+            isDark
+              ? "border-rose-500/30 bg-rose-500/10 text-rose-200"
+              : "border-rose-300/40 bg-rose-500/10 text-rose-600"
+          }`}
+        >
+          Error: {errorMsg}
+        </div>
       )}
 
       <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">

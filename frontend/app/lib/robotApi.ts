@@ -202,6 +202,9 @@ export const RobotAPI = {
   health: () =>
     api<any>(`${CONTROL_PREFIX}/${robotId}/health/`),
 
+  networkMetrics: () =>
+    api<any>(`${CONTROL_PREFIX}/${robotId}/network/metrics/`),
+
   frameUrl: (ts?: number) =>
     `${API_BASE}${CONTROL_PREFIX}/${robotId}/frame/${ts ? `?t=${ts}` : ""}`,
 
@@ -240,4 +243,25 @@ export const RobotAPI = {
       method: "POST",
       body: JSON.stringify({}),
     }),
+
+  events: (limit = 20, offset = 0) =>
+    api<{
+      ok: boolean;
+      robot_id: string;
+      count: number;
+      limit: number;
+      offset: number;
+      items: Array<{
+        id: string;
+        timestamp: string;
+        robot: string;
+        event: string;
+        severity: "Info" | "Warning" | "Critical";
+        duration: string | null;
+        status: "Success" | "Failed" | "Active";
+        action: string;
+        detail: string | null;
+        payload: Record<string, unknown>;
+      }>;
+    }>(`${CONTROL_PREFIX}/${robotId}/events/?limit=${limit}&offset=${offset}`),
 };

@@ -7,20 +7,17 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen bg-[#1A0F28] text-white">
-      <div className="flex min-h-screen flex-row">
-        {/* Sidebar: ẩn trên màn hình rất nhỏ (thường là điện thoại dọc),
-            vẫn hiện khi đủ rộng (sm trở lên, tức điện thoại quay ngang, tablet, PC) */}
+    <div className="relative min-h-screen overflow-hidden bg-[var(--background)] text-[var(--foreground)]">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(253,116,155,0.12),transparent_32%),radial-gradient(circle_at_top_right,rgba(0,194,255,0.10),transparent_28%),radial-gradient(circle_at_bottom_left,rgba(124,77,255,0.10),transparent_30%)] dark:bg-[radial-gradient(circle_at_top_left,rgba(253,116,155,0.10),transparent_30%),radial-gradient(circle_at_top_right,rgba(0,194,255,0.08),transparent_26%),radial-gradient(circle_at_bottom_left,rgba(124,77,255,0.08),transparent_28%)]" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-white/40 via-white/10 to-transparent dark:from-white/6 dark:via-white/0" />
+
+      <div className="relative flex min-h-screen flex-row">
         <div className="hidden sm:block">
           <Sidebar />
         </div>
-
         <div className="flex flex-col flex-1">
           <Topbar />
-          {/* main để children tự quyết định padding (Dashboard dùng p-4 md:p-6) */}
-          <main className="flex-1 overflow-y-auto">
-            {children}
-          </main>
+          <main className="flex-1 overflow-y-auto">{children}</main>
         </div>
       </div>
     </div>

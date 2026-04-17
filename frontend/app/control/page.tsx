@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import RemoteView from "@/components/control/RemoteView";
 import FPVView from "@/components/control/FPVView";
 import HeaderControl from "@/components/header_control";
+import { RobotAPI } from "@/app/lib/robotApi";
 
 import Sidebar from "@/components/Sidebar";
 import Topbar from "@/components/Topbar";
@@ -11,7 +12,7 @@ import { ChevronLeft } from "lucide-react";
 
 async function robotStop() {
   try {
-    await fetch("/api/robots/robot-a/command/move/stop", { method: "POST" });
+    await RobotAPI.move({ command: "stop" });
   } catch {}
 }
 async function getFpv() {

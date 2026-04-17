@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTheme } from "next-themes";
 import { RobotAPI } from "@/app/lib/robotApi";
 import { DEFAULT_DOG_SERVER } from "@/app/lib/robotApi";
 import { getSelectedRobotAddr } from "@/app/lib/selectedRobot";
@@ -396,6 +397,8 @@ function TopDownQrView({ data }: { data: QrPositionData | null }) {
 }
 
 export default function AutonomousControlPage() {
+    const { resolvedTheme } = useTheme();
+    const [themeMounted, setThemeMounted] = useState(false);
     const [connected, setConnected] = useState(false);
     const [robotStatus, setRobotStatus] = useState<RobotStatusResponse | null>(null);
 
@@ -410,6 +413,7 @@ export default function AutonomousControlPage() {
     const [controlStatus, setControlStatus] = useState<ControlStatusResponse | null>(null);
 
     const [cameraError, setCameraError] = useState(false);
+    const [cameraReady, setCameraReady] = useState(false);
     const [mapReloadKey, setMapReloadKey] = useState(0);
 
     const [savedPoints, setSavedPoints] = useState<PointsResponse>({});
@@ -432,6 +436,12 @@ export default function AutonomousControlPage() {
 
     const recognitionRef = useRef<any>(null);
     const hasAutoStartedLidarRef = useRef(false);
+
+    useEffect(() => {
+        setThemeMounted(true);
+    }, []);
+
+    const isDark = themeMounted && resolvedTheme === "dark";
 
     useEffect(() => {
         const selectedAddr = getSelectedRobotAddr();
@@ -914,6 +924,72 @@ export default function AutonomousControlPage() {
         { label: "Đi A, B, C", value: "hãy cho robot đi đến điểm A, B, C" },
         { label: "Stop", value: "dừng điều hướng" },
     ];
+
+    const savedShellClass = isDark
+        ? "space-y-4 bg-[#0f0822] shadow-[0_18px_40px_rgba(124,77,255,0.08)]"
+        : "space-y-4 bg-[#fffdfd] shadow-[0_18px_40px_rgba(124,77,255,0.08)]";
+    const savedHeaderClass = isDark
+        ? "flex flex-col gap-3 rounded-2xl border border-white/10 bg-[#201337] px-4 py-3 lg:flex-row lg:items-center lg:justify-between"
+        : "flex flex-col gap-3 rounded-2xl border border-[#dacfff] bg-[#f6efff] px-4 py-3 lg:flex-row lg:items-center lg:justify-between";
+    const savedEmptyClass = isDark
+        ? "rounded-2xl border border-dashed border-white/10 bg-[#160a28] px-4 py-10 text-center text-sm text-white/45"
+        : "rounded-2xl border border-dashed border-[#d7c4ff] bg-[#fbf7ff] px-4 py-10 text-center text-sm text-[#8d84a8]";
+    const savedPointCardClass = isDark
+        ? "rounded-2xl border border-white/10 bg-[#160a28] px-4 py-3 shadow-none"
+        : "rounded-2xl border border-[#dacfff] bg-[#ffffff] px-4 py-3 shadow-[0_10px_24px_rgba(124,77,255,0.06)]";
+    const savedStatClass = isDark
+        ? "rounded-xl bg-[#241139] px-3 py-2 ring-1 ring-white/8"
+        : "rounded-xl px-3 py-2 ring-1";
+    const savedStatTone = {
+        x: isDark ? "ring-white/8" : "ring-[#ffc3d8]",
+        y: isDark ? "ring-white/8" : "ring-[#b8e9ff]",
+        yaw: isDark ? "ring-white/8" : "ring-[#b5efc4]",
+    };
+    const savedStatFill = isDark ? "bg-[#241139]" : "";
+    const savedButtonClass = isDark
+        ? "flex-1 rounded-full bg-[#10b981] px-3 py-2 text-xs font-semibold text-white"
+        : "flex-1 rounded-full bg-[#10b981] px-3 py-2 text-xs font-semibold text-white";
+
+    const voiceShellClass = isDark
+        ? "space-y-5 bg-[#0f0822] shadow-[0_18px_40px_rgba(0,194,255,0.08)]"
+        : "space-y-5 bg-[#fffdfd] shadow-[0_18px_40px_rgba(0,194,255,0.08)]";
+    const voiceHeaderClass = isDark
+        ? "flex flex-col gap-3 rounded-2xl border border-white/10 bg-[#18223b] px-4 py-3 lg:flex-row lg:items-end lg:justify-between"
+        : "flex flex-col gap-3 rounded-2xl border border-[#d8cbff] bg-[#eef7ff] px-4 py-3 lg:flex-row lg:items-end lg:justify-between";
+    const quickCommandClass = isDark
+        ? "rounded-full border border-white/10 bg-[#26163b] px-3 py-1.5 text-xs font-medium text-white/80 transition hover:bg-[#322049] hover:text-white"
+        : "rounded-full border border-[#d6c7ff] bg-[#f7f3ff] px-3 py-1.5 text-xs font-medium text-[#4c3b73] transition hover:bg-[#eef7ff] hover:text-[#1f1640]";
+    const voicePanelClass = isDark
+        ? "rounded-2xl border border-white/10 bg-[#160a28] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
+        : "rounded-2xl border border-[#dacfff] bg-[#ffffff] p-4 shadow-[0_10px_24px_rgba(124,77,255,0.06)]";
+    const voiceTextareaClass = isDark
+        ? "min-h-[160px] w-full resize-none rounded-2xl border border-white/10 bg-[#12071f] px-4 py-4 text-base leading-6 text-white outline-none placeholder:text-white/35"
+        : "min-h-[160px] w-full resize-none rounded-2xl border border-[#d8cbff] bg-[#fffdfd] px-4 py-4 text-base leading-6 text-[#1f1640] outline-none placeholder:text-[#9f96b8]";
+    const voiceResultClass = isDark
+        ? "rounded-2xl border border-white/10 bg-[#160a28] px-4 py-3"
+        : "rounded-2xl border border-[#dacfff] bg-[#ffffff] px-4 py-3";
+    const actionCardClass = isDark
+        ? "rounded-2xl border border-white/10 bg-[#160a28] p-4"
+        : "rounded-2xl border border-[#d8cbff] bg-[#ffffff] p-4";
+    const quickPanelClass = isDark
+        ? "rounded-2xl border border-white/10 bg-[#160a28] p-4"
+        : "rounded-2xl border border-[#d8cbff] bg-[#ffffff] p-4";
+    const sidebarShellClass = isDark
+        ? "w-80 shrink-0 bg-[#0f0822] border-l border-white/10 flex flex-col gap-5 p-5 overflow-y-auto"
+        : "w-80 shrink-0 bg-[#fffdfd] border-l border-[#dacfff] flex flex-col gap-5 p-5 overflow-y-auto";
+    const sidebarCardClass = isDark
+        ? "rounded-2xl bg-[#160a28] border border-white/10"
+        : "rounded-2xl bg-[#ffffff] border border-[#dacfff]";
+    const sidebarMiniCardClass = isDark
+        ? "rounded-xl bg-[#241139] px-3 py-2"
+        : "rounded-xl bg-[#f7f3ff] px-3 py-2";
+    const sidebarLabelClass = isDark
+        ? "text-[10px] uppercase tracking-[0.22em] text-white/55"
+        : "text-[10px] uppercase tracking-[0.22em] text-[#705d94]";
+    const sidebarValueClass = isDark
+        ? "mt-2 text-sm font-semibold text-white"
+        : "mt-2 text-sm font-semibold text-[#1f1640]";
+    const sidebarMutedClass = isDark ? "text-white/55" : "text-[#705d94]";
     const lidarUrl = useMemo(() => {
         try {
             const url = new URL(robotAddr.trim() || DEFAULT_DOG_SERVER);
@@ -1041,7 +1117,7 @@ export default function AutonomousControlPage() {
 
                 <button
                     onClick={() => setSidebarOpen((open) => !open)}
-                    className="absolute right-4 top-5 hidden lg:inline-flex items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs font-semibold text-[var(--foreground)]/75 transition hover:bg-[var(--surface-2)]"
+                    className="absolute right-4 top-5 hidden lg:inline-flex items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs font-semibold text-[var(--muted)] transition hover:bg-[var(--surface-2)] hover:text-[var(--foreground)]"
                 >
                     {sidebarOpen ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
                     {sidebarOpen ? "Hide panel" : "Show panel"}
@@ -1050,13 +1126,39 @@ export default function AutonomousControlPage() {
                 <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.15fr_0.85fr]">
                     <div>
                         <SectionLabel>Camera QR scan</SectionLabel>
-                        <div className="bg-[var(--surface)] rounded-xl overflow-hidden border border-[var(--border)] relative">
+                        <div className="bg-[var(--surface)] rounded-xl overflow-hidden border border-[var(--border)] relative min-h-[360px] xl:min-h-[560px]">
+                            {!cameraReady ? (
+                                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[linear-gradient(180deg,var(--surface),var(--surface-2))] px-4 text-center">
+                                    <div className="h-16 w-16 rounded-full border border-[var(--border)] bg-[var(--surface-elev)] flex items-center justify-center shadow-sm">
+                                        <Bot size={28} className="text-[var(--accent)]" />
+                                    </div>
+                                    <div>
+                                        <p className="text-sm font-semibold text-[var(--foreground)]">
+                                            Waiting for QR camera stream
+                                        </p>
+                                        <p className="mt-1 text-xs text-[var(--muted)]">
+                                            The frame will appear here once the robot camera is available.
+                                        </p>
+                                    </div>
+                                    <div className="mt-2 h-1.5 w-48 overflow-hidden rounded-full bg-[rgba(23,19,39,0.10)] dark:bg-white/10">
+                                        <div className="h-full w-1/3 animate-pulse rounded-full bg-gradient-to-r from-[#FD749B] via-[#7C4DFF] to-[#00C2FF]" />
+                                    </div>
+                                </div>
+                            ) : null}
                             <img
                                 src={RobotAPI.qrVideoFeedUrl()}
                                 alt="QR video feed"
-                                className="block h-auto w-full bg-[var(--surface-elev)]"
-                                onError={() => setCameraError(true)}
-                                onLoad={() => setCameraError(false)}
+                                className={`block h-auto w-full bg-[var(--surface-elev)] transition-opacity duration-300 ${
+                                    cameraReady ? "opacity-100" : "opacity-0"
+                                }`}
+                                onLoad={() => {
+                                    setCameraReady(true);
+                                    setCameraError(false);
+                                }}
+                                onError={() => {
+                                    setCameraReady(false);
+                                    setCameraError(true);
+                                }}
                             />
                             <span className="absolute top-3 left-4 text-green-400 font-mono font-bold text-sm tracking-wider">
                                 FPS:{robotFps ?? "--"}
@@ -1155,8 +1257,8 @@ export default function AutonomousControlPage() {
                 </div>
 
                 <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                    <DarkCard className="space-y-4 bg-[#fffdfd] shadow-[0_18px_40px_rgba(124,77,255,0.08)] dark:bg-[#0f0822]">
-                        <div className="flex flex-col gap-3 rounded-2xl border border-[#dacfff] bg-[#f6efff] px-4 py-3 lg:flex-row lg:items-center lg:justify-between dark:border-white/8 dark:bg-[#201337]">
+                    <DarkCard className={savedShellClass}>
+                        <div className={savedHeaderClass}>
                             <SectionLabel>Saved points</SectionLabel>
                             <div className="flex flex-wrap gap-2">
                                 <button
@@ -1184,7 +1286,7 @@ export default function AutonomousControlPage() {
                         </div>
 
                         {pointNames.length === 0 ? (
-                            <div className="rounded-2xl border border-dashed border-[#d7c4ff] bg-[#fbf7ff] px-4 py-10 text-center text-sm text-[#8d84a8] dark:border-white/10 dark:bg-[#160a28] dark:text-[var(--muted-2)]">
+                            <div className={savedEmptyClass}>
                                 No saved points
                             </div>
                         ) : (
@@ -1194,29 +1296,29 @@ export default function AutonomousControlPage() {
                                 return (
                                     <div
                                         key={name}
-                                        className="rounded-2xl border border-[#dacfff] bg-[#ffffff] px-4 py-3 shadow-[0_10px_24px_rgba(124,77,255,0.06)] dark:border-[var(--border)] dark:bg-[#160a28] dark:shadow-none"
+                                        className={savedPointCardClass}
                                     >
                                         <div className="space-y-4">
                                             <div>
-                                                <div className="text-lg font-semibold text-[#24163f] dark:text-[var(--foreground)]">{name}</div>
+                                                <div className={isDark ? "text-lg font-semibold text-white" : "text-lg font-semibold text-[#24163f]"}>{name}</div>
                                             </div>
 
                                             <div className="grid grid-cols-3 gap-3 text-xs text-[var(--muted)]">
-                                                <div className="rounded-xl bg-[#fff5f8] px-3 py-2 ring-1 ring-[#ffc3d8] dark:bg-[#241139] dark:ring-white/8">
+                                                <div className={`${savedStatClass} ${savedStatFill} ${savedStatTone.x}`}>
                                                     <div className="text-[10px] uppercase tracking-widest text-[var(--muted-2)]">X</div>
-                                                    <div className="mt-1 text-sm font-semibold text-[#1f1640] dark:text-[var(--foreground)]">
+                                                    <div className={isDark ? "mt-1 text-sm font-semibold text-white" : "mt-1 text-sm font-semibold text-[#1f1640]"}>
                                                         {Number(point.x).toFixed(3)}
                                                     </div>
                                                 </div>
-                                                <div className="rounded-xl bg-[#f2fbff] px-3 py-2 ring-1 ring-[#b8e9ff] dark:bg-[#241139] dark:ring-white/8">
+                                                <div className={`${savedStatClass} ${savedStatFill} ${savedStatTone.y}`}>
                                                     <div className="text-[10px] uppercase tracking-widest text-[var(--muted-2)]">Y</div>
-                                                    <div className="mt-1 text-sm font-semibold text-[#1f1640] dark:text-[var(--foreground)]">
+                                                    <div className={isDark ? "mt-1 text-sm font-semibold text-white" : "mt-1 text-sm font-semibold text-[#1f1640]"}>
                                                         {Number(point.y).toFixed(3)}
                                                     </div>
                                                 </div>
-                                                <div className="rounded-xl bg-[#f4fff7] px-3 py-2 ring-1 ring-[#b5efc4] dark:bg-[#241139] dark:ring-white/8">
+                                                <div className={`${savedStatClass} ${savedStatFill} ${savedStatTone.yaw}`}>
                                                     <div className="text-[10px] uppercase tracking-widest text-[var(--muted-2)]">Yaw</div>
-                                                    <div className="mt-1 text-sm font-semibold text-[#1f1640] dark:text-[var(--foreground)]">
+                                                    <div className={isDark ? "mt-1 text-sm font-semibold text-white" : "mt-1 text-sm font-semibold text-[#1f1640]"}>
                                                         {Number(point.yaw || 0).toFixed(3)}
                                                     </div>
                                                 </div>
@@ -1226,7 +1328,7 @@ export default function AutonomousControlPage() {
                                                 <button
                                                     onClick={() => goToPoint(name)}
                                                     disabled={pointActionLoading}
-                                                    className="flex-1 rounded-full bg-[#10b981] px-3 py-2 text-xs font-semibold text-white shadow-[0_8px_18px_rgba(15,169,104,0.18)] transition hover:bg-[#0ea56f] disabled:opacity-50"
+                                                    className={savedButtonClass}
                                                 >
                                                     Go to
                                                 </button>
@@ -1246,37 +1348,26 @@ export default function AutonomousControlPage() {
                         )}
                     </DarkCard>
 
-                    <DarkCard className="space-y-5 bg-[#fffdfd] shadow-[0_18px_40px_rgba(0,194,255,0.08)] dark:bg-[#0f0822]">
-                        <div className="flex flex-col gap-3 rounded-2xl border border-[#d8cbff] bg-[#eef7ff] px-4 py-3 lg:flex-row lg:items-end lg:justify-between dark:border-white/8 dark:bg-[#18223b]">
+                    <DarkCard className={voiceShellClass}>
+                        <div className={voiceHeaderClass}>
                             <div className="space-y-1">
                                 <SectionLabel>Voice navigation command</SectionLabel>
                                 <p className="max-w-2xl text-sm text-[#594d76] dark:text-[var(--muted)]">
                                     Gõ hoặc đọc lệnh điều hướng. `Enter` để gửi, `Shift+Enter` để xuống dòng.
                                 </p>
                             </div>
-                            <div className="flex flex-wrap gap-2">
-                                {quickCommands.map((command) => (
-                                    <button
-                                        key={command.label}
-                                        onClick={() => setCommandText(command.value)}
-                                        className="rounded-full border border-[#d6c7ff] bg-[#f7f3ff] px-3 py-1.5 text-xs font-medium text-[#4c3b73] shadow-[0_6px_14px_rgba(124,77,255,0.06)] transition hover:border-[#8c63ff]/30 hover:bg-[#eef7ff] hover:text-[#1f1640] dark:border-white/10 dark:bg-[#26163b] dark:text-white/80 dark:hover:bg-[#322049] dark:hover:text-white"
-                                    >
-                                        {command.label}
-                                    </button>
-                                ))}
-                            </div>
                         </div>
 
                         <div className="grid gap-4 xl:grid-cols-[1.25fr_0.75fr]">
                             <div className="space-y-3">
-                                <div className="rounded-2xl border border-[#dacfff] bg-[#ffffff] p-4 shadow-[0_10px_24px_rgba(124,77,255,0.06)] dark:border-[var(--border)] dark:bg-[#160a28] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+                                <div className={voicePanelClass}>
                                     <div className="mb-2 flex items-center justify-between gap-3">
-                                        <label className="text-xs uppercase tracking-[0.22em] text-[#705d94] dark:text-white/55">
+                                        <label className={isDark ? "text-xs uppercase tracking-[0.22em] text-white/55" : "text-xs uppercase tracking-[0.22em] text-[#705d94]"}>
                                             Command
                                         </label>
                                         <span
                                             className={`text-[11px] font-medium ${
-                                                isListening ? "text-cyan-600 dark:text-cyan-400" : "text-[#8d84a8] dark:text-white/45"
+                                                isListening ? "text-cyan-600 dark:text-cyan-400" : isDark ? "text-white/45" : "text-[#8d84a8]"
                                             }`}
                                         >
                                             {isListening ? "Listening" : "Idle"}
@@ -1293,11 +1384,11 @@ export default function AutonomousControlPage() {
                                             }
                                         }}
                                         placeholder="Hãy cho robot đi đến điểm A"
-                                        className="min-h-[160px] w-full resize-none rounded-2xl border border-[#d8cbff] bg-[#fffdfd] px-4 py-4 text-base leading-6 text-[#1f1640] outline-none placeholder:text-[#9f96b8] focus:border-[#00b8ff]/50 dark:border-white/10 dark:bg-[#12071f] dark:text-white dark:placeholder:text-white/35"
+                                        className={voiceTextareaClass}
                                     />
 
                                     <div className="mt-4 flex flex-col gap-3 border-t border-[var(--border)] pt-4 sm:flex-row sm:items-center sm:justify-between">
-                                        <div className="text-xs text-[#6c6090] dark:text-white/55">
+                                        <div className={isDark ? "text-xs text-white/55" : "text-xs text-[#6c6090]"}>
                                             {commandText.trim().length
                                                 ? `${commandText.trim().length} chars`
                                                 : "No command yet"}
@@ -1319,34 +1410,34 @@ export default function AutonomousControlPage() {
                                     </div>
                                 ) : null}
 
-                                <div className="rounded-2xl border border-[#dacfff] bg-[#ffffff] px-4 py-3 shadow-[0_10px_24px_rgba(253,116,155,0.05)] dark:border-[var(--border)] dark:bg-[#160a28]">
-                                    <div className="mb-2 text-[10px] uppercase tracking-[0.22em] text-[#705d94] dark:text-white/55">
+                                <div className={voiceResultClass}>
+                                    <div className={isDark ? "mb-2 text-[10px] uppercase tracking-[0.22em] text-white/55" : "mb-2 text-[10px] uppercase tracking-[0.22em] text-[#705d94]"}>
                                         Result
                                     </div>
                                     {commandResult ? (
-                                        <div className="space-y-2 text-sm text-[#483b61] dark:text-white/80">
+                                        <div className={isDark ? "space-y-2 text-sm text-white/80" : "space-y-2 text-sm text-[#483b61]"}>
                                             <div className="flex items-start justify-between gap-3">
-                                                <span className="text-[#7a6f95] dark:text-white/55">Input</span>
-                                                <span className="text-right text-[#1f1640] dark:text-white">
+                                                <span className={isDark ? "text-white/55" : "text-[#7a6f95]"}>Input</span>
+                                                <span className={isDark ? "text-right text-white" : "text-right text-[#1f1640]"}>
                                                     {commandResult.input_text || commandText || "—"}
                                                 </span>
                                             </div>
                                             {commandResult.result?.tool ? (
                                                 <div className="flex items-start justify-between gap-3">
-                                                      <span className="text-[#7a6f95] dark:text-white/55">Tool</span>
-                                                      <span className="text-right text-[#1f1640] dark:text-white">
+                                                      <span className={isDark ? "text-white/55" : "text-[#7a6f95]"}>Tool</span>
+                                                      <span className={isDark ? "text-right text-white" : "text-right text-[#1f1640]"}>
                                                         {commandResult.result.tool}
                                                     </span>
                                                 </div>
                                             ) : null}
                                             {commandResult.result?.arguments ? (
-                                                <pre className="mt-2 overflow-auto rounded-xl bg-[#f6f2ff] p-3 text-xs text-[#62577f] dark:bg-[#241139] dark:text-white/65">
+                                                <pre className={isDark ? "mt-2 overflow-auto rounded-xl bg-[#241139] p-3 text-xs text-white/65" : "mt-2 overflow-auto rounded-xl bg-[#f6f2ff] p-3 text-xs text-[#62577f]"}>
                                                     {JSON.stringify(commandResult.result.arguments, null, 2)}
                                                 </pre>
                                             ) : null}
                                         </div>
                                     ) : (
-                                        <div className="text-sm text-[#8d84a8] dark:text-white/45">
+                                        <div className={isDark ? "text-sm text-white/45" : "text-sm text-[#8d84a8]"}>
                                             No command sent yet.
                                         </div>
                                     )}
@@ -1354,8 +1445,8 @@ export default function AutonomousControlPage() {
                             </div>
 
                             <div className="space-y-3">
-                                <div className="rounded-2xl border border-[#d8cbff] bg-[#ffffff] p-4 shadow-[0_10px_24px_rgba(0,194,255,0.06)] dark:border-[var(--border)] dark:bg-[#160a28]">
-                                    <div className="mb-3 text-[10px] uppercase tracking-[0.22em] text-[#705d94] dark:text-white/55">
+                                <div className={actionCardClass}>
+                                    <div className={isDark ? "mb-3 text-[10px] uppercase tracking-[0.22em] text-white/55" : "mb-3 text-[10px] uppercase tracking-[0.22em] text-[#705d94]"}>
                                         Actions
                                     </div>
                                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-1">
@@ -1388,8 +1479,8 @@ export default function AutonomousControlPage() {
                                     </div>
                                 </div>
 
-                                <div className="rounded-2xl border border-[#d8cbff] bg-[#ffffff] p-4 shadow-[0_10px_24px_rgba(124,77,255,0.05)] dark:border-[var(--border)] dark:bg-[#160a28]">
-                                    <div className="mb-3 text-[10px] uppercase tracking-[0.22em] text-[#705d94] dark:text-white/55">
+                                <div className={quickPanelClass}>
+                                    <div className={isDark ? "mb-3 text-[10px] uppercase tracking-[0.22em] text-white/55" : "mb-3 text-[10px] uppercase tracking-[0.22em] text-[#705d94]"}>
                                         Quick commands
                                     </div>
                                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-1">
@@ -1397,7 +1488,7 @@ export default function AutonomousControlPage() {
                                             <button
                                                 key={command.label}
                                                 onClick={() => setCommandText(command.value)}
-                                                className="rounded-full border border-[#d8cbff] bg-[#f7f3ff] px-3 py-2.5 text-sm font-medium text-[#49386f] shadow-[0_6px_14px_rgba(124,77,255,0.06)] transition hover:border-[#00b8ff]/30 hover:bg-[#eef7ff] hover:text-[#1f1640] dark:border-[var(--border)] dark:bg-[#26163b] dark:text-white/80 dark:hover:border-cyan-400/30 dark:hover:bg-[#322049] dark:hover:text-white"
+                                                className={quickCommandClass}
                                             >
                                                 {command.label}
                                             </button>
@@ -1411,15 +1502,15 @@ export default function AutonomousControlPage() {
             </div>
 
             {sidebarOpen ? (
-                <div className="w-80 shrink-0 bg-[var(--surface)] border-l border-[var(--border)] flex flex-col gap-5 p-5 overflow-y-auto">
+                <div className={sidebarShellClass}>
                 <div>
                     <SectionLabel>Path planning</SectionLabel>
-                    <DarkCard className="space-y-4">
+                    <DarkCard className={`space-y-4 ${sidebarCardClass}`}>
                         <div className="flex items-center justify-between">
-                            <span className="text-xs uppercase tracking-[0.22em] text-[var(--muted-2)]">
+                            <span className={sidebarLabelClass}>
                                 Overview
                             </span>
-                            <span className="rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-3 py-1 text-[11px] text-[var(--muted)]">
+                            <span className={`rounded-full border border-[var(--border)] px-3 py-1 text-[11px] ${isDark ? "bg-[#26163b] text-white/70" : "bg-[#f7f3ff] text-[#705d94]"}`}>
                                 {slamState?.pose
                                     ? `${slamState.pose.x.toFixed(2)}, ${slamState.pose.y.toFixed(2)}`
                                     : "No pose"}
@@ -1427,11 +1518,11 @@ export default function AutonomousControlPage() {
                         </div>
                         <div className="grid grid-cols-2 gap-3">
                             {planningCards.map(({ label, value }) => (
-                                <div key={label} className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] px-4 py-3">
-                                    <div className="text-[10px] uppercase tracking-[0.22em] text-[var(--muted-2)]">
+                                <div key={label} className={`${sidebarMiniCardClass} border border-[var(--border)]`}>
+                                    <div className={sidebarLabelClass}>
                                         {label}
                                     </div>
-                                    <div className="mt-2 text-sm font-semibold text-[var(--foreground)]">{value}</div>
+                                    <div className={sidebarValueClass}>{value}</div>
                                 </div>
                             ))}
                         </div>
@@ -1440,13 +1531,13 @@ export default function AutonomousControlPage() {
 
                 <div>
                     <SectionLabel>Status</SectionLabel>
-                    <DarkCard className="grid grid-cols-2 gap-3">
+                    <DarkCard className={`grid grid-cols-2 gap-3 ${sidebarCardClass}`}>
                         {statusCards.map(({ label, value }) => (
-                            <div key={label} className="rounded-xl bg-[var(--surface-2)] px-3 py-2">
-                                <div className="text-[10px] uppercase tracking-widest text-[var(--muted-2)]">
+                            <div key={label} className={`${sidebarMiniCardClass}`}>
+                                <div className={sidebarLabelClass}>
                                     {label}
                                 </div>
-                                <div className="mt-1 text-sm font-semibold text-[var(--foreground)]">
+                                <div className={isDark ? "mt-1 text-sm font-semibold text-white" : "mt-1 text-sm font-semibold text-[#1f1640]"}>
                                     {value}
                                 </div>
                             </div>
@@ -1456,9 +1547,9 @@ export default function AutonomousControlPage() {
 
                 <div>
                     <SectionLabel>QR detections</SectionLabel>
-                    <DarkCard className="p-3">
+                    <DarkCard className={`p-3 ${sidebarCardClass}`}>
                         {qrPositionError && !qrPosition ? (
-                            <span className="text-[var(--muted)] text-xs">{qrPositionError}</span>
+                            <span className={`text-xs ${sidebarMutedClass}`}>{qrPositionError}</span>
                         ) : (
                             <TopDownQrView data={qrPosition} />
                         )}
@@ -1467,9 +1558,9 @@ export default function AutonomousControlPage() {
 
                 <div>
                     <SectionLabel>Issues</SectionLabel>
-                    <DarkCard className="flex items-start gap-2 px-3 py-3">
-                        <AlertTriangle size={14} className="mt-0.5 shrink-0 text-[var(--muted-2)]" />
-                        <span className="text-xs text-[var(--muted)]">
+                    <DarkCard className={`flex items-start gap-2 px-3 py-3 ${sidebarCardClass}`}>
+                        <AlertTriangle size={14} className={`mt-0.5 shrink-0 ${isDark ? "text-white/45" : "text-[#705d94]"}`} />
+                        <span className={`text-xs ${sidebarMutedClass}`}>
                             {slamError || qrPositionError || qrError || "No errors recorded"}
                         </span>
                     </DarkCard>
@@ -1477,10 +1568,10 @@ export default function AutonomousControlPage() {
 
                 <div>
                     <SectionLabel>Connection</SectionLabel>
-                    <DarkCard className="space-y-2 text-xs text-[var(--foreground)]/70">
+                    <DarkCard className={`space-y-2 text-xs ${isDark ? "text-white/70" : "text-[#4c3b73]"} ${sidebarCardClass}`}>
                         <div className="flex items-center justify-between">
                             <span>SLAM</span>
-                            <span className="text-[var(--foreground)]">
+                            <span className={isDark ? "text-white" : "text-[#1f1640]"}>
                                 {slamState?.status?.slam_ok !== undefined
                                     ? String(slamState.status.slam_ok)
                                     : "No data"}
@@ -1488,7 +1579,7 @@ export default function AutonomousControlPage() {
                         </div>
                         <div className="flex items-center justify-between">
                             <span>TF</span>
-                            <span className="text-[var(--foreground)]">
+                            <span className={isDark ? "text-white" : "text-[#1f1640]"}>
                                 {slamState?.status?.tf_ok !== undefined
                                     ? String(slamState.status.tf_ok)
                                     : "No data"}
@@ -1496,7 +1587,7 @@ export default function AutonomousControlPage() {
                         </div>
                         <div className="flex items-center justify-between">
                             <span>Obstacle</span>
-                            <span className="text-[var(--foreground)]">
+                            <span className={isDark ? "text-white" : "text-[#1f1640]"}>
                                 {obstacle ? `${obstacle.dist.toFixed(2)} m` : "Clear"}
                             </span>
                         </div>

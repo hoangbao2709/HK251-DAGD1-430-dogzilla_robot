@@ -239,7 +239,7 @@ export default function HeaderControl({
           {sys?.time && <div className={`text-xs font-medium ${isDark ? "text-white/60" : "text-[var(--muted)]"}`}>Time: {sys.time}</div>}
 
           <div className="ml-auto flex items-center gap-2">
-            <span className={`text-[11px] ${isDark ? "text-white/55" : "text-[var(--muted)]"}`}>View:</span>
+            <span className={`text-[11px] ${isDark ? "text-white/55" : "text-[var(--muted-2)]"}`}>View:</span>
             <button
               onClick={() => setViewMode("debug")}
               className={`rounded-lg border px-2 py-1 text-[11px] transition-all ${
@@ -247,7 +247,7 @@ export default function HeaderControl({
                   ? "border-pink-300 bg-gradient-to-r from-[#FD749B] to-[#7C4DFF] text-white"
                   : isDark
                   ? "border-[rgba(255,255,255,0.12)] bg-[rgba(255,255,255,0.04)] text-white/80"
-                  : "border-[var(--border)] bg-[var(--surface-2)] text-[var(--foreground)]/80"
+                  : "border-[var(--border)] bg-[var(--surface-2)] text-[var(--muted)] hover:text-[var(--foreground)]"
               }`}
             >
               Debug
@@ -259,7 +259,7 @@ export default function HeaderControl({
                   ? "border-sky-300 bg-gradient-to-r from-[#00C2FF] to-[#7C4DFF] text-white"
                   : isDark
                   ? "border-[rgba(255,255,255,0.12)] bg-[rgba(255,255,255,0.04)] text-white/80"
-                  : "border-[var(--border)] bg-[var(--surface-2)] text-[var(--foreground)]/80"
+                  : "border-[var(--border)] bg-[var(--surface-2)] text-[var(--muted)] hover:text-[var(--foreground)]"
               }`}
             >
               Info

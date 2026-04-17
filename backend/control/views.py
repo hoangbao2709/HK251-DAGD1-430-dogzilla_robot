@@ -1,24 +1,43 @@
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
-from django.shortcuts import get_object_or_404
-from django.utils.timezone import now
-from django.http import StreamingHttpResponse, HttpResponse
+from typing import Any, ClassVar
+
+from rest_framework.views import APIView  # type: ignore[import-untyped]
+from rest_framework.response import Response  # type: ignore[import-untyped]
+from rest_framework import status  # type: ignore[import-untyped]
+from django.utils.timezone import now, localtime  # type: ignore[import-untyped]
+from django.http import StreamingHttpResponse, HttpResponse  # type: ignore[import-untyped]
 import json
 import cv2
 import base64
 import logging
-from .models import Robot
+from .models import Robot, ActionEvent
 from .serializers import RobotSerializer
 from .services.ros import ROSClient
 from .line_tracking_backend import LineTrackingServer
 from .services.mcp_voice import process_text_command
 from .services.qr_detect import detect_qr_state_once, generate_qr_video_frames
+from .services.patrol_manager import patrol_manager
+from .services.patrol_store import get_current_mission, get_history
 logger = logging.getLogger(__name__)
 line_tracker = LineTrackingServer()
 
 
-def build_log(robot_id: str, action: str, payload, ok: bool, error: str | None = None):
+def get_or_create_robot(robot_id: str) -> Robot:
+    robot, _ = Robot.objects.get_or_create(
+        pk=robot_id,
+        defaults={
+            "name": robot_id.replace("-", " ").title(),
+        },
+    )
+    return robot
+
+
+def build_log(
+    robot_id: str,
+    action: str,
+    payload: Any,
+    ok: bool,
+    error: str | None = None,
+) -> str:
     ts = now().strftime("%H:%M:%S")
     try:
         payload_str = json.dumps(payload, ensure_ascii=False)
@@ -29,7 +48,34 @@ def build_log(robot_id: str, action: str, payload, ok: bool, error: str | None =
         return f"[{ts}] {robot_id} {action} {payload_str} → OK"
     return f"[{ts}] {robot_id} {action} {payload_str} → ERROR: {error}"
 
-
+def mission_to_dict(mission: Any) -> dict[str, Any]:
+    return {
+        "mission_id": mission.mission_id,
+        "robot_id": mission.robot_id,
+        "route_name": mission.route_name,
+        "points": mission.points,
+        "wait_sec_per_point": mission.wait_sec_per_point,
+        "max_retry_per_point": mission.max_retry_per_point,
+        "skip_on_fail": mission.skip_on_fail,
+        "status": mission.status,
+        "current_index": mission.current_index,
+        "started_at": mission.started_at,
+        "finished_at": mission.finished_at,
+        "results": [
+            {
+                "point": r.point,
+                "status": r.status,
+                "attempts": r.attempts,
+                "started_at": r.started_at,
+                "finished_at": r.finished_at,
+                "reach_time_sec": r.reach_time_sec,
+                "distance_on_finish": r.distance_on_finish,
+                "message": r.message,
+            }
+            for r in mission.results
+        ],
+    }
+        
 class CameraProcessView(APIView):
     def get(self, request, robot_id):
         client = ROSClient(robot_id)
@@ -65,9 +111,61 @@ class RobotListView(APIView):
         return Response(data)
 
 
+class ActionEventListView(APIView):
+    def get(self, request, robot_id):
+        limit = request.query_params.get("limit", 20)
+        offset = request.query_params.get("offset", 0)
+
+        try:
+            limit = max(1, min(int(limit), 50))
+        except Exception:
+            limit = 20
+
+        try:
+            offset = max(0, int(offset))
+        except Exception:
+            offset = 0
+
+        robot = get_or_create_robot(robot_id)
+        qs = (
+            ActionEvent.objects.filter(robot=robot)
+            .order_by("-timestamp", "-id")[offset : offset + limit]
+        )
+
+        items = [
+            {
+                "id": event.id,
+                "timestamp": localtime(event.timestamp).strftime("%Y-%m-%d %H:%M:%S"),
+                "robot": event.robot_id,
+                "event": event.event,
+                "severity": event.severity,
+                "duration": f"{event.duration_seconds:.1f}s"
+                if event.duration_seconds is not None
+                else None,
+                "status": event.status,
+                "action": event.action,
+                "detail": event.detail or None,
+                "payload": event.payload,
+            }
+            for event in qs
+        ]
+
+        return Response(
+            {
+                "ok": True,
+                "robot_id": robot_id,
+                "count": ActionEvent.objects.filter(robot=robot).count(),
+                "limit": limit,
+                "offset": offset,
+                "items": items,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
 class ConnectView(APIView):
     def post(self, request, robot_id):
-        robot = get_object_or_404(Robot, pk=robot_id)
+        robot = get_or_create_robot(robot_id)
         addr = request.data.get("addr", "")
         client = ROSClient(robot_id)
         result = client.connect(addr)
@@ -96,9 +194,32 @@ class RobotHealthView(APIView):
             return Response({"success": False, "robot_id": robot_id, "error": str(e)}, status=500)
 
 
+class NetworkMetricsView(APIView):
+    def get(self, request, robot_id):
+        try:
+            data = ROSClient(robot_id).get_network_metrics()
+            return Response({"ok": True, "data": data}, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response(
+                {
+                    "ok": False,
+                    "error": str(e),
+                    "data": {
+                        "uplink_kbps": None,
+                        "downlink_kbps": None,
+                        "latency_ms": None,
+                        "jitter_ms": None,
+                        "packet_loss_pct": None,
+                        "signal_quality": 0,
+                    },
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+
 class RobotFrameView(APIView):
-    authentication_classes = []
-    permission_classes = []
+    authentication_classes: ClassVar[list[type[Any]]] = []
+    permission_classes: ClassVar[list[type[Any]]] = []
 
     def get(self, request, robot_id):
         try:
@@ -113,8 +234,8 @@ class RobotFrameView(APIView):
 
 
 class RobotTestPageView(APIView):
-    authentication_classes = []
-    permission_classes = []
+    authentication_classes: ClassVar[list[type[Any]]] = []
+    permission_classes: ClassVar[list[type[Any]]] = []
 
     def get(self, request, robot_id):
         try:
@@ -143,7 +264,7 @@ class LinkAccountProxyView(APIView):
 
 class RobotStatusView(APIView):
     def get(self, request, robot_id):
-        robot = get_object_or_404(Robot, pk=robot_id)
+        robot = get_or_create_robot(robot_id)
         client = ROSClient(robot_id)
 
         try:
@@ -274,7 +395,12 @@ class LidarView(APIView):
 
         try:
             if action == "start":
-                slam_state = client.get_slam_state() or {}
+                try:
+                    slam_state = client.get_slam_state() or {}
+                except Exception as e:
+                    slam_state = {}
+                    logger.warning("Lidar preflight state check failed for %s: %s", robot_id, e)
+
                 if slam_state.get("running") is True or slam_state.get("lidar_running") is True:
                     log_line = build_log(robot_id, "LIDAR", {"action": action}, True, None)
                     return Response(
@@ -610,8 +736,8 @@ class SlamStateView(APIView):
 
 
 class QRVideoFeedView(APIView):
-    authentication_classes = []
-    permission_classes = []
+    authentication_classes: ClassVar[list[type[Any]]] = []
+    permission_classes: ClassVar[list[type[Any]]] = []
 
     def get(self, request, robot_id):
         try:
@@ -635,8 +761,8 @@ class SlamMapView(APIView):
     Proxy file map.png từ robot về frontend qua Django.
     """
 
-    authentication_classes = []
-    permission_classes = []
+    authentication_classes: ClassVar[list[type[Any]]] = []
+    permission_classes: ClassVar[list[type[Any]]] = []
 
     def get(self, request, robot_id):
         try:
@@ -938,3 +1064,83 @@ class GoToMarkerView(APIView):
                 },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+class PatrolStartView(APIView):
+    def post(self, request, robot_id):
+        body = request.data or {}
+        route_name = str(body.get("route_name", "custom_route")).strip()
+        points = body.get("points") or []
+        wait_sec = int(body.get("wait_sec_per_point", 3))
+        max_retry = int(body.get("max_retry_per_point", 1))
+        skip_on_fail = bool(body.get("skip_on_fail", True))
+
+        try:
+            mission = patrol_manager.start(
+                robot_id=robot_id,
+                route_name=route_name,
+                points=points,
+                wait_sec_per_point=wait_sec,
+                max_retry_per_point=max_retry,
+                skip_on_fail=skip_on_fail,
+            )
+            return Response(
+                {
+                    "success": True,
+                    "robot_id": robot_id,
+                    "mission": mission_to_dict(mission),
+                },
+                status=status.HTTP_200_OK,
+            )
+        except Exception as e:
+            return Response(
+                {
+                    "success": False,
+                    "robot_id": robot_id,
+                    "error": str(e),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+            
+class PatrolStopView(APIView):
+    def post(self, request, robot_id):
+        patrol_manager.stop(robot_id)
+        return Response({"success": True, "robot_id": robot_id}, status=status.HTTP_200_OK)
+
+
+class PatrolPauseView(APIView):
+    def post(self, request, robot_id):
+        patrol_manager.pause(robot_id)
+        return Response({"success": True, "robot_id": robot_id}, status=status.HTTP_200_OK)
+
+
+class PatrolResumeView(APIView):
+    def post(self, request, robot_id):
+        patrol_manager.resume(robot_id)
+        return Response({"success": True, "robot_id": robot_id}, status=status.HTTP_200_OK)
+
+
+class PatrolStatusView(APIView):
+    def get(self, request, robot_id):
+        mission = get_current_mission(robot_id)
+        return Response(
+            {
+                "success": True,
+                "robot_id": robot_id,
+                "running": mission is not None,
+                "mission": mission_to_dict(mission) if mission else None,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class PatrolHistoryView(APIView):
+    def get(self, request, robot_id):
+        history = get_history(robot_id)
+        return Response(
+            {
+                "success": True,
+                "robot_id": robot_id,
+                "history": [mission_to_dict(m) for m in history],
+            },
+            status=status.HTTP_200_OK,
+        )

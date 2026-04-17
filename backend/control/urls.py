@@ -1,6 +1,8 @@
 from django.urls import path
 from .views import (
     RobotListView,
+    NetworkMetricsView,
+    ActionEventListView,
     ConnectView,
     RobotRootInfoView,
     RobotHealthView,
@@ -37,10 +39,18 @@ from .views import (
     DeletePointView,
     GoToPointView,
     GoToMarkerView,
+    PatrolStartView,
+    PatrolStopView,
+    PatrolPauseView,
+    PatrolResumeView,
+    PatrolStatusView,
+    PatrolHistoryView,
 )
 
 urlpatterns = [
     path("api/robots/", RobotListView.as_view(), name="robots-list"),
+    path("api/robots/<str:robot_id>/network/metrics/", NetworkMetricsView.as_view(), name="robot-network-metrics"),
+    path("api/robots/<str:robot_id>/events/", ActionEventListView.as_view(), name="robot-events"),
     path("api/robots/<str:robot_id>/server/", RobotRootInfoView.as_view(), name="robot-server-root"),
     path("api/robots/<str:robot_id>/health/", RobotHealthView.as_view(), name="robot-health"),
     path("api/robots/<str:robot_id>/frame/", RobotFrameView.as_view(), name="robot-frame"),
@@ -85,4 +95,11 @@ urlpatterns = [
     path("api/robots/<str:robot_id>/delete-point/", DeletePointView.as_view(), name="robot-delete-point"),
     path("api/robots/<str:robot_id>/go-to-point/", GoToPointView.as_view(), name="robot-go-to-point"),
     path("api/robots/<str:robot_id>/go-to-marker/", GoToMarkerView.as_view(), name="robot-go-to-marker"),
+    
+    path("api/robots/<str:robot_id>/patrol/start/", PatrolStartView.as_view(), name="robot-patrol-start"),
+    path("api/robots/<str:robot_id>/patrol/stop/", PatrolStopView.as_view(), name="robot-patrol-stop"),
+    path("api/robots/<str:robot_id>/patrol/pause/", PatrolPauseView.as_view(), name="robot-patrol-pause"),
+    path("api/robots/<str:robot_id>/patrol/resume/", PatrolResumeView.as_view(), name="robot-patrol-resume"),
+    path("api/robots/<str:robot_id>/patrol/status/", PatrolStatusView.as_view(), name="robot-patrol-status"),
+    path("api/robots/<str:robot_id>/patrol/history/", PatrolHistoryView.as_view(), name="robot-patrol-history"),
 ]
