@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RobotAPI } from "@/app/lib/robotApi";
 import { DEFAULT_DOG_SERVER } from "@/app/lib/robotApi";
+import { getSelectedRobotAddr } from "@/app/lib/selectedRobot";
 import {
     Bot,
     Wifi,
@@ -11,6 +12,8 @@ import {
     Mic,
     Square,
     Send,
+    PanelRightClose,
+    PanelRightOpen,
 } from "lucide-react";
 
 type SlamPoint = {
@@ -38,6 +41,7 @@ type SlamStatus = {
     planner_ok?: boolean;
     map_age_sec?: number;
     pose_age_sec?: number;
+    lidar_running?: boolean;
 };
 
 type SlamStateData = {
@@ -71,6 +75,13 @@ type RobotStatusResponse = {
     telemetry?: RobotTelemetry;
 };
 
+type ControlStatusResponse = {
+    lidar_running?: boolean;
+    lidar?: {
+        running?: boolean;
+    };
+};
+
 type QrItem = {
     text: string;
     qr_type: string;
@@ -86,6 +97,35 @@ type QrItem = {
 type QrStateData = {
     ok?: boolean;
     items?: QrItem[];
+};
+
+type QrPositionData = {
+    detected?: boolean;
+    qr?: {
+        text?: string;
+        type?: string;
+        direction?: string;
+    };
+    position?: {
+        angle_deg?: number;
+        angle_rad?: number;
+        distance_m?: number;
+        lateral_x_m?: number;
+        forward_z_m?: number;
+    };
+    target?: {
+        x_m?: number;
+        z_m?: number;
+        distance_m?: number;
+    };
+    image?: {
+        center_px?: { x?: number; y?: number };
+        corners?: number[][];
+    };
+    render_hint?: {
+        suggested_max_range_m?: number;
+    };
+    timestamp?: number;
 };
 
 type MarkerPoint = {
@@ -174,8 +214,8 @@ function StatBlock({
 }) {
     return (
         <div>
-            <div className="text-white font-semibold text-base break-words">{value}</div>
-            <div className="text-white/50 text-[11px] tracking-widest uppercase mt-0.5">
+            <div className="text-[var(--foreground)] font-semibold text-base break-words">{value}</div>
+            <div className="text-[var(--muted)] text-[11px] tracking-widest uppercase mt-0.5">
                 {label}
             </div>
         </div>
@@ -184,7 +224,7 @@ function StatBlock({
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
     return (
-        <h3 className="text-white/60 text-xs font-semibold uppercase tracking-widest mb-3">
+        <h3 className="text-[var(--muted)] text-xs font-semibold uppercase tracking-widest mb-3">
             {children}
         </h3>
     );
@@ -197,81 +237,160 @@ function DarkCard({
     children: React.ReactNode;
     className?: string;
 }) {
-    return <div className={`bg-[#0f0822] rounded-xl p-4 ${className}`}>{children}</div>;
+    return <div className={`bg-[var(--surface)] rounded-xl p-4 border border-[var(--border)] ${className}`}>{children}</div>;
 }
 
-function LidarMiniMap({ slamState }: { slamState: SlamStateData | null }) {
-    const width = 420;
-    const height = 176;
+function TopDownQrView({ data }: { data: QrPositionData | null }) {
+    const width = 260;
+    const height = 260;
+    const padding = 18;
+    const baselineY = height - 18;
 
-    const content = useMemo(() => {
-        if (!slamState?.pose || !slamState?.render_info) {
-            return null;
-        }
+    const rangeM = useMemo(() => {
+        const candidates = [
+            data?.render_hint?.suggested_max_range_m,
+            data?.position?.distance_m,
+            data?.target?.distance_m,
+            data?.position?.forward_z_m,
+            data?.target?.z_m,
+        ].filter((value): value is number => typeof value === "number" && isFinite(value));
 
-        const renderInfo = slamState.render_info;
-        const robot = mapToPixel(
-            slamState.pose.x,
-            slamState.pose.y,
-            renderInfo,
-            width,
-            height
-        );
+        if (candidates.length === 0) return 3;
+        const farthest = Math.max(...candidates);
+        return Math.min(Math.max(farthest + 0.5, 2), 4);
+    }, [data]);
 
-        const points = (slamState.scan?.points || []).map((p, idx) => {
-            const pt = mapToPixel(p.x, p.y, renderInfo, width, height);
-            return (
-                <circle
-                    key={idx}
-                    cx={pt.x}
-                    cy={pt.y}
-                    r="1.4"
-                    fill="rgba(255,255,255,0.8)"
-                />
-            );
-        });
+    const toX = useCallback(
+        (meters: number) => width / 2 + (meters / rangeM) * ((width / 2) - padding),
+        [rangeM]
+    );
 
-        const headingLen = 20;
-        const endX = robot.x + Math.cos(slamState.pose.theta || 0) * headingLen;
-        const endY = robot.y - Math.sin(slamState.pose.theta || 0) * headingLen;
+    const toY = useCallback(
+        (meters: number) => baselineY - (meters / rangeM) * (baselineY - padding),
+        [baselineY, rangeM]
+    );
 
-        return (
-            <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-full">
-                <rect x="0" y="0" width={width} height={height} fill="#0b1020" />
-                {points}
+    const qrPoint =
+        typeof data?.position?.lateral_x_m === "number" &&
+            typeof data?.position?.forward_z_m === "number"
+            ? {
+                x: toX(data.position.lateral_x_m),
+                y: toY(data.position.forward_z_m),
+            }
+            : null;
+
+    const targetPoint =
+        typeof data?.target?.x_m === "number" && typeof data?.target?.z_m === "number"
+            ? {
+                x: toX(data.target.x_m),
+                y: toY(data.target.z_m),
+            }
+            : null;
+
+    return (
+        <div className="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface-elev)] shadow-[inset_0_0_0_1px_rgba(80,140,255,0.06)]">
+            <svg viewBox={`0 0 ${width} ${height}`} className="h-[220px] w-full">
+                <rect x="0" y="0" width={width} height={height} fill="#081321" />
+
+                {Array.from({ length: 6 }).map((_, row) => {
+                    const y = padding + ((height - padding * 2) / 5) * row;
+                    return (
+                        <line
+                            key={`row-${row}`}
+                            x1="0"
+                            y1={y}
+                            x2={width}
+                            y2={y}
+                            stroke="rgba(59,130,246,0.12)"
+                            strokeWidth="1"
+                        />
+                    );
+                })}
+
+                {Array.from({ length: 6 }).map((_, col) => {
+                    const x = padding + ((width - padding * 2) / 5) * col;
+                    return (
+                        <line
+                            key={`col-${col}`}
+                            x1={x}
+                            y1="0"
+                            x2={x}
+                            y2={height}
+                            stroke="rgba(59,130,246,0.12)"
+                            strokeWidth="1"
+                        />
+                    );
+                })}
+
                 <line
-                    x1={robot.x}
-                    y1={robot.y}
-                    x2={endX}
-                    y2={endY}
-                    stroke="#facc15"
+                    x1={width / 2}
+                    y1={padding}
+                    x2={width / 2}
+                    y2={baselineY}
+                    stroke="#f8dc53"
                     strokeWidth="2.5"
-                    strokeLinecap="round"
+                    strokeOpacity="0.95"
                 />
-                <circle cx={robot.x} cy={robot.y} r="5" fill="#22d3ee" />
+
+                {targetPoint ? (
+                    <>
+                        <line
+                            x1={width / 2}
+                            y1={baselineY}
+                            x2={targetPoint.x}
+                            y2={targetPoint.y}
+                            stroke="rgba(34,211,238,0.75)"
+                            strokeDasharray="5 5"
+                        />
+                        <circle cx={targetPoint.x} cy={targetPoint.y} r="6" fill="#22d3ee" />
+                    </>
+                ) : null}
+
+                {qrPoint ? (
+                    <>
+                        <line
+                            x1={width / 2}
+                            y1={baselineY}
+                            x2={qrPoint.x}
+                            y2={qrPoint.y}
+                            stroke="rgba(255,122,69,0.9)"
+                            strokeWidth="2"
+                        />
+                        <circle cx={qrPoint.x} cy={qrPoint.y} r="7" fill="#ff7a45" />
+                        <text
+                            x={qrPoint.x}
+                            y={Math.max(qrPoint.y - 10, 18)}
+                            textAnchor="middle"
+                            fill="#ffd560"
+                            fontSize="10"
+                            fontWeight="700"
+                        >
+                            {data?.qr?.text || "QR"}
+                        </text>
+                    </>
+                ) : (
+                    <text
+                        x={width / 2}
+                        y="34"
+                        textAnchor="middle"
+                        fill="#ff7f7f"
+                        fontSize="11"
+                        fontWeight="700"
+                    >
+                        QR NOT FOUND
+                    </text>
+                )}
+
+                <circle cx={width / 2} cy={baselineY} r="10" fill="#22d3ee" />
                 <circle
-                    cx={robot.x}
-                    cy={robot.y}
-                    r="9"
+                    cx={width / 2}
+                    cy={baselineY}
+                    r="16"
                     fill="none"
-                    stroke="rgba(34,211,238,0.4)"
+                    stroke="rgba(34,211,238,0.45)"
                     strokeWidth="2"
                 />
             </svg>
-        );
-    }, [slamState]);
-
-    if (!content) {
-        return (
-            <div className="bg-[#0f0822] rounded-xl h-44 flex items-center justify-center border border-white/5">
-                <span className="text-white/20 text-xs">No lidar data</span>
-            </div>
-        );
-    }
-
-    return (
-        <div className="bg-[#0f0822] rounded-xl h-44 overflow-hidden border border-white/5">
-            {content}
         </div>
     );
 }
@@ -286,6 +405,9 @@ export default function AutonomousControlPage() {
 
     const [qrState, setQrState] = useState<QrStateData | null>(null);
     const [qrError, setQrError] = useState("");
+    const [qrPosition, setQrPosition] = useState<QrPositionData | null>(null);
+    const [qrPositionError, setQrPositionError] = useState("");
+    const [controlStatus, setControlStatus] = useState<ControlStatusResponse | null>(null);
 
     const [cameraError, setCameraError] = useState(false);
     const [mapReloadKey, setMapReloadKey] = useState(0);
@@ -302,8 +424,22 @@ export default function AutonomousControlPage() {
     const [commandResult, setCommandResult] = useState<any | null>(null);
     const [commandError, setCommandError] = useState("");
     const [isListening, setIsListening] = useState(false);
+    const [sidebarOpen, setSidebarOpen] = useState(true);
+    const [mapViewMode, setMapViewMode] = useState<"lidar" | "slam">("lidar");
+    const [lidarBusy, setLidarBusy] = useState(false);
+    const [lidarEnabled, setLidarEnabled] = useState(false);
+    const [lidarCommandError, setLidarCommandError] = useState("");
 
     const recognitionRef = useRef<any>(null);
+    const hasAutoStartedLidarRef = useRef(false);
+
+    useEffect(() => {
+        const selectedAddr = getSelectedRobotAddr();
+        if (selectedAddr) {
+            setRobotAddr(selectedAddr);
+        }
+    }, []);
+
     const fetchRobotStatus = useCallback(async () => {
         try {
             const data = await RobotAPI.status();
@@ -344,6 +480,37 @@ export default function AutonomousControlPage() {
         }
     }, []);
 
+    const fetchQrPosition = useCallback(async () => {
+        try {
+            const json = await RobotAPI.qrPosition();
+            const data = json?.data ?? json ?? null;
+            setQrPosition(data);
+            setQrPositionError("");
+        } catch (error) {
+            setQrPosition(null);
+            setQrPositionError(
+                error instanceof Error ? error.message : "Không lấy được vị trí QR"
+            );
+        }
+    }, []);
+
+    const fetchControlStatus = useCallback(async () => {
+        try {
+            const json = await RobotAPI.controlStatus();
+            const data = json?.data ?? json ?? null;
+            setControlStatus(data);
+
+            const running = Boolean(
+                data?.lidar_running ?? data?.lidar?.running ?? false
+            );
+            setLidarEnabled(running);
+            return running;
+        } catch {
+            setControlStatus(null);
+            return false;
+        }
+    }, []);
+
     const fetchPoints = useCallback(async () => {
         try {
             const json = await RobotAPI.points();
@@ -354,6 +521,28 @@ export default function AutonomousControlPage() {
         }
     }, []);
 
+    const handleLidarToggle = useCallback(async (nextEnabled: boolean) => {
+        if (lidarBusy) return;
+
+        try {
+            setLidarBusy(true);
+            setLidarCommandError("");
+            await RobotAPI.lidar(nextEnabled ? "start" : "stop");
+            setLidarEnabled(nextEnabled);
+            if (nextEnabled) {
+                fetchSlamState();
+            } else {
+                setSlamState(null);
+            }
+        } catch (error) {
+            setLidarCommandError(
+                error instanceof Error ? error.message : "LiDAR command failed"
+            );
+        } finally {
+            setLidarBusy(false);
+        }
+    }, [fetchSlamState, lidarBusy]);
+
     useEffect(() => {
         let active = true;
 
@@ -361,8 +550,10 @@ export default function AutonomousControlPage() {
             if (!active) return;
             await Promise.all([
                 fetchRobotStatus(),
+                fetchControlStatus(),
                 fetchSlamState(),
                 fetchQrState(),
+                fetchQrPosition(),
                 fetchPoints(),
             ]);
         };
@@ -370,8 +561,10 @@ export default function AutonomousControlPage() {
         load();
 
         const statusTimer = setInterval(fetchRobotStatus, 3000);
+        const controlStatusTimer = setInterval(fetchControlStatus, 3000);
         const slamTimer = setInterval(fetchSlamState, 700);
         const qrTimer = setInterval(fetchQrState, 700);
+        const qrPositionTimer = setInterval(fetchQrPosition, 700);
         const pointsTimer = setInterval(fetchPoints, 2500);
         const mapTimer = setInterval(() => {
             setMapReloadKey((v) => v + 1);
@@ -380,12 +573,30 @@ export default function AutonomousControlPage() {
         return () => {
             active = false;
             clearInterval(statusTimer);
+            clearInterval(controlStatusTimer);
             clearInterval(slamTimer);
             clearInterval(qrTimer);
+            clearInterval(qrPositionTimer);
             clearInterval(pointsTimer);
             clearInterval(mapTimer);
         };
-    }, [fetchPoints, fetchQrState, fetchRobotStatus, fetchSlamState]);
+    }, [fetchControlStatus, fetchPoints, fetchQrPosition, fetchQrState, fetchRobotStatus, fetchSlamState]);
+
+    useEffect(() => {
+        if (!connected || !controlStatus || hasAutoStartedLidarRef.current) {
+            return;
+        }
+
+        const running = Boolean(
+            controlStatus.lidar_running ?? controlStatus.lidar?.running ?? false
+        );
+        hasAutoStartedLidarRef.current = true;
+        if (!running) {
+            handleLidarToggle(true);
+        } else {
+            setLidarEnabled(true);
+        }
+    }, [connected, controlStatus, handleLidarToggle]);
 
     const drawSlamOverlay = useCallback(() => {
         const canvas = overlayRef.current;
@@ -639,48 +850,97 @@ export default function AutonomousControlPage() {
                 : "Planner inactive"
             : "No data";
 
-    const sensorMetrics = [
+    const statusCards = [
         {
-            label: "Motor",
-            value:
-                robotStatus?.telemetry?.system?.cpu_percent !== undefined
-                    ? `${robotStatus.telemetry.system.cpu_percent}%`
-                    : "No data",
-        },
-        {
-            label: "Speech",
-            value: connected ? "Online" : "Offline",
+            label: "Robot",
+            value: robotConnected,
         },
         {
             label: "Vision",
             value: cameraError ? "Unavailable" : "Online",
         },
         {
-            label: "Water",
-            value: robotWaterLevel,
-        },
-        {
-            label: "Speed",
-            value: robotFps !== undefined ? `${robotFps} FPS` : "No data",
-        },
-        {
-            label: "Sensor",
-            value:
-                slamState?.status?.slam_ok !== undefined
-                    ? slamState.status.slam_ok
-                        ? "OK"
-                        : "Fail"
-                    : "No data",
-        },
-        {
             label: "Battery",
             value: robotBattery !== undefined ? `${robotBattery}%` : "No data",
         },
+        {
+            label: "Planner",
+            value:
+                slamState?.status?.planner_ok !== undefined
+                    ? slamState.status.planner_ok
+                        ? "Active"
+                        : "Idle"
+                    : "No data",
+        },
     ];
 
-    const qrItems = qrState?.items || [];
     const pointNames = Object.keys(savedPoints || {}).sort();
     const obstacle = findNearestObstacleAhead(slamState);
+    const planningCards = [
+        {
+            label: "SLAM",
+            value:
+                slamState?.status?.slam_ok !== undefined
+                    ? slamState.status.slam_ok
+                        ? "Ready"
+                        : "Offline"
+                    : "No data",
+        },
+        {
+            label: "TF",
+            value:
+                slamState?.status?.tf_ok !== undefined
+                    ? slamState.status.tf_ok
+                        ? "Synced"
+                        : "Missing"
+                    : "No data",
+        },
+        {
+            label: "Planner",
+            value:
+                slamState?.status?.planner_ok !== undefined
+                    ? slamState.status.planner_ok
+                        ? "Active"
+                        : "Idle"
+                    : "No data",
+        },
+        {
+            label: "Obstacle",
+            value: obstacle ? `${obstacle.dist.toFixed(2)} m` : "Clear",
+        },
+    ];
+    const quickCommands = [
+        { label: "Đi đến A", value: "hãy cho robot đi đến điểm A" },
+        { label: "Đi A, B, C", value: "hãy cho robot đi đến điểm A, B, C" },
+        { label: "Stop", value: "dừng điều hướng" },
+    ];
+    const lidarUrl = useMemo(() => {
+        try {
+            const url = new URL(robotAddr.trim() || DEFAULT_DOG_SERVER);
+            const host = url.hostname;
+            const port = url.port;
+
+            if (host.endsWith("trycloudflare.com")) {
+                return `${url.origin.replace(/\/$/, "")}/lidar/`;
+            }
+
+            if (port === "9000" || port === "") {
+                return `${url.protocol}//${host}:8080`;
+            }
+
+            if (port === "8080") {
+                return url.origin.replace(/\/$/, "");
+            }
+
+            if (port === "9002") {
+                return `${url.protocol}//${host}:9002/lidar/`;
+            }
+
+            return `${url.origin.replace(/\/$/, "")}/lidar/`;
+        } catch {
+            return "";
+        }
+    }, [robotAddr]);
 
     const startListening = () => {
         const SpeechRecognition =
@@ -775,201 +1035,26 @@ export default function AutonomousControlPage() {
         };
     }, []);
     return (
-        <div className="flex h-full min-h-screen bg-[#160626]">
-            <div className="flex-1 flex flex-col p-6 gap-5 overflow-y-auto">
+        <div className="flex h-full min-h-screen bg-[var(--background)]">
+            <div className="relative flex-1 flex flex-col p-6 gap-5 overflow-y-auto">
                 <h1 className="gradient-title text-center text-2xl">Autonomous Control</h1>
 
-                <DarkCard>
-                    <div className="flex items-center justify-between mb-4">
-                        <div className="flex items-center gap-3">
-                            <div className="p-2 rounded-lg bg-gradient-to-br from-pink-500/30 to-purple-600/30 border border-pink-500/20">
-                                <Bot size={28} className="text-green-400" />
-                            </div>
-                            <span className="text-white text-xl font-bold">{robotName}</span>
-                        </div>
+                <button
+                    onClick={() => setSidebarOpen((open) => !open)}
+                    className="absolute right-4 top-5 hidden lg:inline-flex items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs font-semibold text-[var(--foreground)]/75 transition hover:bg-[var(--surface-2)]"
+                >
+                    {sidebarOpen ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
+                    {sidebarOpen ? "Hide panel" : "Show panel"}
+                </button>
 
-                        <button
-                            onClick={() => setConnected((c) => !c)}
-                            className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-semibold transition-all duration-200 cursor-pointer ${connected
-                                ? "bg-red-500 hover:bg-red-600 text-white"
-                                : "bg-green-600 hover:bg-green-700 text-white"
-                                }`}
-                        >
-                            {connected ? (
-                                <>
-                                    <WifiOff size={14} />
-                                    Disconnect
-                                </>
-                            ) : (
-                                <>
-                                    <Wifi size={14} />
-                                    Connect
-                                </>
-                            )}
-                        </button>
-                    </div>
-
-                    <p className="text-white/50 text-xs mb-4 uppercase tracking-widest">
-                        Robot Details
-                    </p>
-
-                    <div className="grid grid-cols-3 gap-y-5 gap-x-8">
-                        <StatBlock value={robotLocation} label="Location" />
-                        <StatBlock value={cleaningProgress} label="Path Planning" />
-                        <StatBlock value={robotFloor} label="Floor" />
-                        <StatBlock value={robotStatusText} label="Status" />
-                        <StatBlock value={robotWaterLevel} label="Water Level" />
-                        <StatBlock
-                            value={robotBattery !== undefined ? `${robotBattery}%` : "No data"}
-                            label="Battery"
-                        />
-                    </div>
-                </DarkCard>
-                <DarkCard>
-                    <div className="flex items-center justify-between mb-3">
-                        <SectionLabel>Voice navigation command</SectionLabel>
-                        <span className="text-white/40 text-xs">
-                            Ví dụ: đi đến điểm A, đi đến điểm A B C, dừng điều hướng
-                        </span>
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-3">
-                        <div>
-                            <label className="block text-white/60 text-xs mb-2 uppercase tracking-widest">
-                                Robot address
-                            </label>
-                            <input
-                                value={robotAddr}
-                                onChange={(e) => setRobotAddr(e.target.value)}
-                                placeholder="http://100.95.128.237:9000"
-                                className="w-full rounded-xl bg-[#0b1020] border border-white/10 px-4 py-3 text-white outline-none"
-                            />
-                        </div>
-
-                        <div>
-                            <label className="block text-white/60 text-xs mb-2 uppercase tracking-widest">
-                                Command
-                            </label>
-                            <textarea
-                                value={commandText}
-                                onChange={(e) => setCommandText(e.target.value)}
-                                onKeyDown={(e) => {
-                                    if (e.key === "Enter" && !e.shiftKey) {
-                                        e.preventDefault();
-                                        sendVoiceCommand();
-                                    }
-                                }}
-                                placeholder="Hãy cho robot đi đến điểm A"
-                                className="w-full min-h-[100px] rounded-xl bg-[#0b1020] border border-white/10 px-4 py-3 text-white outline-none resize-none"
-                            />
-                        </div>
-
-                        <div className="flex flex-wrap gap-2">
-                            {!isListening ? (
-                                <button
-                                    onClick={startListening}
-                                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-cyan-500 text-black font-semibold"
-                                >
-                                    <Mic size={16} />
-                                    Start mic
-                                </button>
-                            ) : (
-                                <button
-                                    onClick={stopListening}
-                                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-red-500 text-white font-semibold"
-                                >
-                                    <Square size={16} />
-                                    Stop mic
-                                </button>
-                            )}
-
-                            <button
-                                onClick={sendVoiceCommand}
-                                disabled={isSendingCommand}
-                                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-500 text-black font-semibold disabled:opacity-50"
-                            >
-                                <Send size={16} />
-                                {isSendingCommand ? "Sending..." : "Send command"}
-                            </button>
-
-                            <button
-                                onClick={() => setCommandText("hãy cho robot đi đến điểm A")}
-                                className="px-3 py-2 rounded-xl bg-white/10 text-white text-sm"
-                            >
-                                Đi đến A
-                            </button>
-
-                            <button
-                                onClick={() => setCommandText("hãy cho robot đi đến điểm A, B, C")}
-                                className="px-3 py-2 rounded-xl bg-white/10 text-white text-sm"
-                            >
-                                Đi A, B, C
-                            </button>
-
-                            <button
-                                onClick={() => setCommandText("dừng điều hướng")}
-                                className="px-3 py-2 rounded-xl bg-white/10 text-white text-sm"
-                            >
-                                Stop
-                            </button>
-                        </div>
-
-                        {commandError ? (
-                            <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-                                {commandError}
-                            </div>
-                        ) : null}
-
-                        {commandResult ? (
-                            <div className="rounded-xl border border-white/10 bg-[#0b1020] px-4 py-3 text-xs text-white/80 space-y-2">
-                                <div>
-                                    <span className="text-white font-semibold">Input:</span>{" "}
-                                    {commandResult.input_text || commandText}
-                                </div>
-
-                                {commandResult.result?.tool ? (
-                                    <div>
-                                        <span className="text-white font-semibold">Tool:</span>{" "}
-                                        {commandResult.result.tool}
-                                    </div>
-                                ) : null}
-
-                                {commandResult.result?.arguments ? (
-                                    <div>
-                                        <span className="text-white font-semibold">Arguments:</span>{" "}
-                                        <pre className="mt-1 whitespace-pre-wrap text-white/70">
-                                            {JSON.stringify(commandResult.result.arguments, null, 2)}
-                                        </pre>
-                                    </div>
-                                ) : null}
-
-                                {commandResult.result?.content?.length ? (
-                                    <div>
-                                        <span className="text-white font-semibold">Response:</span>
-                                        <pre className="mt-1 whitespace-pre-wrap text-white/70">
-                                            {JSON.stringify(commandResult.result.content, null, 2)}
-                                        </pre>
-                                    </div>
-                                ) : null}
-
-                                {commandResult.log ? (
-                                    <div>
-                                        <span className="text-white font-semibold">Log:</span>{" "}
-                                        <div className="mt-1 text-white/60">{commandResult.log}</div>
-                                    </div>
-                                ) : null}
-                            </div>
-                        ) : null}
-                    </div>
-                </DarkCard>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.15fr_0.85fr]">
                     <div>
                         <SectionLabel>Camera QR scan</SectionLabel>
-                        <div className="bg-[#0f0822] rounded-xl overflow-hidden border border-white/5 relative">
+                        <div className="bg-[var(--surface)] rounded-xl overflow-hidden border border-[var(--border)] relative">
                             <img
                                 src={RobotAPI.qrVideoFeedUrl()}
                                 alt="QR video feed"
-                                className="w-[800px] h-[800px] object-cover bg-black"
+                                className="block h-auto w-full bg-[var(--surface-elev)]"
                                 onError={() => setCameraError(true)}
                                 onLoad={() => setCameraError(false)}
                             />
@@ -985,218 +1070,417 @@ export default function AutonomousControlPage() {
                     </div>
 
                     <div>
-                        <SectionLabel>SLAM map overlay</SectionLabel>
-                        <div className="bg-[#0f0822] rounded-xl overflow-hidden border border-white/5 relative">
-                            <img
-                                ref={mapImgRef}
-                                src={RobotAPI.slamMapUrl(mapReloadKey)}
-                                alt="SLAM map"
-                                className="w-[800px] w-[800px] object-contain bg-black"
-                                onLoad={() => drawSlamOverlay()}
-                            />
-                            <canvas
-                                ref={overlayRef}
-                                className="absolute left-0 top-0 pointer-events-none"
-                            />
+                        <div className="space-y-4">
+                            <div>
+                                <div className="mb-3 flex items-center justify-between gap-3">
+                                    <SectionLabel>SLAM map overlay</SectionLabel>
+                                    <div className="flex flex-wrap items-center justify-end gap-2">
+                                        <button
+                                            onClick={() => handleLidarToggle(!lidarEnabled)}
+                                            disabled={lidarBusy}
+                                            className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                                                lidarEnabled
+                                                    ? "bg-red-500 text-white hover:bg-red-400"
+                                                    : "bg-emerald-500 text-black hover:bg-emerald-400"
+                                            }`}
+                                        >
+                                            {lidarBusy
+                                                ? lidarEnabled
+                                                    ? "Stopping..."
+                                                    : "Starting..."
+                                                : lidarEnabled
+                                                    ? "Stop LiDAR"
+                                                    : "Start LiDAR"}
+                                        </button>
+                                        <div className="flex rounded-xl border border-[var(--border)] bg-[var(--surface)] p-1 text-xs">
+                                            <button
+                                                onClick={() => setMapViewMode("lidar")}
+                                                className={`rounded-lg px-3 py-1.5 transition ${
+                                                    mapViewMode === "lidar"
+                                                        ? "bg-cyan-400 text-black font-semibold"
+                                                        : "text-[var(--muted)]"
+                                                }`}
+                                            >
+                                                LiDAR view
+                                            </button>
+                                            <button
+                                                onClick={() => setMapViewMode("slam")}
+                                                className={`rounded-lg px-3 py-1.5 transition ${
+                                                    mapViewMode === "slam"
+                                                        ? "bg-cyan-400 text-black font-semibold"
+                                                        : "text-[var(--muted)]"
+                                                }`}
+                                            >
+                                                SLAM overlay
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                {lidarCommandError ? (
+                                    <p className="mb-3 text-xs text-red-300/80">{lidarCommandError}</p>
+                                ) : null}
+                                <div className="bg-[var(--surface)] rounded-xl overflow-hidden border border-[var(--border)] relative aspect-square">
+                                    {mapViewMode === "lidar" ? (
+                                        lidarUrl ? (
+                                            <iframe
+                                                src={lidarUrl}
+                                                title="LiDAR map"
+                                                className="absolute inset-0 h-full w-full border-0 bg-[var(--surface-elev)]"
+                                            />
+                                        ) : (
+                                            <div className="absolute inset-0 flex items-center justify-center bg-[var(--surface-elev)] text-xs text-[var(--muted)]">
+                                                LiDAR URL unavailable
+                                            </div>
+                                        )
+                                    ) : (
+                                        <>
+                                            <img
+                                                ref={mapImgRef}
+                                                src={RobotAPI.slamMapUrl(mapReloadKey)}
+                                                alt="SLAM map"
+                                                className="h-full w-full object-contain bg-[var(--surface-elev)]"
+                                                onLoad={() => drawSlamOverlay()}
+                                            />
+                                            <canvas
+                                                ref={overlayRef}
+                                                className="absolute left-0 top-0 pointer-events-none"
+                                            />
+                                        </>
+                                    )}
+
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                    <div>
-                        <SectionLabel>Lidar mini map</SectionLabel>
-                        {slamLoading ? (
-                            <div className="bg-[#0f0822] rounded-xl h-44 flex items-center justify-center border border-white/5">
-                                <span className="text-white/20 text-xs">Loading lidar...</span>
+                <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                    <DarkCard className="space-y-4 bg-[#fffdfd] shadow-[0_18px_40px_rgba(124,77,255,0.08)] dark:bg-[#0f0822]">
+                        <div className="flex flex-col gap-3 rounded-2xl border border-[#dacfff] bg-[#f6efff] px-4 py-3 lg:flex-row lg:items-center lg:justify-between dark:border-white/8 dark:bg-[#201337]">
+                            <SectionLabel>Saved points</SectionLabel>
+                            <div className="flex flex-wrap gap-2">
+                                <button
+                                    onClick={createPointFromObstacle}
+                                    disabled={pointActionLoading}
+                                    className="rounded-full bg-[#10b981] px-4 py-2 text-sm font-semibold text-white shadow-[0_10px_20px_rgba(11,183,111,0.22)] transition hover:bg-[#0ea56f] disabled:opacity-50"
+                                >
+                                    Save point
+                                </button>
+                                <button
+                                    onClick={deleteLastPoint}
+                                    disabled={pointActionLoading || pointNames.length === 0}
+                                    className="rounded-full bg-[#ff5574] px-4 py-2 text-sm font-semibold text-white shadow-[0_10px_20px_rgba(255,59,87,0.18)] transition hover:bg-[#f43f5e] disabled:opacity-50"
+                                >
+                                    Delete last
+                                </button>
+                                <button
+                                    onClick={clearAllPoints}
+                                    disabled={pointActionLoading || pointNames.length === 0}
+                                    className="rounded-full bg-[#f6c94c] px-4 py-2 text-sm font-semibold text-[#4a3200] shadow-[0_10px_20px_rgba(255,191,31,0.16)] transition hover:bg-[#eab308] disabled:opacity-50"
+                                >
+                                    Clear all
+                                </button>
+                            </div>
+                        </div>
+
+                        {pointNames.length === 0 ? (
+                            <div className="rounded-2xl border border-dashed border-[#d7c4ff] bg-[#fbf7ff] px-4 py-10 text-center text-sm text-[#8d84a8] dark:border-white/10 dark:bg-[#160a28] dark:text-[var(--muted-2)]">
+                                No saved points
                             </div>
                         ) : (
-                            <LidarMiniMap slamState={slamState} />
-                        )}
-                        {slamError ? (
-                            <p className="text-red-300/80 text-xs mt-2">{slamError}</p>
-                        ) : null}
-                    </div>
-
-                    <div>
-                        <SectionLabel>Path planning</SectionLabel>
-                        <div className="bg-[#0f0822] rounded-xl h-44 border border-white/5 p-4 text-xs text-white/70 flex flex-col justify-center gap-2">
-                            <div>
-                                slam_ok:{" "}
-                                <span className="text-white">
-                                    {slamState?.status?.slam_ok !== undefined
-                                        ? String(slamState.status.slam_ok)
-                                        : "No data"}
-                                </span>
-                            </div>
-                            <div>
-                                tf_ok:{" "}
-                                <span className="text-white">
-                                    {slamState?.status?.tf_ok !== undefined
-                                        ? String(slamState.status.tf_ok)
-                                        : "No data"}
-                                </span>
-                            </div>
-                            <div>
-                                planner_ok:{" "}
-                                <span className="text-white">
-                                    {slamState?.status?.planner_ok !== undefined
-                                        ? String(slamState.status.planner_ok)
-                                        : "No data"}
-                                </span>
-                            </div>
-                            <div>
-                                pose:{" "}
-                                <span className="text-white">
-                                    {slamState?.pose
-                                        ? `${slamState.pose.x.toFixed(2)}, ${slamState.pose.y.toFixed(
-                                            2
-                                        )}, ${slamState.pose.theta.toFixed(2)}`
-                                        : "No data"}
-                                </span>
-                            </div>
-                            <div>
-                                obstacle ahead:{" "}
-                                <span className="text-white">
-                                    {obstacle ? `${obstacle.dist.toFixed(2)} m` : "Not found"}
-                                </span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <DarkCard>
-                    <div className="flex items-center justify-between mb-3">
-                        <SectionLabel>Saved points</SectionLabel>
-                        <div className="flex flex-wrap gap-2">
-                            <button
-                                onClick={createPointFromObstacle}
-                                disabled={pointActionLoading}
-                                className="px-3 py-2 rounded-lg bg-emerald-500 text-black text-sm font-semibold disabled:opacity-50"
-                            >
-                                Save point
-                            </button>
-                            <button
-                                onClick={deleteLastPoint}
-                                disabled={pointActionLoading || pointNames.length === 0}
-                                className="px-3 py-2 rounded-lg bg-red-500 text-white text-sm font-semibold disabled:opacity-50"
-                            >
-                                Delete last
-                            </button>
-                            <button
-                                onClick={clearAllPoints}
-                                disabled={pointActionLoading || pointNames.length === 0}
-                                className="px-3 py-2 rounded-lg bg-yellow-400 text-black text-sm font-semibold disabled:opacity-50"
-                            >
-                                Clear all
-                            </button>
-                        </div>
-                    </div>
-
-                    {pointNames.length === 0 ? (
-                        <span className="text-white/30 text-sm">No saved points</span>
-                    ) : (
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
                             {pointNames.map((name) => {
                                 const point = savedPoints[name];
                                 return (
                                     <div
                                         key={name}
-                                        className="rounded-xl border border-white/10 bg-white/5 p-3"
+                                        className="rounded-2xl border border-[#dacfff] bg-[#ffffff] px-4 py-3 shadow-[0_10px_24px_rgba(124,77,255,0.06)] dark:border-[var(--border)] dark:bg-[#160a28] dark:shadow-none"
                                     >
-                                        <div className="text-white font-semibold mb-1">{name}</div>
-                                        <div className="text-white/70 text-xs leading-6">
-                                            x: {Number(point.x).toFixed(3)}
-                                            <br />
-                                            y: {Number(point.y).toFixed(3)}
-                                            <br />
-                                            yaw: {Number(point.yaw || 0).toFixed(3)}
-                                        </div>
+                                        <div className="space-y-4">
+                                            <div>
+                                                <div className="text-lg font-semibold text-[#24163f] dark:text-[var(--foreground)]">{name}</div>
+                                            </div>
 
-                                        <div className="flex gap-2 mt-3">
-                                            <button
-                                                onClick={() => goToPoint(name)}
-                                                disabled={pointActionLoading}
-                                                className="px-3 py-2 rounded-lg bg-emerald-500 text-black text-xs font-semibold disabled:opacity-50"
-                                            >
-                                                Go to
-                                            </button>
-                                            <button
-                                                onClick={() => deletePoint(name)}
-                                                disabled={pointActionLoading}
-                                                className="px-3 py-2 rounded-lg bg-red-500 text-white text-xs font-semibold disabled:opacity-50"
-                                            >
-                                                Delete
-                                            </button>
+                                            <div className="grid grid-cols-3 gap-3 text-xs text-[var(--muted)]">
+                                                <div className="rounded-xl bg-[#fff5f8] px-3 py-2 ring-1 ring-[#ffc3d8] dark:bg-[#241139] dark:ring-white/8">
+                                                    <div className="text-[10px] uppercase tracking-widest text-[var(--muted-2)]">X</div>
+                                                    <div className="mt-1 text-sm font-semibold text-[#1f1640] dark:text-[var(--foreground)]">
+                                                        {Number(point.x).toFixed(3)}
+                                                    </div>
+                                                </div>
+                                                <div className="rounded-xl bg-[#f2fbff] px-3 py-2 ring-1 ring-[#b8e9ff] dark:bg-[#241139] dark:ring-white/8">
+                                                    <div className="text-[10px] uppercase tracking-widest text-[var(--muted-2)]">Y</div>
+                                                    <div className="mt-1 text-sm font-semibold text-[#1f1640] dark:text-[var(--foreground)]">
+                                                        {Number(point.y).toFixed(3)}
+                                                    </div>
+                                                </div>
+                                                <div className="rounded-xl bg-[#f4fff7] px-3 py-2 ring-1 ring-[#b5efc4] dark:bg-[#241139] dark:ring-white/8">
+                                                    <div className="text-[10px] uppercase tracking-widest text-[var(--muted-2)]">Yaw</div>
+                                                    <div className="mt-1 text-sm font-semibold text-[#1f1640] dark:text-[var(--foreground)]">
+                                                        {Number(point.yaw || 0).toFixed(3)}
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex gap-2">
+                                                <button
+                                                    onClick={() => goToPoint(name)}
+                                                    disabled={pointActionLoading}
+                                                    className="flex-1 rounded-full bg-[#10b981] px-3 py-2 text-xs font-semibold text-white shadow-[0_8px_18px_rgba(15,169,104,0.18)] transition hover:bg-[#0ea56f] disabled:opacity-50"
+                                                >
+                                                    Go to
+                                                </button>
+                                                <button
+                                                    onClick={() => deletePoint(name)}
+                                                    disabled={pointActionLoading}
+                                                    className="flex-1 rounded-full bg-[#ff5574] px-3 py-2 text-xs font-semibold text-white shadow-[0_8px_18px_rgba(255,55,88,0.16)] transition hover:bg-[#f43f5e] disabled:opacity-50"
+                                                >
+                                                    Delete
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
                                 );
-                            })}
+                                })}
+                            </div>
+                        )}
+                    </DarkCard>
+
+                    <DarkCard className="space-y-5 bg-[#fffdfd] shadow-[0_18px_40px_rgba(0,194,255,0.08)] dark:bg-[#0f0822]">
+                        <div className="flex flex-col gap-3 rounded-2xl border border-[#d8cbff] bg-[#eef7ff] px-4 py-3 lg:flex-row lg:items-end lg:justify-between dark:border-white/8 dark:bg-[#18223b]">
+                            <div className="space-y-1">
+                                <SectionLabel>Voice navigation command</SectionLabel>
+                                <p className="max-w-2xl text-sm text-[#594d76] dark:text-[var(--muted)]">
+                                    Gõ hoặc đọc lệnh điều hướng. `Enter` để gửi, `Shift+Enter` để xuống dòng.
+                                </p>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                                {quickCommands.map((command) => (
+                                    <button
+                                        key={command.label}
+                                        onClick={() => setCommandText(command.value)}
+                                        className="rounded-full border border-[#d6c7ff] bg-[#f7f3ff] px-3 py-1.5 text-xs font-medium text-[#4c3b73] shadow-[0_6px_14px_rgba(124,77,255,0.06)] transition hover:border-[#8c63ff]/30 hover:bg-[#eef7ff] hover:text-[#1f1640] dark:border-white/10 dark:bg-[#26163b] dark:text-white/80 dark:hover:bg-[#322049] dark:hover:text-white"
+                                    >
+                                        {command.label}
+                                    </button>
+                                ))}
+                            </div>
                         </div>
-                    )}
-                </DarkCard>
+
+                        <div className="grid gap-4 xl:grid-cols-[1.25fr_0.75fr]">
+                            <div className="space-y-3">
+                                <div className="rounded-2xl border border-[#dacfff] bg-[#ffffff] p-4 shadow-[0_10px_24px_rgba(124,77,255,0.06)] dark:border-[var(--border)] dark:bg-[#160a28] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+                                    <div className="mb-2 flex items-center justify-between gap-3">
+                                        <label className="text-xs uppercase tracking-[0.22em] text-[#705d94] dark:text-white/55">
+                                            Command
+                                        </label>
+                                        <span
+                                            className={`text-[11px] font-medium ${
+                                                isListening ? "text-cyan-600 dark:text-cyan-400" : "text-[#8d84a8] dark:text-white/45"
+                                            }`}
+                                        >
+                                            {isListening ? "Listening" : "Idle"}
+                                        </span>
+                                    </div>
+
+                                    <textarea
+                                        value={commandText}
+                                        onChange={(e) => setCommandText(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === "Enter" && !e.shiftKey) {
+                                                e.preventDefault();
+                                                sendVoiceCommand();
+                                            }
+                                        }}
+                                        placeholder="Hãy cho robot đi đến điểm A"
+                                        className="min-h-[160px] w-full resize-none rounded-2xl border border-[#d8cbff] bg-[#fffdfd] px-4 py-4 text-base leading-6 text-[#1f1640] outline-none placeholder:text-[#9f96b8] focus:border-[#00b8ff]/50 dark:border-white/10 dark:bg-[#12071f] dark:text-white dark:placeholder:text-white/35"
+                                    />
+
+                                    <div className="mt-4 flex flex-col gap-3 border-t border-[var(--border)] pt-4 sm:flex-row sm:items-center sm:justify-between">
+                                        <div className="text-xs text-[#6c6090] dark:text-white/55">
+                                            {commandText.trim().length
+                                                ? `${commandText.trim().length} chars`
+                                                : "No command yet"}
+                                        </div>
+                                        <button
+                                            onClick={sendVoiceCommand}
+                                            disabled={isSendingCommand}
+                                            className="inline-flex items-center justify-center gap-2 rounded-full bg-[#10b981] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_10px_20px_rgba(11,183,111,0.2)] transition hover:bg-[#0ea56f] disabled:cursor-not-allowed disabled:opacity-50"
+                                        >
+                                            <Send size={16} />
+                                            {isSendingCommand ? "Sending..." : "Send command"}
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {commandError ? (
+                                    <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-600 dark:text-red-200">
+                                        {commandError}
+                                    </div>
+                                ) : null}
+
+                                <div className="rounded-2xl border border-[#dacfff] bg-[#ffffff] px-4 py-3 shadow-[0_10px_24px_rgba(253,116,155,0.05)] dark:border-[var(--border)] dark:bg-[#160a28]">
+                                    <div className="mb-2 text-[10px] uppercase tracking-[0.22em] text-[#705d94] dark:text-white/55">
+                                        Result
+                                    </div>
+                                    {commandResult ? (
+                                        <div className="space-y-2 text-sm text-[#483b61] dark:text-white/80">
+                                            <div className="flex items-start justify-between gap-3">
+                                                <span className="text-[#7a6f95] dark:text-white/55">Input</span>
+                                                <span className="text-right text-[#1f1640] dark:text-white">
+                                                    {commandResult.input_text || commandText || "—"}
+                                                </span>
+                                            </div>
+                                            {commandResult.result?.tool ? (
+                                                <div className="flex items-start justify-between gap-3">
+                                                      <span className="text-[#7a6f95] dark:text-white/55">Tool</span>
+                                                      <span className="text-right text-[#1f1640] dark:text-white">
+                                                        {commandResult.result.tool}
+                                                    </span>
+                                                </div>
+                                            ) : null}
+                                            {commandResult.result?.arguments ? (
+                                                <pre className="mt-2 overflow-auto rounded-xl bg-[#f6f2ff] p-3 text-xs text-[#62577f] dark:bg-[#241139] dark:text-white/65">
+                                                    {JSON.stringify(commandResult.result.arguments, null, 2)}
+                                                </pre>
+                                            ) : null}
+                                        </div>
+                                    ) : (
+                                        <div className="text-sm text-[#8d84a8] dark:text-white/45">
+                                            No command sent yet.
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="space-y-3">
+                                <div className="rounded-2xl border border-[#d8cbff] bg-[#ffffff] p-4 shadow-[0_10px_24px_rgba(0,194,255,0.06)] dark:border-[var(--border)] dark:bg-[#160a28]">
+                                    <div className="mb-3 text-[10px] uppercase tracking-[0.22em] text-[#705d94] dark:text-white/55">
+                                        Actions
+                                    </div>
+                                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-1">
+                                        {!isListening ? (
+                                            <button
+                                                onClick={startListening}
+                                                className="inline-flex items-center justify-center gap-2 rounded-full bg-[#06b6d4] px-4 py-3 font-semibold text-white shadow-[0_10px_20px_rgba(12,164,214,0.18)] transition hover:bg-[#0891b2]"
+                                            >
+                                                <Mic size={16} />
+                                                Start mic
+                                            </button>
+                                        ) : (
+                                            <button
+                                                onClick={stopListening}
+                                                className="inline-flex items-center justify-center gap-2 rounded-full bg-[#ff5574] px-4 py-3 font-semibold text-white shadow-[0_10px_20px_rgba(255,55,88,0.16)] transition hover:bg-[#f43f5e]"
+                                            >
+                                                <Square size={16} />
+                                                Stop mic
+                                            </button>
+                                        )}
+
+                                        <button
+                                            onClick={sendVoiceCommand}
+                                            disabled={isSendingCommand}
+                                            className="inline-flex items-center justify-center gap-2 rounded-full bg-[#10b981] px-4 py-3 font-semibold text-white shadow-[0_10px_20px_rgba(11,183,111,0.2)] transition hover:bg-[#0ea56f] disabled:cursor-not-allowed disabled:opacity-50"
+                                        >
+                                            <Send size={16} />
+                                            {isSendingCommand ? "Sending..." : "Send"}
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="rounded-2xl border border-[#d8cbff] bg-[#ffffff] p-4 shadow-[0_10px_24px_rgba(124,77,255,0.05)] dark:border-[var(--border)] dark:bg-[#160a28]">
+                                    <div className="mb-3 text-[10px] uppercase tracking-[0.22em] text-[#705d94] dark:text-white/55">
+                                        Quick commands
+                                    </div>
+                                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-1">
+                                        {quickCommands.map((command) => (
+                                            <button
+                                                key={command.label}
+                                                onClick={() => setCommandText(command.value)}
+                                                className="rounded-full border border-[#d8cbff] bg-[#f7f3ff] px-3 py-2.5 text-sm font-medium text-[#49386f] shadow-[0_6px_14px_rgba(124,77,255,0.06)] transition hover:border-[#00b8ff]/30 hover:bg-[#eef7ff] hover:text-[#1f1640] dark:border-[var(--border)] dark:bg-[#26163b] dark:text-white/80 dark:hover:border-cyan-400/30 dark:hover:bg-[#322049] dark:hover:text-white"
+                                            >
+                                                {command.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </DarkCard>
+                </div>
             </div>
 
-            <div className="w-80 shrink-0 bg-[#1A0F28] border-l border-white/10 flex flex-col gap-5 p-5 overflow-y-auto">
+            {sidebarOpen ? (
+                <div className="w-80 shrink-0 bg-[var(--surface)] border-l border-[var(--border)] flex flex-col gap-5 p-5 overflow-y-auto">
                 <div>
-                    <SectionLabel>Sensor metrics</SectionLabel>
-                    <div className="space-y-2">
-                        {sensorMetrics.map(({ label, value }) => (
-                            <div key={label} className="flex items-center justify-between py-1">
-                                <span className="text-white/70 text-sm">{label}</span>
-                                <span className="text-white font-semibold text-sm">{value}</span>
-                            </div>
-                        ))}
-                    </div>
+                    <SectionLabel>Path planning</SectionLabel>
+                    <DarkCard className="space-y-4">
+                        <div className="flex items-center justify-between">
+                            <span className="text-xs uppercase tracking-[0.22em] text-[var(--muted-2)]">
+                                Overview
+                            </span>
+                            <span className="rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-3 py-1 text-[11px] text-[var(--muted)]">
+                                {slamState?.pose
+                                    ? `${slamState.pose.x.toFixed(2)}, ${slamState.pose.y.toFixed(2)}`
+                                    : "No pose"}
+                            </span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                            {planningCards.map(({ label, value }) => (
+                                <div key={label} className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] px-4 py-3">
+                                    <div className="text-[10px] uppercase tracking-[0.22em] text-[var(--muted-2)]">
+                                        {label}
+                                    </div>
+                                    <div className="mt-2 text-sm font-semibold text-[var(--foreground)]">{value}</div>
+                                </div>
+                            ))}
+                        </div>
+                    </DarkCard>
                 </div>
 
-                <div className="border-t border-white/10" />
+                <div>
+                    <SectionLabel>Status</SectionLabel>
+                    <DarkCard className="grid grid-cols-2 gap-3">
+                        {statusCards.map(({ label, value }) => (
+                            <div key={label} className="rounded-xl bg-[var(--surface-2)] px-3 py-2">
+                                <div className="text-[10px] uppercase tracking-widest text-[var(--muted-2)]">
+                                    {label}
+                                </div>
+                                <div className="mt-1 text-sm font-semibold text-[var(--foreground)]">
+                                    {value}
+                                </div>
+                            </div>
+                        ))}
+                    </DarkCard>
+                </div>
 
                 <div>
                     <SectionLabel>QR detections</SectionLabel>
-                    <DarkCard className="min-h-[180px]">
-                        {qrItems.length === 0 ? (
-                            <span className="text-white/20 text-xs">
-                                {qrError || "No QR detected"}
-                            </span>
+                    <DarkCard className="p-3">
+                        {qrPositionError && !qrPosition ? (
+                            <span className="text-[var(--muted)] text-xs">{qrPositionError}</span>
                         ) : (
-                            <ul className="space-y-3">
-                                {qrItems.map((item, i) => (
-                                    <li key={`${item.text}-${i}`} className="text-xs text-white/75 leading-6">
-                                        <div className="text-white font-semibold">{item.text}</div>
-                                        <div>Type: {item.qr_type}</div>
-                                        <div>Angle: {item.angle_deg.toFixed(2)}°</div>
-                                        <div>Distance: {item.distance_m.toFixed(3)} m</div>
-                                        <div>
-                                            Target: {item.target_x_m.toFixed(3)}, {item.target_z_m.toFixed(3)}
-                                        </div>
-                                        <div>Direction: {item.direction}</div>
-                                    </li>
-                                ))}
-                            </ul>
+                            <TopDownQrView data={qrPosition} />
                         )}
                     </DarkCard>
                 </div>
 
                 <div>
-                    <SectionLabel>Error log</SectionLabel>
-                    <DarkCard className="min-h-[100px] flex items-start gap-2">
-                        <AlertTriangle size={14} className="text-white/20 mt-0.5 shrink-0" />
-                        <span className="text-white/20 text-xs">
-                            {slamError || qrError || "No errors recorded"}
+                    <SectionLabel>Issues</SectionLabel>
+                    <DarkCard className="flex items-start gap-2 px-3 py-3">
+                        <AlertTriangle size={14} className="mt-0.5 shrink-0 text-[var(--muted-2)]" />
+                        <span className="text-xs text-[var(--muted)]">
+                            {slamError || qrPositionError || qrError || "No errors recorded"}
                         </span>
                     </DarkCard>
                 </div>
 
                 <div>
                     <SectionLabel>Connection</SectionLabel>
-                    <DarkCard className="space-y-2 text-xs text-white/70">
-                        <div className="flex items-center justify-between">
-                            <span>Robot</span>
-                            <span className="text-white">{robotConnected}</span>
-                        </div>
+                    <DarkCard className="space-y-2 text-xs text-[var(--foreground)]/70">
                         <div className="flex items-center justify-between">
                             <span>SLAM</span>
-                            <span className="text-white">
+                            <span className="text-[var(--foreground)]">
                                 {slamState?.status?.slam_ok !== undefined
                                     ? String(slamState.status.slam_ok)
                                     : "No data"}
@@ -1204,23 +1488,22 @@ export default function AutonomousControlPage() {
                         </div>
                         <div className="flex items-center justify-between">
                             <span>TF</span>
-                            <span className="text-white">
+                            <span className="text-[var(--foreground)]">
                                 {slamState?.status?.tf_ok !== undefined
                                     ? String(slamState.status.tf_ok)
                                     : "No data"}
                             </span>
                         </div>
                         <div className="flex items-center justify-between">
-                            <span>Planner</span>
-                            <span className="text-white">
-                                {slamState?.status?.planner_ok !== undefined
-                                    ? String(slamState.status.planner_ok)
-                                    : "No data"}
+                            <span>Obstacle</span>
+                            <span className="text-[var(--foreground)]">
+                                {obstacle ? `${obstacle.dist.toFixed(2)} m` : "Clear"}
                             </span>
                         </div>
                     </DarkCard>
                 </div>
-            </div>
+                </div>
+            ) : null}
         </div>
     );
 }

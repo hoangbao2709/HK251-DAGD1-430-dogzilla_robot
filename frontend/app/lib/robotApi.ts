@@ -39,6 +39,29 @@ async function api<T = any>(path: string, init?: RequestInitWithBody): Promise<T
 
 const CONTROL_PREFIX = "/control/api/robots";
 
+type MoveVectorPayload = {
+  vx: number;
+  vy: number;
+  vz: number;
+  rx: number;
+  ry: number;
+  rz: number;
+};
+
+type MoveCommandPayload = {
+  command:
+    | "forward"
+    | "backward"
+    | "left"
+    | "right"
+    | "turnleft"
+    | "turnright"
+    | "stop";
+  step?: number;
+  speed?: number;
+  mode?: "slow" | "normal" | "high";
+};
+
 export const RobotAPI = {
   connect: (addr: string) =>
     api<{ ok?: boolean; connected?: boolean; error?: string; log?: string }>(
@@ -63,23 +86,22 @@ export const RobotAPI = {
       body: JSON.stringify({ mode }),
     }),
 
-  move: (cmd: {
-    vx: number;
-    vy: number;
-    vz: number;
-    rx: number;
-    ry: number;
-    rz: number;
-  }) =>
+  move: (payload: MoveVectorPayload | MoveCommandPayload) =>
     api<any>(`${CONTROL_PREFIX}/${robotId}/command/move/`, {
       method: "POST",
-      body: JSON.stringify(cmd),
+      body: JSON.stringify(payload),
     }),
 
   lidar: (action: "start" | "stop") =>
     api<any>(`${CONTROL_PREFIX}/${robotId}/command/lidar/`, {
       method: "POST",
       body: JSON.stringify({ action }),
+    }),
+
+  lidarReset: () =>
+    api<any>(`${CONTROL_PREFIX}/${robotId}/command/lidar/reset/`, {
+      method: "POST",
+      body: JSON.stringify({}),
     }),
 
   posture: (name: string) =>
@@ -173,4 +195,49 @@ export const RobotAPI = {
 
   slamMapUrl: (ts?: number) =>
     `${API_BASE}${CONTROL_PREFIX}/${robotId}/slam/map.png${ts ? `?t=${ts}` : ""}`,
+
+  server: () =>
+    api<any>(`${CONTROL_PREFIX}/${robotId}/server/`),
+
+  health: () =>
+    api<any>(`${CONTROL_PREFIX}/${robotId}/health/`),
+
+  frameUrl: (ts?: number) =>
+    `${API_BASE}${CONTROL_PREFIX}/${robotId}/frame/${ts ? `?t=${ts}` : ""}`,
+
+  test: () =>
+    api<any>(`${CONTROL_PREFIX}/${robotId}/test/`),
+
+  controlStatus: () =>
+    api<any>(`${CONTROL_PREFIX}/${robotId}/control-status/`),
+
+  pace: (mode: "slow" | "normal" | "high") =>
+    api<any>(`${CONTROL_PREFIX}/${robotId}/command/pace/`, {
+      method: "POST",
+      body: JSON.stringify({ mode }),
+    }),
+
+  gait: (mode: "trot" | "walk" | "high_walk") =>
+    api<any>(`${CONTROL_PREFIX}/${robotId}/command/gait/`, {
+      method: "POST",
+      body: JSON.stringify({ mode }),
+    }),
+
+  perform: (action: "on" | "off") =>
+    api<any>(`${CONTROL_PREFIX}/${robotId}/command/perform/`, {
+      method: "POST",
+      body: JSON.stringify({ action }),
+    }),
+
+  markTime: (value: number) =>
+    api<any>(`${CONTROL_PREFIX}/${robotId}/command/mark-time/`, {
+      method: "POST",
+      body: JSON.stringify({ value }),
+    }),
+
+  reset: () =>
+    api<any>(`${CONTROL_PREFIX}/${robotId}/command/reset/`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    }),
 };

@@ -1,10 +1,26 @@
 "use client";
 import { useEffect, useState } from "react";
 
-export default function RobotCamera({ robotId, interval = 100 }) {
+type RobotCameraProps = {
+  robotId: string;
+  interval?: number;
+};
+
+type CameraTracking = {
+  found?: boolean;
+  cx?: number;
+  cy?: number;
+  error?: number;
+  linear_x?: number;
+  angular_z?: number;
+};
+
+export default function RobotCamera({ robotId, interval = 100 }: RobotCameraProps) {
   const [frame, setFrame] = useState<string | null>(null);
   const [mask, setMask] = useState<string | null>(null);
-  const [tracking, setTracking] = useState<any>(null);
+  const [tracking, setTracking] = useState<CameraTracking | null>(null);
+  const formatNumber = (value: number | undefined, digits = 3) =>
+    typeof value === "number" && Number.isFinite(value) ? value.toFixed(digits) : "-";
 
   useEffect(() => {
     let isMounted = true;
@@ -40,9 +56,9 @@ export default function RobotCamera({ robotId, interval = 100 }) {
         <div style={{color:"white"}}>
           <p>cx: {tracking.cx}</p>
           <p>cy: {tracking.cy}</p>
-          <p>error: {tracking.error.toFixed(3)}</p>
-          <p>linear_x: {tracking.linear_x.toFixed(3)}</p>
-          <p>angular_z: {tracking.angular_z.toFixed(3)}</p>
+          <p>error: {formatNumber(tracking.error)}</p>
+          <p>linear_x: {formatNumber(tracking.linear_x)}</p>
+          <p>angular_z: {formatNumber(tracking.angular_z)}</p>
         </div>
       )}
     </div>

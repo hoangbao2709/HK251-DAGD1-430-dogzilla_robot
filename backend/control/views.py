@@ -31,22 +31,15 @@ def build_log(robot_id: str, action: str, payload, ok: bool, error: str | None =
 
 
 class CameraProcessView(APIView):
-    """
-    Lấy frame từ robot hoặc webcam, xử lý line tracking, trả JSON:
-    frame base64 + mask base64 + tracking info
-    """
-
     def get(self, request, robot_id):
         client = ROSClient(robot_id)
 
         try:
             frame = client.get_frame()
-        except Exception:
-            cap = cv2.VideoCapture(0)
-            ret, frame = cap.read()
-            cap.release()
-            if not ret:
-                return Response({"ok": False, "error": "No frame"}, status=500)
+            if frame is None:
+                return Response({"ok": False, "error": "Robot camera frame unavailable"}, status=502)
+        except Exception as e:
+            return Response({"ok": False, "error": str(e)}, status=502)
 
         frame_out, mask, tracking = line_tracker.process_frame(frame)
 
@@ -85,6 +78,69 @@ class ConnectView(APIView):
         return Response({"ok": True, **result}, status=200)
 
 
+class RobotRootInfoView(APIView):
+    def get(self, request, robot_id):
+        try:
+            data = ROSClient(robot_id).get_root_info()
+            return Response({"success": True, "robot_id": robot_id, "data": data}, status=200)
+        except Exception as e:
+            return Response({"success": False, "robot_id": robot_id, "error": str(e)}, status=500)
+
+
+class RobotHealthView(APIView):
+    def get(self, request, robot_id):
+        try:
+            data = ROSClient(robot_id).get_health()
+            return Response({"success": True, "robot_id": robot_id, "data": data}, status=200)
+        except Exception as e:
+            return Response({"success": False, "robot_id": robot_id, "error": str(e)}, status=500)
+
+
+class RobotFrameView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def get(self, request, robot_id):
+        try:
+            upstream = ROSClient(robot_id).get_frame_response()
+            content_type = upstream.headers.get("Content-Type", "image/jpeg")
+            response = HttpResponse(upstream.content, content_type=content_type)
+            response["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+            upstream.close()
+            return response
+        except Exception as e:
+            return Response({"success": False, "robot_id": robot_id, "error": str(e)}, status=500)
+
+
+class RobotTestPageView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def get(self, request, robot_id):
+        try:
+            upstream = ROSClient(robot_id).get_test_page()
+            content_type = upstream.headers.get("Content-Type", "text/html; charset=utf-8")
+            response = HttpResponse(upstream.text, content_type=content_type)
+            upstream.close()
+            return response
+        except Exception as e:
+            return Response({"success": False, "robot_id": robot_id, "error": str(e)}, status=500)
+
+
+class LinkAccountProxyView(APIView):
+    def post(self, request, robot_id):
+        email = request.data.get("email")
+        device_id = request.data.get("device_id")
+        if not email or not device_id:
+            return Response({"success": False, "error": "email and device_id are required"}, status=400)
+
+        try:
+            result = ROSClient(robot_id).link_account(email=email, device_id=device_id)
+            return Response({"success": True, "robot_id": robot_id, "result": result}, status=200)
+        except Exception as e:
+            return Response({"success": False, "robot_id": robot_id, "error": str(e)}, status=500)
+
+
 class RobotStatusView(APIView):
     def get(self, request, robot_id):
         robot = get_object_or_404(Robot, pk=robot_id)
@@ -119,12 +175,18 @@ class RobotStatusView(APIView):
         data = RobotSerializer(robot).data
         data["telemetry"] = {
             "robot_connected": s.get("robot_connected", False),
+            "speed_mode": s.get("speed_mode"),
+            "gait_type": s.get("gait_type"),
+            "perform_enabled": s.get("perform_enabled"),
+            "stabilizing_enabled": s.get("stabilizing_enabled"),
             "turn_speed_range": s.get("turn_speed_range"),
             "step_default": s.get("step_default"),
             "z_range": s.get("z_range"),
             "z_current": s.get("z_current"),
+            "roll_current": s.get("roll_current"),
             "pitch_range": s.get("pitch_range"),
             "pitch_current": s.get("pitch_current"),
+            "yaw_current": s.get("yaw_current"),
             "battery": s.get("battery"),
             "fw": s.get("fw"),
             "fps": s.get("fps"),
@@ -151,7 +213,7 @@ class SpeedModeView(APIView):
 
         log_line = build_log(robot_id, "SPEED_MODE", {"mode": mode}, ok, err)
         code = status.HTTP_200_OK if ok else status.HTTP_500_INTERNAL_SERVER_ERROR
-        return Response({"ok": ok, "log": log_line}, status=code)
+        return Response({"ok": ok, "mode": mode, "log": log_line}, status=code)
 
 
 class MoveCommandView(APIView):
@@ -207,9 +269,24 @@ class BehaviorView(APIView):
 
 class LidarView(APIView):
     def post(self, request, robot_id):
-        action = request.data.get("action")
+        action = (request.data.get("action") or "").strip().lower()
+        client = ROSClient(robot_id)
+
         try:
-            ROSClient(robot_id).lidar(action)
+            if action == "start":
+                slam_state = client.get_slam_state() or {}
+                if slam_state.get("running") is True or slam_state.get("lidar_running") is True:
+                    log_line = build_log(robot_id, "LIDAR", {"action": action}, True, None)
+                    return Response(
+                        {
+                            "ok": True,
+                            "already_running": True,
+                            "log": log_line,
+                        },
+                        status=status.HTTP_200_OK,
+                    )
+
+            client.lidar(action)
             ok, err = True, None
         except Exception as e:
             ok, err = False, str(e)
@@ -217,6 +294,33 @@ class LidarView(APIView):
         log_line = build_log(robot_id, "LIDAR", {"action": action}, ok, err)
         code = status.HTTP_200_OK if ok else status.HTTP_500_INTERNAL_SERVER_ERROR
         return Response({"ok": ok, "log": log_line}, status=code)
+
+class ResetLidarView(APIView):
+    def post(self, request, robot_id):
+        wait_seconds = request.data.get("wait_seconds")
+        try:
+            applied_wait = ROSClient(robot_id).reset_lidar(wait_seconds=wait_seconds)
+            ok, err = True, None
+        except Exception as e:
+            applied_wait = None
+            ok, err = False, str(e)
+
+        log_line = build_log(
+            robot_id,
+            "RESET_LIDAR",
+            {"wait_seconds": applied_wait if ok else wait_seconds},
+            ok,
+            err,
+        )
+        code = status.HTTP_200_OK if ok else status.HTTP_500_INTERNAL_SERVER_ERROR
+        return Response(
+            {
+                "ok": ok,
+                "wait_seconds": applied_wait,
+                "log": log_line,
+            },
+            status=code,
+        )
 
 
 class BodyAdjustView(APIView):
@@ -245,6 +349,127 @@ class StabilizingModeView(APIView):
         log_line = build_log(robot_id, "STABILIZING", {"action": action}, ok, err)
         code = status.HTTP_200_OK if ok else status.HTTP_500_INTERNAL_SERVER_ERROR
         return Response({"ok": ok, "log": log_line}, status=code)
+
+
+class PaceModeView(APIView):
+    def post(self, request, robot_id):
+        mode = request.data.get("mode")
+        try:
+            ROSClient(robot_id).set_pace_mode(mode)
+            ok, err = True, None
+        except Exception as e:
+            ok, err = False, str(e)
+
+        log_line = build_log(robot_id, "PACE_MODE", {"mode": mode}, ok, err)
+        code = status.HTTP_200_OK if ok else status.HTTP_500_INTERNAL_SERVER_ERROR
+        return Response({"ok": ok, "mode": mode, "log": log_line}, status=code)
+
+
+class ZControlView(APIView):
+    def post(self, request, robot_id):
+        payload = request.data
+        try:
+            ROSClient(robot_id).z_control(payload)
+            ok, err = True, None
+        except Exception as e:
+            ok, err = False, str(e)
+
+        log_line = build_log(robot_id, "Z_CONTROL", payload, ok, err)
+        code = status.HTTP_200_OK if ok else status.HTTP_500_INTERNAL_SERVER_ERROR
+        return Response({"ok": ok, "log": log_line}, status=code)
+
+
+class AttitudeControlView(APIView):
+    def post(self, request, robot_id):
+        payload = request.data
+        try:
+            ROSClient(robot_id).attitude_control(payload)
+            ok, err = True, None
+        except Exception as e:
+            ok, err = False, str(e)
+
+        log_line = build_log(robot_id, "ATTITUDE_CONTROL", payload, ok, err)
+        code = status.HTTP_200_OK if ok else status.HTTP_500_INTERNAL_SERVER_ERROR
+        return Response({"ok": ok, "log": log_line}, status=code)
+
+
+class GaitTypeView(APIView):
+    def post(self, request, robot_id):
+        mode = request.data.get("mode")
+        try:
+            ROSClient(robot_id).gait_type(mode)
+            ok, err = True, None
+        except Exception as e:
+            ok, err = False, str(e)
+
+        log_line = build_log(robot_id, "GAIT_TYPE", {"mode": mode}, ok, err)
+        code = status.HTTP_200_OK if ok else status.HTTP_500_INTERNAL_SERVER_ERROR
+        return Response({"ok": ok, "mode": mode, "log": log_line}, status=code)
+
+
+class PerformModeView(APIView):
+    def post(self, request, robot_id):
+        action = request.data.get("action")
+        try:
+            ROSClient(robot_id).perform(action)
+            ok, err = True, None
+        except Exception as e:
+            ok, err = False, str(e)
+
+        log_line = build_log(robot_id, "PERFORM", {"action": action}, ok, err)
+        code = status.HTTP_200_OK if ok else status.HTTP_500_INTERNAL_SERVER_ERROR
+        return Response({"ok": ok, "action": action, "log": log_line}, status=code)
+
+
+class MarkTimeView(APIView):
+    def post(self, request, robot_id):
+        value = request.data.get("value")
+        try:
+            ROSClient(robot_id).mark_time(value)
+            ok, err = True, None
+        except Exception as e:
+            ok, err = False, str(e)
+
+        log_line = build_log(robot_id, "MARK_TIME", {"value": value}, ok, err)
+        code = status.HTTP_200_OK if ok else status.HTTP_500_INTERNAL_SERVER_ERROR
+        return Response({"ok": ok, "value": value, "log": log_line}, status=code)
+
+
+class ResetRobotView(APIView):
+    def post(self, request, robot_id):
+        try:
+            ROSClient(robot_id).reset()
+            ok, err = True, None
+        except Exception as e:
+            ok, err = False, str(e)
+
+        log_line = build_log(robot_id, "RESET", {}, ok, err)
+        code = status.HTTP_200_OK if ok else status.HTTP_500_INTERNAL_SERVER_ERROR
+        return Response({"ok": ok, "log": log_line}, status=code)
+
+
+class RawControlView(APIView):
+    def post(self, request, robot_id):
+        payload = request.data
+        try:
+            result = ROSClient(robot_id).raw_control(payload)
+            ok, err = True, None
+        except Exception as e:
+            result = None
+            ok, err = False, str(e)
+
+        log_line = build_log(robot_id, "RAW_CONTROL", payload, ok, err)
+        code = status.HTTP_200_OK if ok else status.HTTP_500_INTERNAL_SERVER_ERROR
+        return Response({"ok": ok, "result": result, "log": log_line}, status=code)
+
+
+class ControlStatusView(APIView):
+    def get(self, request, robot_id):
+        try:
+            data = ROSClient(robot_id).get_control_status()
+            return Response({"success": True, "robot_id": robot_id, "data": data}, status=200)
+        except Exception as e:
+            return Response({"success": False, "robot_id": robot_id, "error": str(e)}, status=500)
 
 
 class TextCommandView(APIView):

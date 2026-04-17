@@ -3,6 +3,7 @@
 import React, { useMemo, useState, useEffect } from "react";
 import ConnectionCard from "@/components/ConnectionCard";
 import { useRouter } from "next/navigation";
+import { setSelectedRobotAddr } from "@/app/lib/selectedRobot";
 
 export type Device = {
   id: number;
@@ -220,7 +221,7 @@ const handleConnectDevice = async (device: Device) => {
     } else {
       // 🟢 LAN: để Django kiểm tra & lưu addr
       const res = await RobotAPI.connect(dogzillaAddr);
-      connected = res.connected;
+      connected = Boolean(res.connected);
       newStatus = connected ? "online" : "offline";
 
       if (!connected) {
@@ -241,8 +242,9 @@ const handleConnectDevice = async (device: Device) => {
       return;
     }
 
-    // thành công -> sang trang điều khiển
-    router.push(`/control?ip=${encodeURIComponent(dogzillaAddr)}`);
+    // thành công -> lưu robot hiện tại rồi sang trang điều khiển
+    setSelectedRobotAddr(dogzillaAddr);
+    router.push("/control");
   } catch (e: any) {
     console.error("Connect error:", e);
 
@@ -311,7 +313,7 @@ const handleConnectDevice = async (device: Device) => {
           value={addr}
           onChange={(e) => setAddr(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && canAdd && handleAdd()}
-          className="flex-1 rounded-xl bg-white/10 px-4 py-2 text-sm placeholder:text-white/60 focus:outline-none focus:ring-2 focus:ring-pink-400/60 min-h-[44px]"
+          className="flex-1 rounded-xl bg-[var(--surface-2)] px-4 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted)] focus:outline-none focus:ring-2 focus:ring-pink-400/60 min-h-[44px]"
         />
         <button
           onClick={handleAdd}

@@ -14,8 +14,11 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Dogzilla Control",
+  title: "RobotControl",
   description: "Remote control web UI",
+  icons: {
+    icon: "/logo_hongtrang.png",
+  },
 };
 
 export default function RootLayout({
@@ -29,8 +32,7 @@ export default function RootLayout({
         className={`
           ${geistSans.variable} ${geistMono.variable}
           min-h-screen
-          bg-slate-50 text-slate-900         /* LIGHT */
-          dark:bg-[#0c0520] dark:text-white /* DARK  */
+          bg-[var(--background)] text-[var(--foreground)]
           antialiased
         `}
       >

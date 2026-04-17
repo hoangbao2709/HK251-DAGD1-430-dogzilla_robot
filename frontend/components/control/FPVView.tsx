@@ -1,10 +1,10 @@
 "use client";
 
 import React, { useEffect, useRef, useCallback, useState } from "react";
-import { useSearchParams } from "next/navigation";
 import { RobotAPI, DEFAULT_DOG_SERVER } from "@/app/lib/robotApi";
 import { Panel, Btn, SliderRow } from "@/components/control/ControlUI";
 import { useGamepadMove } from "@/app/lib/useGamepadMove";
+import { getSelectedRobotAddr } from "@/app/lib/selectedRobot";
 
 export default function FPVView({
   fps = 30,
@@ -13,6 +13,7 @@ export default function FPVView({
   fps?: number;
   onEmergencyStop?: () => void;
 }) {
+  const [dogServer, setDogServer] = useState(DEFAULT_DOG_SERVER);
   const postureBtns = ["Lie_Down", "Stand_Up", "Sit_Down", "Squat", "Crawl"];
   const axisMotionBtns = [
     "Turn_Roll",
@@ -30,10 +31,14 @@ export default function FPVView({
   const [connected, setConnected] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
 
-  const searchParams = useSearchParams();
-  const ipParam = searchParams.get("ip");
-  const DOG_SERVER = ipParam || DEFAULT_DOG_SERVER;
   const hasResetBody = useRef(false);
+
+  useEffect(() => {
+    const savedAddr = getSelectedRobotAddr();
+    if (savedAddr) {
+      setDogServer(savedAddr);
+    }
+  }, []);
 
   /* ===== BODY ADJUST ===== */
 
@@ -99,7 +104,7 @@ export default function FPVView({
 
     (async () => {
       try {
-        const res = await RobotAPI.connect(DOG_SERVER);
+        const res = await RobotAPI.connect(dogServer);
         if (stop) return;
 
         if (res?.connected) {
@@ -142,7 +147,7 @@ export default function FPVView({
       clearInterval(iv);
       onEmergencyStop?.();
     };
-  }, [DOG_SERVER, onEmergencyStop, resetBody]);
+  }, [dogServer, onEmergencyStop, resetBody]);
 
   /* ===== HANDLERS toggle từ nút & gamepad ===== */
 
@@ -173,7 +178,7 @@ export default function FPVView({
   return (
     <div className="space-y-6">
       {/* FPV video */}
-      <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-black shadow-[0_10px_30px_rgba(0,0,0,0.35)]">
+      <div className="relative overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface-elev)] shadow-[0_10px_30px_rgba(0,0,0,0.18)]">
         <div className="absolute left-3 top-2 text-green-300 text-xl font-bold drop-shadow">
           FPS: {fps}
         </div>
@@ -187,7 +192,7 @@ export default function FPVView({
       {/* Body + behavior */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
         {/* LEFT — Body */}
-        <Panel title="Body Adjustment">
+        <Panel title="Body Adjustment" tone="pink">
           <SliderRow
             label="Translation_X"
             value={sliders.tx}
@@ -243,37 +248,43 @@ export default function FPVView({
 
         {/* RIGHT — postures & behaviors */}
         <div className="flex flex-col gap-6">
-          <Panel title="Basic Postures">
-            <div className="grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-3">
+          <Panel title="Basic Postures" tone="pink">
+            <div className="grid grid-cols-[repeat(5,minmax(0,1fr))] gap-2">
               {postureBtns.map((b) => (
                 <Btn
                   key={b}
                   label={b.replaceAll("_", " ")}
                   onClick={() => RobotAPI.posture(b)}
+                  tone="pink"
+                  className="w-full"
                 />
               ))}
             </div>
           </Panel>
 
-          <Panel title="Axis Motion">
-            <div className="grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-3">
+          <Panel title="Axis Motion" tone="cyan">
+            <div className="grid grid-cols-[repeat(5,minmax(0,1fr))] gap-2">
               {axisMotionBtns.map((b) => (
                 <Btn
                   key={b}
                   label={b.replaceAll("_", " ")}
                   onClick={() => RobotAPI.behavior(b)}
+                  tone="cyan"
+                  className="w-full"
                 />
               ))}
             </div>
           </Panel>
 
-          <Panel title="Behavior Control">
-            <div className="grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-3">
+        <Panel title="Behavior Control" tone="emerald">
+            <div className="grid grid-cols-5 gap-2 xl:grid-cols-9">
               {[...behavior1, ...behavior2].map((b, i) => (
                 <Btn
                   key={`${b}-${i}`}
                   label={b.replaceAll("_", " ")}
                   onClick={() => RobotAPI.behavior(b)}
+                  tone="emerald"
+                  className="w-full whitespace-nowrap"
                 />
               ))}
             </div>

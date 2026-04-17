@@ -59,7 +59,7 @@ export default function ManualControlPage() {
   /* ----------------- MOBILE ----------------- */
   if (isMobile) {
     return (
-      <div className="relative min-h-screen w-full bg-slate-50 text-slate-900 dark:bg-[#0c0520] dark:text-white">
+      <div className="relative min-h-screen w-full bg-[radial-gradient(circle_at_top_left,rgba(253,116,155,0.12),transparent_28%),radial-gradient(circle_at_top_right,rgba(0,184,255,0.10),transparent_24%),var(--background)] text-[var(--foreground)]">
         {/* Nút quay lại Connection (floating) */}
         <button
           onClick={goToConnection}
@@ -83,7 +83,7 @@ export default function ManualControlPage() {
             toggleMode={toggleMode}
           />
         ) : (
-          <section className="min-h-screen w-full bg-slate-50 text-slate-900 dark:bg-[#0c0520] dark:text-white pt-12">
+          <section className="min-h-screen w-full bg-[var(--background)] text-[var(--foreground)] pt-12">
             {/* chừa khoảng trên cho nút back */}
             <div className="mx-auto max-w-5xl px-2 py-3 space-y-3">
               <HeaderControl
@@ -101,12 +101,12 @@ export default function ManualControlPage() {
 
   /* ----------------- DESKTOP ----------------- */
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900 dark:bg-[#1A0F28] dark:text-white">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(253,116,155,0.12),transparent_28%),radial-gradient(circle_at_top_right,rgba(0,184,255,0.10),transparent_24%),var(--background)] text-[var(--foreground)]">
       <div className="flex min-h-screen">
         <Sidebar />
         <div className="flex flex-col flex-1">
           <Topbar />
-          <section className="flex-1 w-full bg-slate-50 text-slate-900 dark:bg-[#0c0520] dark:text-white p-6">
+          <section className="flex-1 w-full bg-[var(--background)] text-[var(--foreground)] p-6">
             <div className="">
               {mode === "remote" ? (
                 <RemoteView

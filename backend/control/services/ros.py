@@ -1,10 +1,11 @@
 from typing import Dict, Any
 from urllib.parse import urlparse
+import time
 
 import cv2
 import requests
-from django.conf import settings
-
+from django.conf import settings  # type: ignore[import-untyped]
+import numpy as np
 from ..models import Robot
 
 
@@ -73,6 +74,13 @@ class ROSClient:
         resp.raise_for_status()
         return resp.json()
 
+    def _get_response(self, path: str, *, stream: bool = False):
+        url = f"{self._get_base_url()}{path}"
+        timeout = (self.timeout, self.stream_timeout) if stream else self.timeout
+        resp = self.session.get(url, timeout=timeout, stream=stream)
+        resp.raise_for_status()
+        return resp
+
     def _get_json_by_url(self, url: str) -> Dict[str, Any]:
         resp = self.session.get(url, timeout=self.timeout)
         resp.raise_for_status()
@@ -109,6 +117,23 @@ class ROSClient:
         print(f"[ROSClient] POST {url} {payload} -> {resp.status_code} {text}")
         resp.raise_for_status()
 
+    def _post_control_with_response(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        url = f"{self._get_base_url()}/control"
+        resp = self.session.post(url, json=payload, timeout=self.timeout)
+
+        try:
+            data = resp.json()
+        except Exception:
+            data = {
+                "ok": resp.ok,
+                "status_code": resp.status_code,
+                "message": resp.text,
+            }
+
+        print(f"[ROSClient] POST {url} {payload} -> {resp.status_code}")
+        resp.raise_for_status()
+        return data
+
     # ------------------------------------------------------------------
     # 1) Connect
     # ------------------------------------------------------------------
@@ -133,6 +158,25 @@ class ROSClient:
         except requests.RequestException as e:
             print(f"[ROSClient] connect() error: {e}")
             return {"connected": False, "error": str(e), "addr": addr_clean}
+
+    def get_root_info(self) -> Dict[str, Any]:
+        return self._get_json("/")
+
+    def get_health(self) -> Dict[str, Any]:
+        return self._get_json("/health")
+
+    def get_test_page(self):
+        return self._get_response("/test")
+
+    def get_frame_response(self):
+        return self._get_response("/frame")
+
+    def link_account(self, email: str, device_id: str) -> Dict[str, Any]:
+        payload = {
+            "email": email,
+            "device_id": device_id,
+        }
+        return self._post_json_by_url(f"{self._get_base_url()}/link-account", payload)
 
     # ------------------------------------------------------------------
     # 2) Status
@@ -167,21 +211,24 @@ class ROSClient:
         return f"{self._get_base_url()}/camera"
 
     def get_frame(self):
-        stream_url = self.get_fpv_url()
-        cap = cv2.VideoCapture(stream_url)
+        frame_url = f"{self._get_base_url()}/frame"
 
-        if not cap.isOpened():
-            print(f"[ROSClient] Không mở được camera {stream_url}")
+        try:
+            resp = self.session.get(frame_url, timeout=(self.timeout, self.stream_timeout))
+            resp.raise_for_status()
+
+            data = np.frombuffer(resp.content, dtype=np.uint8)
+            frame = cv2.imdecode(data, cv2.IMREAD_COLOR)
+
+            if frame is None:
+                print(f"[ROSClient] Decode frame failed from {frame_url}")
+                return None
+
+            return frame
+
+        except Exception as e:
+            print(f"[ROSClient] Không lấy được frame từ {frame_url}: {e}")
             return None
-
-        ret, frame = cap.read()
-        cap.release()
-
-        if not ret:
-            print("[ROSClient] Không đọc được frame")
-            return None
-
-        return frame
 
     def stream_slam_map_png(self):
         """
@@ -205,7 +252,21 @@ class ROSClient:
         Dogzilla server hiện chưa có speed mode global.
         """
         assert mode in ("slow", "normal", "high")
-        print(f"[ROSClient] set_speed_mode({mode}) (no-op for Dogzilla server)")
+        self._post_control(
+            {
+                "command": "speed_mode",
+                "mode": mode,
+            }
+        )
+
+    def set_pace_mode(self, mode: str) -> None:
+        assert mode in ("slow", "normal", "high")
+        self._post_control(
+            {
+                "command": "pace",
+                "mode": mode,
+            }
+        )
 
     # ------------------------------------------------------------------
     # 5) Move command
@@ -215,6 +276,13 @@ class ROSClient:
         Map body move từ Django sang lệnh rời rạc của Dogzilla:
           - forward, back, left, right, turnleft, turnright, stop
         """
+
+        command = str(payload.get("command", "")).strip()
+        if command in {"forward", "back", "left", "right", "turnleft", "turnright", "stop"}:
+            allowed_keys = {"command", "step", "speed", "mode"}
+            forwarded = {k: payload[k] for k in allowed_keys if k in payload}
+            self._post_control(forwarded)
+            return
 
         def _f(v):
             try:
@@ -244,7 +312,15 @@ class ROSClient:
         else:
             cmd = "turnleft" if rz > 0 else "turnright"
 
-        self._post_control({"command": cmd})
+        forwarded_payload: Dict[str, Any] = {"command": cmd}
+        if "mode" in payload:
+            forwarded_payload["mode"] = payload.get("mode")
+        if axis == "rz" and "speed" in payload:
+            forwarded_payload["speed"] = payload.get("speed")
+        elif axis != "rz" and "step" in payload:
+            forwarded_payload["step"] = payload.get("step")
+
+        self._post_control(forwarded_payload)
 
     # ------------------------------------------------------------------
     # 6) Posture / Behavior / Lidar / Body adjust / Stabilizing
@@ -259,6 +335,17 @@ class ROSClient:
         assert action in ("start", "stop")
         self._post_control({"command": "lidar", "action": action})
 
+    def reset_lidar(self, wait_seconds: float | None = None) -> float:
+        delay = wait_seconds
+        if delay is None:
+            delay = float(getattr(settings, "LIDAR_RESET_DELAY_SECONDS", 1.0))
+        delay = max(0.0, float(delay))
+
+        self.lidar("stop")
+        time.sleep(delay)
+        self.lidar("start")
+        return delay
+
     def body_adjust(self, sliders: Dict[str, float]) -> None:
         payload: Dict[str, Any] = {"command": "body_adjust"}
         payload.update(sliders)
@@ -271,6 +358,53 @@ class ROSClient:
             "action": action,
         }
         self._post_control(payload)
+
+    def z_control(self, payload: Dict[str, Any]) -> None:
+        command = str(payload.get("command", "")).strip()
+        assert command in ("setz", "adjustz")
+
+        forwarded: Dict[str, Any] = {"command": command}
+        if command == "setz":
+            forwarded["value"] = payload.get("value")
+        else:
+            forwarded["delta"] = payload.get("delta")
+
+        self._post_control(forwarded)
+
+
+    def attitude_control(self, payload: Dict[str, Any]) -> None:
+        command = str(payload.get("command", "")).strip()
+        value_commands = {"setroll", "setpitch", "setyaw"}
+        delta_commands = {"adjustroll", "adjustpitch", "adjustyaw"}
+        assert command in value_commands | delta_commands
+
+        forwarded: Dict[str, Any] = {"command": command}
+        if command in value_commands:
+            forwarded["value"] = payload.get("value")
+        else:
+            forwarded["delta"] = payload.get("delta")
+
+        self._post_control(forwarded)
+        
+    def gait_type(self, mode: str) -> None:
+        assert mode in ("trot", "walk", "high_walk")
+        self._post_control({"command": "gait_type", "mode": mode})
+
+    def perform(self, action: str) -> None:
+        assert action in ("on", "off")
+        self._post_control({"command": "perform", "action": action})
+
+    def mark_time(self, value: int | float) -> None:
+        self._post_control({"command": "mark_time", "value": value})
+
+    def reset(self) -> None:
+        self._post_control({"command": "reset"})
+
+    def get_control_status(self) -> Dict[str, Any]:
+        return self._post_control_with_response({"command": "status"})
+
+    def raw_control(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        return self._post_control_with_response(payload)
 
     # ------------------------------------------------------------------
     # 7) Base URL cho QR / SLAM
