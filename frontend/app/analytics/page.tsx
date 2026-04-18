@@ -237,10 +237,10 @@ function StatCard({
     <div className="bg-[var(--surface)] rounded-xl p-4 flex flex-col gap-1 border border-[var(--border)]">
       <div className="flex items-center gap-2 mb-1">
         <div className={`p-1.5 rounded-lg ${iconBg}`}>{icon}</div>
-        <span className="text-[var(--muted)] text-xs font-medium">{label}</span>
+        <span className="text-[var(--muted)] text-sm font-medium">{label}</span>
       </div>
-      <div className="text-2xl font-bold text-[var(--foreground)]">{main}</div>
-      {sub ? <div className={`text-xs ${subColor}`}>{sub}</div> : null}
+      <div className="text-[1.7rem] font-bold text-[var(--foreground)]">{main}</div>
+      {sub ? <div className={`text-sm ${subColor}`}>{sub}</div> : null}
     </div>
   );
 }
@@ -256,9 +256,9 @@ function MetricRow({
 }) {
   return (
     <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5">
-      <div className="text-[10px] uppercase tracking-widest text-[var(--muted)]">{label}</div>
-      <div className="mt-1 text-sm font-semibold text-[var(--foreground)] break-all">{value}</div>
-      {hint ? <div className="mt-1 text-xs text-[var(--muted)]">{hint}</div> : null}
+      <div className="text-xs uppercase tracking-widest text-[var(--muted)]">{label}</div>
+      <div className="mt-1 text-base font-semibold text-[var(--foreground)] break-all">{value}</div>
+      {hint ? <div className="mt-1 text-sm text-[var(--muted)]">{hint}</div> : null}
     </div>
   );
 }
@@ -281,8 +281,8 @@ function PoseBar({
   return (
     <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-3">
       <div className="flex items-center justify-between gap-3">
-        <span className="text-sm font-medium text-[var(--foreground)]">{label}</span>
-        <span className="text-sm text-[var(--foreground)]">
+        <span className="text-base font-medium text-[var(--foreground)]">{label}</span>
+        <span className="text-base text-[var(--foreground)]">
           {value}
           {unit}
         </span>
@@ -290,7 +290,7 @@ function PoseBar({
       <div className="mt-2 h-2 rounded-full bg-black/10 dark:bg-white/10 overflow-hidden">
         <div className={`h-full rounded-full ${colorClass}`} style={{ width: `${percent}%` }} />
       </div>
-      <div className="mt-2 text-xs text-[var(--muted)]">Range: {formatRange(range, unit)}</div>
+      <div className="mt-2 text-sm text-[var(--muted)]">Range: {formatRange(range, unit)}</div>
     </div>
   );
 }
@@ -493,21 +493,17 @@ export default function AnalyticsPage() {
     <section className="min-h-screen bg-[var(--background)] text-[var(--foreground)] p-5 flex flex-col gap-6">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div>
-          <h1 className="gradient-title text-2xl">Analytics</h1>
-          <p className="text-[var(--muted)] text-sm mt-1">
-            Live telemetry from <span className="text-[var(--foreground)]">/status</span> for robot{" "}
-            <span className="text-blue-300">{robotId}</span>
-          </p>
+          <h1 className="gradient-title text-3xl">Analytics</h1>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs px-3 py-1 rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--foreground)]/70">
+          <span className="text-sm px-3 py-1 rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--foreground)]/70">
             Last refresh: {lastRefresh}
           </span>
           <button
             onClick={refreshStatus}
             disabled={loading}
-            className="inline-flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm hover:bg-[var(--surface-2)] disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-base hover:bg-[var(--surface-2)] disabled:opacity-50"
           >
             {loading ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
             Refresh
@@ -516,7 +512,7 @@ export default function AnalyticsPage() {
       </div>
 
       {errorText ? (
-        <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+        <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-base text-red-200">
           {errorText}
         </div>
       ) : null}
@@ -569,10 +565,9 @@ export default function AnalyticsPage() {
           <div className="bg-[var(--surface)] rounded-xl p-4 border border-[var(--border)]">
             <div className="flex items-start justify-between mb-3 gap-3">
               <div>
-                <p className="text-[var(--foreground)] font-semibold text-sm">Battery and FPS History</p>
-                <p className="text-[var(--muted)] text-xs mt-0.5">Updated every 5 seconds from live status</p>
+                <p className="text-[var(--foreground)] font-semibold text-base">Battery and FPS History</p>
               </div>
-              <span className="text-[11px] text-emerald-400 border border-emerald-400/30 bg-emerald-500/10 rounded px-2 py-0.5">
+              <span className="text-xs text-emerald-400 border border-emerald-400/30 bg-emerald-500/10 rounded px-2 py-0.5">
                 Battery: green, FPS: blue
               </span>
             </div>
@@ -583,7 +578,7 @@ export default function AnalyticsPage() {
 
             <div className="flex justify-between mt-2 px-1">
               {(statusHistory.length ? statusHistory : [{ time: "--", battery: 0, fps: 0 }]).map((point, index, arr) => (
-                <span key={`${point.time}-${index}`} className="text-[var(--muted-2)] text-[10px]">
+                <span key={`${point.time}-${index}`} className="text-[var(--muted-2)] text-xs">
                   {index === 0 || index === arr.length - 1 || index % Math.max(1, Math.ceil(arr.length / 4)) === 0
                     ? point.time
                     : ""}
@@ -595,10 +590,9 @@ export default function AnalyticsPage() {
           <div className="bg-[var(--surface)] rounded-xl p-4 border border-[var(--border)]">
             <div className="flex items-start justify-between mb-4 gap-3">
               <div>
-                <p className="text-[var(--foreground)] font-semibold text-sm">Link Throughput and Latency</p>
-                <p className="text-[var(--muted)] text-xs mt-0.5">Live network telemetry between robot and backend</p>
+                <p className="text-[var(--foreground)] font-semibold text-base">Link Throughput and Latency</p>
               </div>
-              <span className="text-[11px] text-cyan-400 border border-cyan-400/30 bg-cyan-500/10 rounded px-2 py-0.5">
+              <span className="text-xs text-cyan-400 border border-cyan-400/30 bg-cyan-500/10 rounded px-2 py-0.5">
                 {hasNetworkData ? "Network Live" : "No data"}
               </span>
             </div>
@@ -640,7 +634,7 @@ export default function AnalyticsPage() {
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2 px-1">
               {(networkHistory.length ? networkHistory : [{ time: "--", uplink: 0, downlink: 0, latency: 0, packetLoss: 0 }]).map((point, index, arr) => (
-                <span key={`${point.time}-${index}`} className="text-[var(--muted-2)] text-[10px]">
+                <span key={`${point.time}-${index}`} className="text-[var(--muted-2)] text-xs">
                   {index === 0 || index === arr.length - 1 || index % Math.max(1, Math.ceil(arr.length / 4)) === 0
                     ? point.time
                     : ""}
@@ -652,10 +646,10 @@ export default function AnalyticsPage() {
           <div className="bg-[var(--surface)] rounded-xl p-4 border border-[var(--border)]">
             <div className="flex items-start justify-between mb-4 gap-3">
               <div>
-                <p className="text-[var(--foreground)] font-semibold text-sm">Body Pose and Limits</p>
-                <p className="text-[var(--muted)] text-xs mt-0.5">Current posture values mapped against configured ranges</p>
+                <p className="text-[var(--foreground)] font-semibold text-base">Body Pose and Limits</p>
+                <p className="text-[var(--muted)] text-sm mt-0.5">Current posture values mapped against configured ranges</p>
               </div>
-              <span className="text-[11px] text-amber-400 border border-amber-400/30 bg-amber-500/10 rounded px-2 py-0.5">
+              <span className="text-xs text-amber-400 border border-amber-400/30 bg-amber-500/10 rounded px-2 py-0.5">
                 Roll: {getNumber(status?.roll_current, 0)}°
               </span>
             </div>
@@ -672,10 +666,10 @@ export default function AnalyticsPage() {
           <div className="bg-[var(--surface)] rounded-xl p-4 border border-[var(--border)]">
             <div className="flex items-start justify-between gap-3 mb-4">
               <div>
-                <p className="text-[var(--foreground)] font-semibold text-sm">System Overview</p>
-                <p className="text-[var(--muted)] text-xs mt-0.5">Main runtime values from the robot system block</p>
+                <p className="text-[var(--foreground)] font-semibold text-base">System Overview</p>
+                <p className="text-[var(--muted)] text-sm mt-0.5">Main runtime values from the robot system block</p>
               </div>
-              <span className="text-[11px] text-cyan-400 border border-cyan-400/30 bg-cyan-500/10 rounded px-2 py-0.5">
+              <span className="text-xs text-cyan-400 border border-cyan-400/30 bg-cyan-500/10 rounded px-2 py-0.5">
                 CPU {cpuPercent}%
               </span>
             </div>
@@ -693,8 +687,8 @@ export default function AnalyticsPage() {
           <div className="bg-[var(--surface)] rounded-xl p-4 border border-[var(--border)]">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <p className="text-[var(--foreground)] font-semibold text-sm">Runtime Flags</p>
-                <p className="text-[var(--muted)] text-xs mt-0.5">Mode and safety related flags from live status</p>
+                <p className="text-[var(--foreground)] font-semibold text-base">Runtime Flags</p>
+                <p className="text-[var(--muted)] text-sm mt-0.5">Mode and safety related flags from live status</p>
               </div>
               <ShieldCheck size={16} className="text-emerald-400" />
             </div>
@@ -736,8 +730,8 @@ export default function AnalyticsPage() {
 
       <div className="bg-[var(--surface)] rounded-xl border border-[var(--border)] overflow-hidden">
         <div className="p-5 pb-3">
-          <h2 className="text-[var(--foreground)] text-lg font-bold">Action History</h2>
-          <p className="text-[var(--muted)] text-xs mt-0.5">Recent actions and events from RobotAPI.events()</p>
+          <h2 className="text-[var(--foreground)] text-xl font-bold">Action History</h2>
+          <p className="text-[var(--muted)] text-sm mt-0.5">Recent actions and events from RobotAPI.events()</p>
         </div>
 
         <div className="overflow-x-auto">
