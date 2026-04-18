@@ -115,14 +115,8 @@ build/
 *.whl
 
 # =============================================
-# DATABASE & LOCAL CONFIG
+# LOCAL CONFIG
 # =============================================
-*.db
-*.sqlite3
-*.sqlite
-.env
-.env.local
-.env.*.local
 config.local.py
 local_settings.py
 
@@ -134,10 +128,6 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
-
-# Database
-db.sqlite3
-*.sqlite3
 
 # Python cache
 __pycache__/

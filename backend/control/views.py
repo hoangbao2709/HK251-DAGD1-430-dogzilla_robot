@@ -333,20 +333,6 @@ class RobotTestPageView(APIView):
             return Response({"success": False, "robot_id": robot_id, "error": str(e)}, status=500)
 
 
-class LinkAccountProxyView(APIView):
-    def post(self, request, robot_id):
-        email = request.data.get("email")
-        device_id = request.data.get("device_id")
-        if not email or not device_id:
-            return Response({"success": False, "error": "email and device_id are required"}, status=400)
-
-        try:
-            result = ROSClient(robot_id).link_account(email=email, device_id=device_id)
-            return Response({"success": True, "robot_id": robot_id, "result": result}, status=200)
-        except Exception as e:
-            return Response({"success": False, "robot_id": robot_id, "error": str(e)}, status=500)
-
-
 class RobotStatusView(APIView):
     def get(self, request, robot_id):
         robot = get_or_create_robot(robot_id)

@@ -179,13 +179,6 @@ class ROSClient:
     def get_frame_response(self):
         return self._get_response("/frame")
 
-    def link_account(self, email: str, device_id: str) -> Dict[str, Any]:
-        payload = {
-            "email": email,
-            "device_id": device_id,
-        }
-        return self._post_json_by_url(f"{self._get_base_url()}/link-account", payload)
-
     # ------------------------------------------------------------------
     # 2) Status
     # ------------------------------------------------------------------

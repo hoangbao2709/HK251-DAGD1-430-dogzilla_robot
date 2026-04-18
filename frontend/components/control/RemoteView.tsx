@@ -45,15 +45,14 @@ export default function RemoteView({
   mode: "remote" | "fpv";
   toggleMode: () => void;
 }) {
-  const [dogServer, setDogServer] = useState(DEFAULT_DOG_SERVER);
+  const [dogServer, setDogServer] = useState(
+    () => getSelectedRobotAddr() || DEFAULT_DOG_SERVER
+  );
 
   const isCheckingRef = useRef(false);
 
   useEffect(() => {
-    const savedAddr = getSelectedRobotAddr();
-    if (savedAddr) {
-      setDogServer(savedAddr);
-    }
+    setDogServer(getSelectedRobotAddr() || DEFAULT_DOG_SERVER);
   }, []);
 
   const lidarUrl = useMemo(() => {
@@ -61,9 +60,6 @@ export default function RemoteView({
       const url = new URL(dogServer);
       const host = url.hostname;
       const port = url.port;
-
-      const isCloudflare = host.endsWith("trycloudflare.com");
-      if (isCloudflare) return `${url.origin.replace(/\/$/, "")}/lidar/`;
 
       if (port === "9000" || port === "") {
         return `${url.protocol}//${host}:8080`;

@@ -64,12 +64,6 @@ export default function LoginPage() {
         if (json.email) {
           localStorage.setItem("user_email", json.email);
         }
-        if (json.robot_url) {
-          localStorage.setItem("robot_url", json.robot_url);
-        }
-        if (json.robot_device_id) {
-          localStorage.setItem("robot_device_id", json.robot_device_id);
-        }
       }
 
       router.push("/dashboard");

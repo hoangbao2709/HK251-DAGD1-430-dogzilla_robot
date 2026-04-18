@@ -13,7 +13,9 @@ export default function FPVView({
   fps?: number;
   onEmergencyStop?: () => void;
 }) {
-  const [dogServer, setDogServer] = useState(DEFAULT_DOG_SERVER);
+  const [dogServer, setDogServer] = useState(
+    () => getSelectedRobotAddr() || DEFAULT_DOG_SERVER
+  );
   const postureBtns = ["Lie_Down", "Stand_Up", "Sit_Down", "Squat", "Crawl"];
   const axisMotionBtns = [
     "Turn_Roll",
@@ -34,10 +36,7 @@ export default function FPVView({
   const hasResetBody = useRef(false);
 
   useEffect(() => {
-    const savedAddr = getSelectedRobotAddr();
-    if (savedAddr) {
-      setDogServer(savedAddr);
-    }
+    setDogServer(getSelectedRobotAddr() || DEFAULT_DOG_SERVER);
   }, []);
 
   /* ===== BODY ADJUST ===== */
