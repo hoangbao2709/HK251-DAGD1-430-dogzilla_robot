@@ -1,7 +1,7 @@
 import math
 import cv2
 import numpy as np
-from pyzbar.pyzbar import decode
+from pyzbar.pyzbar import decode  # type: ignore[import-untyped]
 from .models import QRItem, DetectionResult
 
 

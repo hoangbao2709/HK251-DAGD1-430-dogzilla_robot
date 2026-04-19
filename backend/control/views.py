@@ -14,7 +14,7 @@ from .serializers import RobotSerializer
 from .services.ros import ROSClient
 from .services.evaluation_metrics import build_evaluation_metrics_payload, build_snapshot_key
 from .line_tracking_backend import LineTrackingServer
-from .services.mcp_voice import process_text_command
+from .services.mcp_voice import AmbiguousCommandError, process_text_command
 from .services.qr_detect import detect_qr_state_once, generate_qr_video_frames
 from .services.patrol_manager import patrol_manager
 from .services.patrol_store import get_current_mission, get_history
@@ -715,6 +715,33 @@ class TextCommandView(APIView):
                     "log": log_line,
                 },
                 status=status.HTTP_200_OK,
+            )
+
+        except AmbiguousCommandError as e:
+            logger.warning(
+                "TextCommandView ambiguous command | robot_addr=%s | text=%s | normalized=%s | matches=%s",
+                robot_addr,
+                text,
+                e.normalized_text,
+                e.matches,
+            )
+            log_line = (
+                f'TEXT_COMMAND {json.dumps({"addr": robot_addr, "text": text}, ensure_ascii=False)} '
+                f"-> AMBIGUOUS: {str(e)}"
+            )
+
+            return Response(
+                {
+                    "success": False,
+                    "robot_addr": robot_addr,
+                    "input_text": text,
+                    "error": str(e),
+                    "error_code": "ambiguous_command",
+                    "normalized_text": e.normalized_text,
+                    "candidate_matches": e.matches,
+                    "log": log_line,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
         except Exception as e:
