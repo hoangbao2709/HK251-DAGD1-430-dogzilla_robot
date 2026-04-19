@@ -513,11 +513,12 @@ export default function AutonomousControlPage() {
             return;
         }
 
-        const defaultName =
-            qrState?.ok && qrState.items?.length ? qrState.items[0].text : "POINT";
-
-        const name = window.prompt("Ten diem can luu:", defaultName)?.trim();
-        if (!name) return;
+        const name =
+            (qrState?.ok && qrState.items?.length ? qrState.items[0].text : "POINT").trim() || "POINT";
+        if (savedPoints[name]) {
+            window.alert(`Diem ${name} da ton tai, khong the luu trung.`);
+            return;
+        }
 
         try {
             setPointActionLoading(true);
