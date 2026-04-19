@@ -38,9 +38,6 @@ export default function FPVView({
   useEffect(() => {
     setDogServer(getSelectedRobotAddr() || DEFAULT_DOG_SERVER);
   }, []);
-
-  /* ===== BODY ADJUST ===== */
-
   type BodyState = {
     tx: number;
     ty: number;
@@ -95,9 +92,6 @@ export default function FPVView({
     },
     []
   );
-
-  /* ===== CONNECT + FPV ===== */
-
   useEffect(() => {
     let stop = false;
 
@@ -137,7 +131,6 @@ export default function FPVView({
 
     const iv = setInterval(async () => {
       try {
-        // có thể poll status nếu cần
       } catch {}
     }, 2000);
 
@@ -147,9 +140,6 @@ export default function FPVView({
       onEmergencyStop?.();
     };
   }, [dogServer, onEmergencyStop, resetBody]);
-
-  /* ===== HANDLERS toggle từ nút & gamepad ===== */
-
   const toggleLidar = useCallback(() => {
     setLidarRunning((prev) => {
       const next = !prev;
@@ -165,18 +155,12 @@ export default function FPVView({
       return next;
     });
   }, []);
-
-  // DÙNG HOOK GAMEPAD: di chuyển + dùng B0/B2 để gọi 2 callback trên
   useGamepadMove({
     onToggleLidar: toggleLidar,
     onToggleStabilizing: toggleStabilizing,
   });
-
-  /* ===== UI ===== */
-
   return (
     <div className="space-y-6">
-      {/* FPV video */}
       <div className="relative overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface-elev)] shadow-[0_10px_30px_rgba(0,0,0,0.18)]">
         <div className="absolute left-3 top-2 text-green-300 text-xl font-bold drop-shadow">
           FPS: {fps}
@@ -187,10 +171,7 @@ export default function FPVView({
           className="w-full aspect-[16/7] object-cover"
         />
       </div>
-
-      {/* Body + behavior */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
-        {/* LEFT — Body */}
         <Panel title="Body Adjustment" tone="pink">
           <SliderRow
             label="Translation_X"
@@ -244,8 +225,6 @@ export default function FPVView({
             </button>
           </div>
         </Panel>
-
-        {/* RIGHT — postures & behaviors */}
         <div className="flex flex-col gap-6">
           <Panel title="Basic Postures" tone="pink">
             <div className="grid grid-cols-[repeat(5,minmax(0,1fr))] gap-2">
@@ -293,3 +272,4 @@ export default function FPVView({
     </div>
   );
 }
+

@@ -56,12 +56,9 @@ export default function ManualControlPage() {
   const goToConnection = useCallback(() => {
     router.push("/dashboard");
   }, [router]);
-
-  /* ----------------- MOBILE ----------------- */
   if (isMobile) {
     return (
       <div className="relative min-h-screen w-full bg-[radial-gradient(circle_at_top_left,rgba(253,116,155,0.12),transparent_28%),radial-gradient(circle_at_top_right,rgba(0,184,255,0.10),transparent_24%),var(--background)] text-[var(--foreground)]">
-        {/* Nút quay lại Connection (floating) */}
         <button
           onClick={goToConnection}
           className="
@@ -85,7 +82,6 @@ export default function ManualControlPage() {
           />
         ) : (
           <section className="min-h-screen w-full bg-[var(--background)] text-[var(--foreground)] pt-12">
-            {/* chừa khoảng trên cho nút back */}
             <div className="mx-auto max-w-5xl px-2 py-3 space-y-3">
               <HeaderControl
                 mode={mode}
@@ -99,8 +95,6 @@ export default function ManualControlPage() {
       </div>
     );
   }
-
-  /* ----------------- DESKTOP ----------------- */
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(253,116,155,0.12),transparent_28%),radial-gradient(circle_at_top_right,rgba(0,184,255,0.10),transparent_24%),var(--background)] text-[var(--foreground)]">
       <div className="flex min-h-screen">
@@ -131,3 +125,4 @@ export default function ManualControlPage() {
     </div>
   );
 }
+

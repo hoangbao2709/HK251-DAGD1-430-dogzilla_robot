@@ -1,8 +1,16 @@
 import math
 import cv2
 import numpy as np
-from pyzbar.pyzbar import decode  # type: ignore[import-untyped]
 from .models import QRItem, DetectionResult
+
+try:
+    from pyzbar.pyzbar import decode as pyzbar_decode  # type: ignore[import-untyped]
+    PYZBAR_AVAILABLE = True
+    PYZBAR_IMPORT_ERROR = None
+except Exception as exc:
+    pyzbar_decode = None
+    PYZBAR_AVAILABLE = False
+    PYZBAR_IMPORT_ERROR = str(exc)
 
 
 def order_points_from_polygon(polygon):
@@ -142,9 +150,62 @@ def preprocess_for_qr(frame, detect_width=640):
     return gray, scale
 
 
+def _build_pyzbar_rect(polygon):
+    pts = np.array([[p.x, p.y] for p in polygon], dtype=np.float32)
+    x, y, w, h = cv2.boundingRect(pts.astype(np.int32))
+    return x, y, w, h
+
+
+def _decode_with_opencv(gray):
+    detector = cv2.QRCodeDetector()
+    detected = detector.detectAndDecodeMulti(gray)
+
+    if len(detected) == 4:
+        retval, decoded_info, points, _ = detected
+    else:
+        decoded_info, points, _ = detected
+        retval = bool(decoded_info)
+
+    if not retval or points is None:
+        return []
+
+    decoded_items = []
+    for text, quad in zip(decoded_info, points):
+        if quad is None:
+            continue
+
+        quad = np.array(quad, dtype=np.float32).reshape(-1, 2)
+        if quad.shape[0] < 4:
+            continue
+
+        polygon = [
+            type("Point", (), {"x": float(pt[0]), "y": float(pt[1])})()
+            for pt in quad[:4]
+        ]
+        rect = _build_pyzbar_rect(polygon)
+        payload = text if text else ""
+        decoded_items.append(
+            type(
+                "DecodedQR",
+                (),
+                {
+                    "data": payload.encode("utf-8"),
+                    "type": "QRCODE",
+                    "polygon": polygon,
+                    "rect": rect,
+                },
+            )()
+        )
+
+    return decoded_items
+
+
 def decode_qr_fast(frame, detect_width=640):
     gray, scale = preprocess_for_qr(frame, detect_width=detect_width)
-    decoded = decode(gray)
+    if PYZBAR_AVAILABLE and pyzbar_decode is not None:
+        decoded = pyzbar_decode(gray)
+    else:
+        decoded = _decode_with_opencv(gray)
     return decoded, scale
 
 

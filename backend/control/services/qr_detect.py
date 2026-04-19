@@ -6,7 +6,7 @@ import numpy as np
 
 from .ros import ROSClient
 from .models import QRItem, DetectionResult
-from .qr_detector import detect_qr_items
+from .qr_detector import detect_qr_items, PYZBAR_AVAILABLE, PYZBAR_IMPORT_ERROR
 from .overlay import draw_overlay
 QR_SIZE_M = 0.12
 DEADBAND_DEG = 5.0
@@ -109,11 +109,18 @@ def detect_qr_state_once(robot_id: str) -> Dict[str, Any]:
     )
 
     if not result.ok or not result.items:
+        warning = None
+        if not PYZBAR_AVAILABLE and PYZBAR_IMPORT_ERROR:
+            warning = (
+                "pyzbar/libzbar is unavailable, using OpenCV QR fallback. "
+                f"Original import error: {PYZBAR_IMPORT_ERROR}"
+            )
         return {
             "ok": False,
             "items": [],
             "position_json": build_empty_position_payload(),
             "timestamp": time.time(),
+            "warning": warning,
         }
 
     items = [qr_item_to_dict(item) for item in result.items]

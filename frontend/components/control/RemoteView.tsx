@@ -1,4 +1,3 @@
-// components/control/RemoteView.tsx
 "use client";
 
 import {
@@ -119,7 +118,6 @@ export default function RemoteView({
   const lastConnectionStateRef = useRef<boolean | null>(null);
   const lidarPollInFlightRef = useRef(false);
   const lidarFailureCountRef = useRef(0);
-  // body sliders
   const [sliders, setSliders] = useState<BodyState>({
     tx: 0,
     ty: 0,
@@ -129,8 +127,6 @@ export default function RemoteView({
     rz: 0,
   });
   const bodyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // joystick state
   const joyRef = useRef<{ vx: number; vy: number; active: boolean }>({
     vx: 0,
     vy: 0,
@@ -139,8 +135,6 @@ export default function RemoteView({
 
   const maxV = 0.25;
   const maxSideV = 0.25;
-
-  // ==== responsive ====
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -159,8 +153,6 @@ export default function RemoteView({
       window.removeEventListener("orientationchange", update);
     };
   }, []);
-
-  // ==== ping lidar server ====
   useEffect(() => {
     if (!connected || !lidarUrl) {
       setIsRunning(false);
@@ -205,8 +197,6 @@ export default function RemoteView({
       lidarPollInFlightRef.current = false;
     };
   }, [connected, lidarUrl]);
-
-  // ==== connect Django -> Dogzilla + lấy stream_url ====
   useEffect(() => {
     let stop = false;
     let iv: ReturnType<typeof setInterval> | null = null;
@@ -285,8 +275,6 @@ export default function RemoteView({
       onEmergencyStop?.();
     };
   }, [dogServer, onEmergencyStop, streamUrl]);
-
-  // ==== poll fps từ /status (nếu backend có) ====
   useEffect(() => {
     let stop = false;
     const iv = setInterval(async () => {
@@ -296,7 +284,6 @@ export default function RemoteView({
           setFps(s.fps);
         }
       } catch {
-        // ignore
       }
     }, 2000);
 
@@ -305,8 +292,6 @@ export default function RemoteView({
       clearInterval(iv);
     };
   }, []);
-
-  // ==== speed ====
   const changeSpeed = useCallback(
     async (m: "slow" | "normal" | "high") => {
       if (speedBusy || !connected || speed === m) return;
@@ -353,8 +338,6 @@ export default function RemoteView({
     },
     [appendLog]
   );
-
-  // ==== lidar toggle ====
   const handleToggleLidar = useCallback(async () => {
     if (lidarBusy) return;
 
@@ -379,9 +362,6 @@ export default function RemoteView({
       setLidarBusy(false);
     }
   }, [isRunning, lidarBusy, appendLog]);
-
-
-  // ==== stabilizing toggle ====
   const handleToggleStabilizing = useCallback(async () => {
     const next = !stabilizing;
     setStabilizing(next);
@@ -397,9 +377,6 @@ export default function RemoteView({
       setStabilizing((prev) => !prev);
     }
   }, [stabilizing, appendLog]);
-
-
-  // ==== joystick send loop ====
   useEffect(() => {
     const timer = setInterval(() => {
       const { vx, vy, active } = joyRef.current;
@@ -437,11 +414,8 @@ export default function RemoteView({
         rz: 0,
       });
     } catch {
-      /* ignore */
     }
   }, []);
-
-  // ==== quay trái / phải + stop ====
   const stopMove = useCallback(() => {
     RobotAPI.move({ vx: 0, vy: 0, vz: 0, rx: 0, ry: 0, rz: 0 })
       .then((res: any) => {
@@ -501,7 +475,6 @@ export default function RemoteView({
       setLefting(false);
     }
   };
-  // ==== body adjust ====
   const updateBody = useCallback(
     (partial: Partial<BodyState>) => {
       setSliders((prev) => {
@@ -549,9 +522,6 @@ export default function RemoteView({
         appendLog(`[BODY ERROR] reset: ${e?.message || String(e)}`);
       });
   }, [appendLog]);
-
-
-  // gamepad điều khiển chung
   useGamepadMove();
 
   const lidarButtonLabel = lidarBusy
@@ -561,8 +531,6 @@ export default function RemoteView({
     : isRunning
     ? "Stop Lidar"
     : "Start Lidar";
-
-  /* ========== MOBILE LAYOUT ========== */
   if (isMobile) {
     return (
       <section className="h-screen w-full bg-[var(--background)] text-[var(--foreground)] relative">
@@ -764,8 +732,6 @@ export default function RemoteView({
       </section>
     );
   }
-
-  /* ========== DESKTOP LAYOUT ========== */
   return (
     <section className="min-h-screen w-full bg-[var(--background)] text-[var(--foreground)]">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -1020,3 +986,4 @@ export default function RemoteView({
     </section>
   );
 }
+

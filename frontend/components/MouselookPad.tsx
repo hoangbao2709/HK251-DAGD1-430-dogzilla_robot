@@ -8,39 +8,31 @@ type Props = {
   enabled: boolean;
 };
 
-const LIN_V = 0.35;      // tốc độ tịnh tiến tối đa
-const YAW_SENS = 0.003;  // độ nhạy xoay chuột
-const MAX_YAW = 1.0;     // giới hạn tốc độ quay
+const LIN_V = 0.35;
+const YAW_SENS = 0.003;
+const MAX_YAW = 1.0;
 
-const TICK_MS = 50;      // chu kỳ gửi lệnh
-const YAW_TIMEOUT = 80;  // nếu không có mousemove trong X ms -> rz = 0
+const TICK_MS = 50;
+const YAW_TIMEOUT = 80;
 const MOUSE_DEADZONE = 0.5;
 
 export default function MouselookPad({ enabled }: Props) {
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const [locked, setLocked] = useState(false);
   const pointerLockedRef = useRef(false);
-
-  // trạng thái phím W/S/A/D
   const keysRef = useRef({
     w: false,
     s: false,
     a: false,
     d: false,
   });
-
-  // yaw hiện tại (rad/s) từ chuột
   const yawRef = useRef(0);
   const lastMouseMoveTsRef = useRef<number>(0);
-
-  // lệnh cuối cùng đã gửi để tránh gửi trùng
   const lastCmdRef = useRef<{ vx: number; vy: number; rz: number }>({
     vx: 0,
     vy: 0,
     rz: 0,
   });
-
-  // ===== helper: vx, vy từ W/S/A/D =====
   const getVelFromKeys = () => {
     const k = keysRef.current;
 
@@ -72,7 +64,6 @@ export default function MouselookPad({ enabled }: Props) {
 
   const sendCommand = (vx: number, vy: number, rz: number) => {
     const last = lastCmdRef.current;
-    // nếu giống hệt lệnh cũ thì không gửi nữa
     if (
       nearlyEqual(vx, last.vx) &&
       nearlyEqual(vy, last.vy) &&
@@ -108,8 +99,6 @@ export default function MouselookPad({ enabled }: Props) {
       rz: 0,
     }).catch(() => {});
   };
-
-  // ===== Pointer lock: mousemove trên document (chỉ cập nhật yawRef) =====
   useEffect(() => {
     if (!enabled) {
       if (document.pointerLockElement === overlayRef.current) {
@@ -125,8 +114,6 @@ export default function MouselookPad({ enabled }: Props) {
       if (!pointerLockedRef.current) return;
 
       const dx = e.movementX || 0;
-
-      // deadzone: giảm rung cảm biến
       if (Math.abs(dx) < MOUSE_DEADZONE) return;
 
       let rz = -dx * YAW_SENS;
@@ -162,8 +149,6 @@ export default function MouselookPad({ enabled }: Props) {
       stopMove();
     };
   }, [enabled]);
-
-  // ===== Loop gửi lệnh định kỳ (50ms) =====
   useEffect(() => {
     if (!enabled) {
       stopMove();
@@ -171,7 +156,6 @@ export default function MouselookPad({ enabled }: Props) {
     }
 
     const id = setInterval(() => {
-      // Không pointer lock thì chỉ dừng (tránh robot trôi)
       if (!pointerLockedRef.current) {
         sendCommand(0, 0, 0);
         return;
@@ -181,15 +165,12 @@ export default function MouselookPad({ enabled }: Props) {
 
       let rz = yawRef.current;
       const now = performance.now();
-
-      // Nếu lâu rồi không có mousemove -> rz = 0
       if (!lastMouseMoveTsRef.current || now - lastMouseMoveTsRef.current > YAW_TIMEOUT) {
         rz = 0;
         yawRef.current = 0;
       }
 
       if (!active && rz === 0) {
-        // không có di chuyển -> gửi stop 1 lần nếu cần
         sendCommand(0, 0, 0);
         return;
       }
@@ -199,8 +180,6 @@ export default function MouselookPad({ enabled }: Props) {
 
     return () => clearInterval(id);
   }, [enabled]);
-
-  // ===== WASD + Space =====
   useEffect(() => {
     if (!enabled) return;
 
@@ -216,8 +195,6 @@ export default function MouselookPad({ enabled }: Props) {
       ) {
         return;
       }
-
-      // Emergency stop: Space (luôn hoạt động khi enabled)
       if (key === " " || key === "spacebar") {
         e.preventDefault();
         stopMove();
@@ -258,7 +235,6 @@ export default function MouselookPad({ enabled }: Props) {
 
       if (changed) {
         e.preventDefault();
-        // loop 50ms sẽ tự đọc keysRef và gửi lệnh
       }
     };
 
@@ -299,7 +275,6 @@ export default function MouselookPad({ enabled }: Props) {
 
       if (changed) {
         e.preventDefault();
-        // loop 50ms sẽ tự xử lý lấy vx,vy mới
       }
     };
 
@@ -312,8 +287,6 @@ export default function MouselookPad({ enabled }: Props) {
       stopMove();
     };
   }, [enabled]);
-
-  // ===== click để toggle lock trong khung FPV =====
   const toggleLock = () => {
     if (!enabled) return;
     const el = overlayRef.current;

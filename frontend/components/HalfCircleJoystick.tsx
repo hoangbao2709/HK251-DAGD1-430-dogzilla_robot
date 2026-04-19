@@ -72,8 +72,6 @@ function HalfCircleJoystick({
       const vy = p.y - cy;
       const dist = Math.hypot(vx, vy);
       const power = clamp(dist / R, 0, 1);
-
-      // 0° = lên trên, quay clockwise là dương
       const angleRad = Math.atan2(vx, -vy);
       const angleDeg = (angleRad * 180) / Math.PI;
       return { angleDeg, power } as JoystickChange;
@@ -100,8 +98,6 @@ function HalfCircleJoystick({
     onChange?.({ angleDeg: 0, power: 0 });
     onRelease?.();
   }, [onChange, onRelease]);
-
-  // ===== Pointer (mouse / pen) =====
   const handlePointerDown = (e: React.PointerEvent) => {
     if (disabled) return;
     dragging.current = true;
@@ -113,8 +109,6 @@ function HalfCircleJoystick({
     if (!dragging.current || disabled) return;
     setFromClient(e.clientX, e.clientY);
   };
-
-  // ===== Touch fallback (điện thoại không hỗ trợ pointer events chuẩn) =====
   const handleTouchStart = (e: React.TouchEvent) => {
     if (disabled) return;
     dragging.current = true;
@@ -136,7 +130,6 @@ function HalfCircleJoystick({
   };
 
   useEffect(() => {
-    // pointermove trên window cho mouse/pen
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", endDrag);
     window.addEventListener("pointercancel", endDrag);
@@ -183,8 +176,6 @@ function HalfCircleJoystick({
             <stop offset="100%" stopColor="#22d3ee" />
           </linearGradient>
         </defs>
-
-        {/* nền + viền */}
         <circle cx={cx} cy={cy} r={R} fill="url(#padGlowCircle)" stroke="none" />
         <circle
           cx={cx}
@@ -194,8 +185,6 @@ function HalfCircleJoystick({
           strokeWidth={strokeWidth}
           fill="none"
         />
-
-        {/* tick marks 8 hướng */}
         {Array.from({ length: 8 }).map((_, i) => {
           const rad = (i * Math.PI) / 4;
           const inner = 10;
@@ -216,8 +205,6 @@ function HalfCircleJoystick({
             />
           );
         })}
-
-        {/* guide line */}
         <line
           x1={cx}
           y1={cy}
@@ -227,8 +214,6 @@ function HalfCircleJoystick({
           strokeWidth={2}
           strokeLinecap="round"
         />
-
-        {/* knob */}
         <g>
           <circle
             cx={knobPos.x}
@@ -251,3 +236,4 @@ function HalfCircleJoystick({
 }
 
 export { HalfCircleJoystick };
+

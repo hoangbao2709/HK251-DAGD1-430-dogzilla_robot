@@ -64,8 +64,6 @@ export default function RegisterPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, email, password }),
       });
-
-      // Đọc raw text trước
       const rawText = await res.text();
       console.log(">>> STATUS =", res.status);
       console.log(">>> RAW RESPONSE =", rawText);
@@ -121,8 +119,6 @@ export default function RegisterPage() {
           </div>
 
           <form onSubmit={onSubmit} className="space-y-5">
-
-            {/* Username */}
             <div>
               <FieldLabel htmlFor="username">Username</FieldLabel>
               <div className="relative mt-1">
@@ -136,8 +132,6 @@ export default function RegisterPage() {
                 />
               </div>
             </div>
-
-            {/* Email */}
             <div>
               <FieldLabel htmlFor="email">Email</FieldLabel>
               <div className="relative mt-1">
@@ -151,8 +145,6 @@ export default function RegisterPage() {
                 />
               </div>
             </div>
-
-            {/* Password */}
             <div>
               <FieldLabel htmlFor="password">Password</FieldLabel>
               <div className="relative mt-1">
@@ -166,8 +158,6 @@ export default function RegisterPage() {
                 />
               </div>
             </div>
-
-            {/* Confirm Password */}
             <div>
               <FieldLabel htmlFor="confirmPassword">Confirm password</FieldLabel>
               <div className="relative mt-1">
@@ -208,3 +198,4 @@ export default function RegisterPage() {
     </main>
   );
 }
+

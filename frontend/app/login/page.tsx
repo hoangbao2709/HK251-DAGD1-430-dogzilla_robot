@@ -1,8 +1,6 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-
-// Để thống nhất với Dashboard: dùng chung BACKEND_BASE
 const BACKEND_BASE =
   process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
 
@@ -88,23 +86,16 @@ export default function LoginPage() {
     >
       <div className="w-full max-w-md mx-auto flex flex-col">
         <div className="flex-1 overflow-y-auto">
-
-          {/* CARD: MOBILE = full width, PC = card */}
           <div
             className="
           mt-0 sm:mt-8 mb-0 sm:mb-4
           w-full
-          
-          /* MOBILE style (no rounded, no border, full width) */
           rounded-none border-0 shadow-none bg-transparent p-6
-
-          /* DESKTOP style */
           sm:rounded-3xl sm:border sm:border-white/10 sm:bg-white/5
           sm:shadow-[0_0_0_1px_rgba(255,255,255,0.02)]
           sm:p-8
         "
           >
-            {/* Ring chỉ hiện trên PC */}
             <div className="hidden sm:block pointer-events-none absolute inset-0 rounded-3xl ring-1 ring-inset ring-fuchsia-500/20" />
 
             <div className="mb-6 text-center">
@@ -238,3 +229,4 @@ function FieldLabel({
     </label>
   );
 }
+
