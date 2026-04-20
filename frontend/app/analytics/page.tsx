@@ -319,10 +319,10 @@ function StatusHistoryChart({ data }: { data: StatusPoint[] }) {
     data.length > 2
       ? data
       : [
-          { time: "00:00", battery: 80, fps: 30 },
-          { time: "00:01", battery: 78, fps: 30 },
-          { time: "00:02", battery: 75, fps: 30 },
-        ];
+        { time: "00:00", battery: 80, fps: 30 },
+        { time: "00:01", battery: 78, fps: 30 },
+        { time: "00:02", battery: 75, fps: 30 },
+      ];
 
   const width = 600;
   const height = 120;
@@ -569,6 +569,15 @@ export default function AnalyticsPage() {
     },
   ];
 
+  const roll = status?.roll_current ?? 0;
+  const pitch = status?.pitch_current ?? 0;
+  const imuLabel = Math.abs(roll) < 10 && Math.abs(pitch) < 15
+    ? "Stable"
+    : "Unstable";
+  const imuColor = imuLabel === "Stable"
+    ? "text-white"
+    : "text-red-400";
+
   return (
     <div className="min-h-screen text-white p-6 font-sans">
       {/* Header */}
@@ -626,8 +635,9 @@ export default function AnalyticsPage() {
             />
             <DataCard
               label="IMU posture"
-              value="Stable"
-              sub={`Roll ${getNumber(status?.roll_current, 1.2)}° • Pitch ${getNumber(status?.pitch_current, -0.4)}°`}
+              value={imuLabel}
+              mainColor={imuColor}
+              sub={`Roll ${roll.toFixed(1)}° · Pitch ${pitch.toFixed(1)}°`}
             />
             <DataCard
               label="Robot state"
