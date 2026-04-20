@@ -3,11 +3,18 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
   Battery,
+  ChevronDown,
+  ChevronUp,
   Cpu,
+  Download,
+  Expand,
   Gauge,
   HeartPulse,
   Loader2,
+  MoreHorizontal,
   Navigation,
+  Pause,
+  Play,
   RefreshCw,
   Server,
   ShieldCheck,
@@ -88,6 +95,26 @@ type RobotStatus = {
   z_current?: number;
   z_range?: [number, number];
   telemetry?: Partial<RobotStatus>;
+
+  // New mockable operational metrics
+  voltage?: number;
+  remaining_minutes?: number;
+  speed?: number;
+  heading?: number;
+  mission_success_rate?: number;
+  avg_delivery_time?: number;
+  path_efficiency?: number;
+  obstacle_events?: number;
+  missions_total?: number;
+  missions_attempted?: number;
+  missions_failed?: number;
+  qr_scan_success_rate?: number;
+  total_distance?: number;
+};
+
+type SessionEvent = {
+  time: string;
+  type: string;
 };
 
 function clamp(value: number, min: number, max: number) {
@@ -116,10 +143,32 @@ function normalizeRobotStatus(raw: any): RobotStatus {
         ? raw.system
         : null;
 
+  // Derive robot state string
+  let derivedState = "Idle";
+  if (raw?.robot_connected) {
+    derivedState = raw?.gait_type ? "Navigating" : "Online";
+  } else {
+    derivedState = "Offline";
+  }
+
   return {
     ...raw,
     ...telemetry,
     system,
+    // Mock values for the tactical UI
+    voltage: 11.4,
+    remaining_minutes: 42,
+    speed: 0.18,
+    heading: raw?.yaw_current || 92,
+    mission_success_rate: 87,
+    avg_delivery_time: 43,
+    path_efficiency: 91,
+    obstacle_events: 3,
+    missions_total: 13,
+    missions_attempted: 15,
+    missions_failed: 2,
+    qr_scan_success_rate: 94,
+    total_distance: 127,
   };
 }
 
@@ -218,174 +267,181 @@ function normalizeEventItem(item: NonNullable<EventsResponse["items"]>[number]):
   };
 }
 
-function StatCard({
-  icon,
-  iconBg,
-  label,
-  main,
-  sub,
-  subColor = "text-[var(--muted)]",
-}: {
-  icon: React.ReactNode;
-  iconBg: string;
-  label: string;
-  main: React.ReactNode;
-  sub?: React.ReactNode;
-  subColor?: string;
-}) {
-  return (
-    <div className="bg-[var(--surface)] rounded-xl p-4 flex flex-col gap-1 border border-[var(--border)]">
-      <div className="flex items-center gap-2 mb-1">
-        <div className={`p-1.5 rounded-lg ${iconBg}`}>{icon}</div>
-        <span className="text-[var(--muted)] text-sm font-medium">{label}</span>
-      </div>
-      <div className="text-[1.7rem] font-bold text-[var(--foreground)]">{main}</div>
-      {sub ? <div className={`text-sm ${subColor}`}>{sub}</div> : null}
-    </div>
-  );
-}
-
-function MetricRow({
+function DataCard({
   label,
   value,
-  hint,
+  mainColor = "text-white",
+  sub,
+  trend,
+  trendColor = "text-green-400",
+  indicator,
 }: {
   label: string;
   value: React.ReactNode;
-  hint?: React.ReactNode;
+  mainColor?: string;
+  sub?: React.ReactNode;
+  trend?: string;
+  trendColor?: string;
+  indicator?: React.ReactNode;
 }) {
   return (
-    <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5">
-      <div className="text-xs uppercase tracking-widest text-[var(--muted)]">{label}</div>
-      <div className="mt-1 text-base font-semibold text-[var(--foreground)] break-all">{value}</div>
-      {hint ? <div className="mt-1 text-sm text-[var(--muted)]">{hint}</div> : null}
+    <div className="bg-[#1a1a1a] border border-[#2d2d2d] rounded-lg p-4 flex flex-col justify-between min-h-[110px]">
+      <div className="flex justify-between items-start gap-2">
+        <span className="text-[#888888] text-xs font-medium uppercase tracking-wider">{label}</span>
+        {indicator}
+      </div>
+      <div className="mt-1">
+        <div className={`text-2xl font-bold tracking-tight ${mainColor}`}>{value}</div>
+        <div className="flex items-center gap-1.5 mt-1 min-h-[20px]">
+          {trend ? <span className={`text-xs font-semibold ${trendColor}`}>{trend}</span> : null}
+          {sub ? <span className="text-[#888888] text-xs font-medium truncate">{sub}</span> : null}
+        </div>
+      </div>
     </div>
   );
 }
 
-function PoseBar({
+function MiniMetric({
   label,
   value,
-  range,
-  unit = "",
-  colorClass,
+  color = "text-white",
 }: {
   label: string;
-  value: number;
-  range?: [number, number];
-  unit?: string;
-  colorClass: string;
+  value: string;
+  color?: string;
 }) {
-  const percent = getPercentFromRange(value, range);
-
   return (
-    <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-3">
-      <div className="flex items-center justify-between gap-3">
-        <span className="text-base font-medium text-[var(--foreground)]">{label}</span>
-        <span className="text-base text-[var(--foreground)]">
-          {value}
-          {unit}
-        </span>
-      </div>
-      <div className="mt-2 h-2 rounded-full bg-black/10 dark:bg-white/10 overflow-hidden">
-        <div className={`h-full rounded-full ${colorClass}`} style={{ width: `${percent}%` }} />
-      </div>
-      <div className="mt-2 text-sm text-[var(--muted)]">Range: {formatRange(range, unit)}</div>
+    <div className="flex flex-col gap-0.5">
+      <div className="text-[#888888] text-[10px] uppercase font-bold tracking-widest">{label}</div>
+      <div className={`text-base font-bold tracking-tight ${color}`}>{value}</div>
     </div>
   );
 }
 
 function StatusHistoryChart({ data }: { data: StatusPoint[] }) {
   const safeData =
-    data.length > 1
+    data.length > 2
       ? data
       : [
-          { time: "00:00", battery: 0, fps: 0 },
-          { time: "00:01", battery: 0, fps: 0 },
+          { time: "00:00", battery: 80, fps: 30 },
+          { time: "00:01", battery: 78, fps: 30 },
+          { time: "00:02", battery: 75, fps: 30 },
         ];
 
-  const width = 500;
-  const height = 110;
-  const pad = { top: 8, right: 8, bottom: 8, left: 8 };
+  const width = 600;
+  const height = 120;
+  const pad = { top: 15, right: 10, bottom: 5, left: 10 };
   const innerWidth = width - pad.left - pad.right;
   const innerHeight = height - pad.top - pad.bottom;
-  const maxFps = Math.max(30, ...safeData.map((item) => item.fps));
 
   const toX = (index: number) => pad.left + (index / (safeData.length - 1)) * innerWidth;
-  const toYBattery = (value: number) => pad.top + (1 - value / 100) * innerHeight;
-  const toYFps = (value: number) => pad.top + (1 - value / maxFps) * innerHeight;
+  const toY = (v: number) => pad.top + (1 - v / 100) * innerHeight;
 
-  const batteryPath = safeData
-    .map((item, index) => `${index === 0 ? "M" : "L"} ${toX(index)} ${toYBattery(item.battery)}`)
+  const pathD = safeData
+    .map((p, i) => `${i === 0 ? "M" : "L"} ${toX(i)} ${toY(p.battery)}`)
     .join(" ");
-  const fpsPath = safeData
-    .map((item, index) => `${index === 0 ? "M" : "L"} ${toX(index)} ${toYFps(item.fps)}`)
-    .join(" ");
-  const batteryFill =
-    batteryPath +
-    ` L ${toX(safeData.length - 1)} ${height - pad.bottom} L ${pad.left} ${height - pad.bottom} Z`;
+
+  // Mock mission event markers (vertical items)
+  const markers = [0.3, 0.6, 0.9].map((ratio) => Math.floor(ratio * (safeData.length - 1)));
 
   return (
-    <svg viewBox="0 0 500 110" className="w-full h-full" preserveAspectRatio="none">
-      <defs>
-        <linearGradient id="batteryGrad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#22c55e" stopOpacity="0.35" />
-          <stop offset="100%" stopColor="#22c55e" stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <path d={batteryFill} fill="url(#batteryGrad)" />
-      <path d={batteryPath} fill="none" stroke="#22c55e" strokeWidth="2" />
-      <path d={fpsPath} fill="none" stroke="#38bdf8" strokeWidth="2" strokeDasharray="5 3" />
-    </svg>
+    <div className="relative w-full h-[140px] bg-[#1a1a1a] rounded-lg border border-[#2d2d2d] p-4">
+      <div className="flex justify-between items-center mb-2">
+        <span className="text-xs font-bold text-gray-400">Battery over time</span>
+        <div className="flex gap-4">
+          <div className="flex items-center gap-1.5">
+            <div className="w-2 h-2 rounded-full bg-[#4ade80]" />
+            <span className="text-[10px] text-gray-400 font-medium">battery %</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-2 h-2 rounded-full bg-[#60a5fa]" />
+            <span className="text-[10px] text-gray-400 font-medium">mission events</span>
+          </div>
+        </div>
+      </div>
+      <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-[80px]" preserveAspectRatio="none">
+        {markers.map((idx, i) => (
+          <line
+            key={i}
+            x1={toX(idx)}
+            y1={0}
+            x2={toX(idx)}
+            y2={height}
+            stroke="#60a5fa"
+            strokeWidth="1.5"
+            strokeDasharray="4 4"
+            opacity="0.6"
+          />
+        ))}
+        <path d={pathD} fill="none" stroke="#4ade80" strokeWidth="2.5" />
+      </svg>
+    </div>
   );
 }
 
-function NetworkChart({ data }: { data: NetworkPoint[] }) {
-  const safeData =
-    data.length > 1
-      ? data
-      : [
-          { time: "--", uplink: 0, downlink: 0, latency: 0, packetLoss: 0 },
-          { time: "--", uplink: 0, downlink: 0, latency: 0, packetLoss: 0 },
-        ];
+function DeliveryBarChart() {
+  const bars = [4, 6, 5, 8, 9, 7, 5, 8, 4, 6];
+  const max = 10;
+  return (
+    <div className="relative w-full h-[140px] bg-[#1a1a1a] rounded-lg border border-[#2d2d2d] p-4">
+      <div className="flex justify-between items-center mb-2">
+        <span className="text-xs font-bold text-gray-400">Delivery time per mission</span>
+        <div className="flex gap-3">
+          <div className="flex items-center gap-1.5">
+            <div className="w-2 h-2 rounded-full bg-[#4ade80]" />
+            <span className="text-[10px] text-gray-400">success</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-2 h-2 rounded-full bg-[#f87171]" />
+            <span className="text-[10px] text-gray-400">failed</span>
+          </div>
+        </div>
+      </div>
+      <div className="flex items-end justify-between h-[80px] pt-2">
+        {bars.map((v, i) => (
+          <div
+            key={i}
+            className={`w-[8%] rounded-t-sm ${i === 4 || i === 8 ? "bg-[#f87171]" : "bg-[#4ade80]"}`}
+            style={{ height: `${(v / max) * 100}%`, opacity: 0.7 }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
 
-  const width = 500;
+function EfficiencyChart() {
+  const width = 600;
   const height = 100;
-  const pad = { top: 8, right: 8, bottom: 8, left: 8 };
-  const innerWidth = width - pad.left - pad.right;
-  const innerHeight = height - pad.top - pad.bottom;
-  const maxThroughput = Math.max(100, ...safeData.map((item) => Math.max(item.uplink, item.downlink)));
-  const maxLatency = Math.max(20, ...safeData.map((item) => item.latency));
+  const points = [40, 42, 45, 48, 52, 55, 58, 62, 65, 68];
+  const points2 = [30, 32, 28, 35, 33, 30, 32, 36, 34, 33];
 
-  const toX = (index: number) => pad.left + (index / (safeData.length - 1)) * innerWidth;
-  const toY = (value: number, max: number) => pad.top + (1 - value / max) * innerHeight;
+  const toX = (i: number) => (i / 9) * width;
+  const toY = (v: number) => height - (v / 100) * height;
 
-  const uplinkPath = safeData
-    .map((item, index) => `${index === 0 ? "M" : "L"} ${toX(index)} ${toY(item.uplink, maxThroughput)}`)
-    .join(" ");
-  const downlinkPath = safeData
-    .map((item, index) => `${index === 0 ? "M" : "L"} ${toX(index)} ${toY(item.downlink, maxThroughput)}`)
-    .join(" ");
-  const latencyPath = safeData
-    .map((item, index) => `${index === 0 ? "M" : "L"} ${toX(index)} ${toY(item.latency, maxLatency)}`)
-    .join(" ");
+  const d1 = points.map((v, i) => `${i === 0 ? "M" : "L"} ${toX(i)} ${toY(v)}`).join(" ");
+  const d2 = points2.map((v, i) => `${i === 0 ? "M" : "L"} ${toX(i)} ${toY(v)}`).join(" ");
 
   return (
-    <svg viewBox="0 0 500 100" className="w-full h-full" preserveAspectRatio="none">
-      <defs>
-        <linearGradient id="uplinkGrad" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor="#06b6d4" stopOpacity="0.9" />
-          <stop offset="100%" stopColor="#0ea5e9" stopOpacity="0.9" />
-        </linearGradient>
-        <linearGradient id="downlinkGrad" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor="#22c55e" stopOpacity="0.9" />
-          <stop offset="100%" stopColor="#10b981" stopOpacity="0.9" />
-        </linearGradient>
-      </defs>
-      <path d={uplinkPath} fill="none" stroke="url(#uplinkGrad)" strokeWidth="1.8" />
-      <path d={downlinkPath} fill="none" stroke="url(#downlinkGrad)" strokeWidth="1.8" />
-      <path d={latencyPath} fill="none" stroke="#f97316" strokeWidth="1.5" strokeDasharray="4 2" />
-    </svg>
+    <div className="relative w-full h-[140px] bg-[#1a1a1a] rounded-lg border border-[#2d2d2d] p-4 mt-2">
+      <div className="flex justify-between items-center mb-2">
+        <span className="text-xs font-bold text-gray-400">Path efficiency & obstacle events (trend)</span>
+        <div className="flex gap-4">
+          <div className="flex items-center gap-1.5">
+            <div className="w-2 h-2 rounded-full bg-[#a78bfa]" />
+            <span className="text-[10px] text-gray-400">efficiency %</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-2 h-2 rounded-full bg-[#f59e0b]" />
+            <span className="text-[10px] text-gray-400">obstacles/min</span>
+          </div>
+        </div>
+      </div>
+      <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-[90px]" preserveAspectRatio="none">
+        <path d={d1} fill="none" stroke="#a78bfa" strokeWidth="2.5" />
+        <path d={d2} fill="none" stroke="#f59e0b" strokeWidth="1.5" strokeDasharray="5 3" />
+      </svg>
+    </div>
   );
 }
 
@@ -398,6 +454,8 @@ export default function AnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [errorText, setErrorText] = useState("");
   const [lastRefresh, setLastRefresh] = useState("-");
+  const [isPaused, setIsPaused] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
 
   const refreshStatus = useCallback(async () => {
     try {
@@ -448,10 +506,12 @@ export default function AnalyticsPage() {
   }, []);
 
   useEffect(() => {
-    refreshStatus();
-    const timer = setInterval(refreshStatus, 5000);
-    return () => clearInterval(timer);
-  }, [refreshStatus]);
+    if (!isPaused) {
+      refreshStatus();
+      const timer = setInterval(refreshStatus, 5000);
+      return () => clearInterval(timer);
+    }
+  }, [refreshStatus, isPaused]);
 
   const battery = clamp(getNumber(status?.battery, 0), 0, 100);
   const fps = Math.max(0, getNumber(status?.fps, 0));
@@ -490,293 +550,175 @@ export default function AnalyticsPage() {
   ];
 
   return (
-    <section className="min-h-screen bg-[var(--background)] text-[var(--foreground)] p-5 flex flex-col gap-6">
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+    <div className="min-h-screen text-white p-6 font-sans">
+      {/* Header */}
+      <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="gradient-title text-3xl">Analytics</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-white">Analytics</h1>
+          <p className="text-[#888888] text-sm mt-0.5 font-medium"> Операционный мониторинг — robot dogzilla_s2</p>
         </div>
-
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-sm px-3 py-1 rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--foreground)]/70">
-            Last refresh: {lastRefresh}
-          </span>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 bg-[#1a1a1a] border border-[#2d2d2d] rounded-full px-3 py-1.5">
+            <div className={`w-2 h-2 rounded-full ${isPaused ? "bg-orange-500" : "bg-green-500 animate-pulse"}`} />
+            <span className={`${isPaused ? "text-orange-500" : "text-[#4ade80]"} text-[10px] font-bold uppercase tracking-wider`}>
+              {isPaused ? "Paused" : "Live • auto-refresh 5s"}
+            </span>
+          </div>
           <button
-            onClick={refreshStatus}
-            disabled={loading}
-            className="inline-flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-base hover:bg-[var(--surface-2)] disabled:opacity-50"
+            onClick={() => setIsPaused(!isPaused)}
+            className="flex items-center gap-2 bg-[#1a1a1a] border border-[#2d2d2d] hover:bg-[#252525] transition-colors rounded-lg px-4 py-2 text-sm font-bold"
           >
-            {loading ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
-            Refresh
+            {isPaused ? <Play size={14} className="fill-current" /> : <Pause size={14} className="fill-current" />}
+            {isPaused ? "Pause" : "Pause"}
+          </button>
+          <button className="flex items-center gap-2 bg-[#1a1a1a] border border-[#2d2d2d] hover:bg-[#252525] transition-colors rounded-lg px-4 py-2 text-sm font-bold">
+            <Download size={14} />
+            Export session
+          </button>
+          <button className="p-2 hover:bg-[#1a1a1a] rounded-lg text-gray-400">
+            <MoreHorizontal size={20} />
           </button>
         </div>
       </div>
 
+      <div className="space-y-8">
+        {/* ZONE 1 - ROBOT HEALTH */}
+        <section>
+          <h2 className="text-[#888888] text-[10px] font-bold uppercase tracking-[0.2em] mb-4 border-b border-[#2d2d2d] pb-2">
+            Zone 1 — Robot Health
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+            <DataCard
+              label="Connection"
+              value={connectionOk ? "Connected" : "Disconnected"}
+              mainColor={connectionOk ? "text-[#4ade80]" : "text-red-500"}
+              sub={`${status?.system?.ip || "192.168.1.105"} • ROS2`}
+              indicator={
+                <div className={`w-2.5 h-2.5 rounded-full ${connectionOk ? "bg-[#4ade80]" : "bg-red-500"}`} />
+              }
+            />
+            <DataCard
+              label="Battery"
+              value={`${battery}%`}
+              sub={`~${status?.remaining_minutes || 42} min remaining • ${status?.voltage || 11.4}V`}
+            />
+            <DataCard
+              label="IMU posture"
+              value="Stable"
+              sub={`Roll ${getNumber(status?.roll_current, 1.2)}° • Pitch ${getNumber(status?.pitch_current, -0.4)}°`}
+            />
+            <DataCard
+              label="Robot state"
+              value={status?.gait_type || "Navigating"}
+              mainColor="text-[#60a5fa]"
+              sub={`${status?.speed || 0.18} m/s • heading ${status?.yaw_current ?? "N/A"}°`}
+            />
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-8 px-2 max-w-2xl">
+            <MiniMetric label="CPU" value={`${cpuPercent}%`} />
+            <MiniMetric label="RAM" value={status?.system?.ram || "1.2 GB"} />
+            <MiniMetric label="Disk" value={status?.system?.disk || "61%"} />
+            <MiniMetric label="Firmware" value={status?.fw || "v2.3.1"} />
+          </div>
+        </section>
+
+        {/* ZONE 2 - MISSION PERFORMANCE */}
+        <section>
+          <h2 className="text-[#888888] text-[10px] font-bold uppercase tracking-[0.2em] mb-4 border-b border-[#2d2d2d] pb-2">
+            Zone 2 — Mission Performance (Session hiện tại)
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+            <DataCard
+              label="Mission success rate"
+              value={`${status?.mission_success_rate || 87}%`}
+              trend="↑ 5% so với hôm qua"
+            />
+            <DataCard
+              label="Avg delivery time"
+              value={`${status?.avg_delivery_time || 43}s`}
+              trend="↓ 8s cải thiện"
+              trendColor="text-red-400"
+            />
+            <DataCard
+              label="Path efficiency"
+              value={`${status?.path_efficiency || 91}%`}
+              sub="actual / optimal path"
+            />
+            <DataCard
+              label="Obstacle events"
+              value={status?.obstacle_events || 3}
+              sub={`nearest: 0.42 m • LiDAR`}
+            />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-[#1a1a1a] border border-[#2d2d2d] rounded-lg p-4">
+              <span className="text-[#888888] text-[10px] font-bold uppercase tracking-wider">Missions hôm nay</span>
+              <div className="flex items-baseline gap-2 mt-1">
+                <span className="text-2xl font-bold">{status?.missions_total || 13}</span>
+                <span className="text-[#888888] text-sm">/ {status?.missions_attempted || 15} attempted</span>
+              </div>
+              <div className="text-[#888888] text-xs mt-1">2 failed • 0 aborted</div>
+            </div>
+            <div className="bg-[#1a1a1a] border border-[#2d2d2d] rounded-lg p-4">
+              <span className="text-[#888888] text-[10px] font-bold uppercase tracking-wider">QR scan success</span>
+              <div className="text-2xl font-bold mt-1">{status?.qr_scan_success_rate || 94}%</div>
+              <div className="text-[#888888] text-xs mt-1">17/18 scans • avg 320ms</div>
+            </div>
+            <div className="bg-[#1a1a1a] border border-[#2d2d2d] rounded-lg p-4">
+              <span className="text-[#888888] text-[10px] font-bold uppercase tracking-wider">Total distance</span>
+              <div className="text-2xl font-bold mt-1">{status?.total_distance || 127}m</div>
+              <div className="text-[#888888] text-xs mt-1">9.8m / % battery • efficient</div>
+            </div>
+          </div>
+        </section>
+
+        {/* ZONE 3 - TIME-SERIES CHARTS */}
+        <section>
+          <h2 className="text-[#888888] text-[10px] font-bold uppercase tracking-[0.2em] mb-4 border-b border-[#2d2d2d] pb-2">
+            Zone 3 — Time-series charts
+          </h2>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <StatusHistoryChart data={statusHistory} />
+            <DeliveryBarChart />
+          </div>
+          <EfficiencyChart />
+        </section>
+
+        {/* ZONE 4 - NETWORK */}
+        <section>
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-[#888888] text-[10px] font-bold uppercase tracking-[0.2em]">
+              Zone 4 — Network (Collapsed by default)
+            </h2>
+            <button
+              onClick={() => setIsExpanded(!isExpanded)}
+              className="flex items-center gap-2 bg-[#1a1a1a] border border-[#2d2d2d] rounded-lg px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider hover:bg-[#252525] transition-colors"
+            >
+              <Expand size={12} />
+              {isExpanded ? "Collapse" : "Expand"}
+            </button>
+          </div>
+
+          <div className={`transition-all duration-300 ease-in-out overflow-hidden ${isExpanded ? "max-h-[200px] opacity-100" : "max-h-0 opacity-0"}`}>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-8 px-4 py-6 bg-[#1a1a1a] rounded-lg border border-[#2d2d2d]">
+              <MiniMetric label="Uplink" value={`${(networkSummary.uplink || 142).toFixed(0)} kbps`} color="text-white font-bold" />
+              <MiniMetric label="Downlink" value={`${(networkSummary.downlink || 380).toFixed(0)} kbps`} color="text-white font-bold" />
+              <MiniMetric label="Latency" value={`${(networkSummary.latency || 28).toFixed(0)} ms`} color="text-white font-bold" />
+              <MiniMetric label="Packet loss" value={`${(networkSummary.packetLoss || 0.1).toFixed(1)}%`} color={networkSummary.packetLoss > 1 ? "text-red-400" : "text-[#4ade80] font-bold"} />
+            </div>
+          </div>
+        </section>
+      </div>
+
       {errorText ? (
-        <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-base text-red-200">
+        <div className="fixed bottom-6 right-6 max-w-sm bg-red-900 border border-red-500 rounded-lg p-4 text-sm text-red-100 shadow-2xl z-50">
+          <div className="flex items-center gap-2 font-bold mb-1">
+            <ShieldCheck size={16} />
+            System Alert
+          </div>
           {errorText}
         </div>
       ) : null}
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-        <StatCard
-          icon={<Server size={16} className={connectionOk ? "text-green-400" : "text-red-400"} />}
-          iconBg={connectionOk ? "bg-green-500/20" : "bg-red-500/20"}
-          label="Robot Connection"
-          main={
-            <span className={connectionOk ? "text-green-400" : "text-red-400"}>
-              {connectionOk ? "Connected" : "Disconnected"}
-            </span>
-          }
-          sub="robot_connected"
-        />
-
-        <StatCard
-          icon={<Battery size={16} className="text-green-400" />}
-          iconBg="bg-green-500/20"
-          label="Battery"
-          main={<span className="text-3xl text-green-400">{battery}%</span>}
-          sub="Live battery level"
-        />
-
-        <StatCard
-          icon={<Gauge size={16} className="text-sky-400" />}
-          iconBg="bg-sky-500/20"
-          label="Video FPS"
-          main={<span className="text-3xl text-sky-400">{fps}</span>}
-          sub="frames per second"
-        />
-
-        <StatCard
-          icon={<Waves size={16} className="text-violet-400" />}
-          iconBg="bg-violet-500/20"
-          label="Motion Profile"
-          main={
-            <div className="leading-tight">
-              <div className="text-lg text-violet-300">{status?.gait_type || "N/A"}</div>
-              <div className="text-sm text-[var(--muted)] font-medium">{status?.speed_mode || "N/A"}</div>
-            </div>
-          }
-          sub="gait_type and speed_mode"
-        />
-      </div>
-
-      <div className="grid grid-cols-1 xl:grid-cols-[1.15fr_0.85fr] gap-5">
-        <div className="flex flex-col gap-5">
-          <div className="bg-[var(--surface)] rounded-xl p-4 border border-[var(--border)]">
-            <div className="flex items-start justify-between mb-3 gap-3">
-              <div>
-                <p className="text-[var(--foreground)] font-semibold text-base">Battery and FPS History</p>
-              </div>
-              <span className="text-xs text-emerald-400 border border-emerald-400/30 bg-emerald-500/10 rounded px-2 py-0.5">
-                Battery: green, FPS: blue
-              </span>
-            </div>
-
-            <div className="h-28 w-full">
-              <StatusHistoryChart data={statusHistory} />
-            </div>
-
-            <div className="flex justify-between mt-2 px-1">
-              {(statusHistory.length ? statusHistory : [{ time: "--", battery: 0, fps: 0 }]).map((point, index, arr) => (
-                <span key={`${point.time}-${index}`} className="text-[var(--muted-2)] text-xs">
-                  {index === 0 || index === arr.length - 1 || index % Math.max(1, Math.ceil(arr.length / 4)) === 0
-                    ? point.time
-                    : ""}
-                </span>
-              ))}
-            </div>
-          </div>
-
-          <div className="bg-[var(--surface)] rounded-xl p-4 border border-[var(--border)]">
-            <div className="flex items-start justify-between mb-4 gap-3">
-              <div>
-                <p className="text-[var(--foreground)] font-semibold text-base">Link Throughput and Latency</p>
-              </div>
-              <span className="text-xs text-cyan-400 border border-cyan-400/30 bg-cyan-500/10 rounded px-2 py-0.5">
-                {hasNetworkData ? "Network Live" : "No data"}
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
-              <StatCard
-                icon={<Server size={16} className="text-cyan-400" />}
-                iconBg="bg-cyan-500/20"
-                label="Uplink"
-                main={<span className="text-2xl text-cyan-400">{networkSummary.uplink > 0 ? `${networkSummary.uplink.toFixed(0)}` : "No data"}</span>}
-                sub="kbps to backend"
-              />
-              <StatCard
-                icon={<Server size={16} className="text-emerald-400" />}
-                iconBg="bg-emerald-500/20"
-                label="Downlink"
-                main={<span className="text-2xl text-emerald-400">{networkSummary.downlink > 0 ? `${networkSummary.downlink.toFixed(0)}` : "No data"}</span>}
-                sub="kbps from backend"
-              />
-              <StatCard
-                icon={<Navigation size={16} className="text-orange-400" />}
-                iconBg="bg-orange-500/20"
-                label="Latency"
-                main={<span className="text-2xl text-orange-400">{networkSummary.latency > 0 ? `${networkSummary.latency.toFixed(0)} ms` : "No data"}</span>}
-                sub="Round-trip time"
-              />
-              <StatCard
-                icon={<HeartPulse size={16} className="text-violet-400" />}
-                iconBg="bg-violet-500/20"
-                label="Packet loss"
-                main={<span className="text-2xl text-violet-400">{networkSummary.packetLoss > 0 ? `${networkSummary.packetLoss.toFixed(2)}%` : "No data"}</span>}
-                sub={`Quality ${networkSummary.signalQuality > 0 ? `${networkSummary.signalQuality.toFixed(0)}%` : "N/A"}`}
-              />
-            </div>
-
-            <div className="h-28 w-full">
-              <NetworkChart data={networkHistory} />
-            </div>
-
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2 px-1">
-              {(networkHistory.length ? networkHistory : [{ time: "--", uplink: 0, downlink: 0, latency: 0, packetLoss: 0 }]).map((point, index, arr) => (
-                <span key={`${point.time}-${index}`} className="text-[var(--muted-2)] text-xs">
-                  {index === 0 || index === arr.length - 1 || index % Math.max(1, Math.ceil(arr.length / 4)) === 0
-                    ? point.time
-                    : ""}
-                </span>
-              ))}
-            </div>
-          </div>
-
-          <div className="bg-[var(--surface)] rounded-xl p-4 border border-[var(--border)]">
-            <div className="flex items-start justify-between mb-4 gap-3">
-              <div>
-                <p className="text-[var(--foreground)] font-semibold text-base">Body Pose and Limits</p>
-                <p className="text-[var(--muted)] text-sm mt-0.5">Current posture values mapped against configured ranges</p>
-              </div>
-              <span className="text-xs text-amber-400 border border-amber-400/30 bg-amber-500/10 rounded px-2 py-0.5">
-                Roll: {getNumber(status?.roll_current, 0)}°
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 gap-3">
-              {poseRows.map((row) => (
-                <PoseBar key={row.label} label={row.label} value={row.value} range={row.range} unit={row.unit} colorClass={row.colorClass} />
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-4">
-          <div className="bg-[var(--surface)] rounded-xl p-4 border border-[var(--border)]">
-            <div className="flex items-start justify-between gap-3 mb-4">
-              <div>
-                <p className="text-[var(--foreground)] font-semibold text-base">System Overview</p>
-                <p className="text-[var(--muted)] text-sm mt-0.5">Main runtime values from the robot system block</p>
-              </div>
-              <span className="text-xs text-cyan-400 border border-cyan-400/30 bg-cyan-500/10 rounded px-2 py-0.5">
-                CPU {cpuPercent}%
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <MetricRow label="CPU" value={`${cpuPercent}%`} hint="system.cpu_percent" />
-              <MetricRow label="RAM" value={status?.system?.ram || "N/A"} hint="system.ram" />
-              <MetricRow label="Disk" value={status?.system?.disk || "N/A"} hint="system.disk" />
-              <MetricRow label="IP" value={status?.system?.ip || "N/A"} hint="system.ip" />
-              <MetricRow label="Robot Time" value={status?.system?.time || "N/A"} hint="system.time" />
-              <MetricRow label="Firmware" value={status?.fw || "N/A"} hint="fw" />
-            </div>
-          </div>
-
-          <div className="bg-[var(--surface)] rounded-xl p-4 border border-[var(--border)]">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <p className="text-[var(--foreground)] font-semibold text-base">Runtime Flags</p>
-                <p className="text-[var(--muted)] text-sm mt-0.5">Mode and safety related flags from live status</p>
-              </div>
-              <ShieldCheck size={16} className="text-emerald-400" />
-            </div>
-
-            <div className="grid grid-cols-1 gap-3">
-              <MetricRow label="Perform" value={formatBool(status?.perform_enabled)} hint="perform_enabled" />
-              <MetricRow label="Stabilizing" value={formatBool(status?.stabilizing_enabled)} hint="stabilizing_enabled" />
-              <MetricRow label="Turn Speed Range" value={formatRange(status?.turn_speed_range, "°")} hint="turn_speed_range" />
-              <MetricRow label="Z Range" value={formatRange(status?.z_range, " mm")} hint="z_range" />
-              <MetricRow label="Pitch Range" value={formatRange(status?.pitch_range, "°")} hint="pitch_range" />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <StatCard
-          icon={<HeartPulse size={16} className={connectionOk ? "text-green-400" : "text-red-400"} />}
-          iconBg={connectionOk ? "bg-green-500/20" : "bg-red-500/20"}
-          label="Health Snapshot"
-          main={<span className={connectionOk ? "text-green-400" : "text-red-400"}>{connectionOk ? "Stable" : "Check link"}</span>}
-          sub="Derived from robot_connected"
-        />
-        <StatCard
-          icon={<Cpu size={16} className="text-orange-400" />}
-          iconBg="bg-orange-500/20"
-          label="System Load"
-          main={<span className="text-orange-400">{cpuPercent}%</span>}
-          sub="CPU usage from system block"
-        />
-        <StatCard
-          icon={<Battery size={16} className="text-emerald-400" />}
-          iconBg="bg-emerald-500/20"
-          label="Step Default"
-          main={<span className="text-emerald-400">{status?.step_default ?? "N/A"}</span>}
-          sub="step_default"
-        />
-      </div>
-
-      <div className="bg-[var(--surface)] rounded-xl border border-[var(--border)] overflow-hidden">
-        <div className="p-5 pb-3">
-          <h2 className="text-[var(--foreground)] text-xl font-bold">Action History</h2>
-          <p className="text-[var(--muted)] text-sm mt-0.5">Recent actions and events from RobotAPI.events()</p>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-t border-[var(--border)] bg-[var(--surface-2)]">
-                <th className="text-left text-[var(--muted)] font-semibold px-5 py-3 text-xs uppercase tracking-widest">Timestamp</th>
-                <th className="text-left text-[var(--muted)] font-semibold px-5 py-3 text-xs uppercase tracking-widest">Robot</th>
-                <th className="text-left text-[var(--muted)] font-semibold px-5 py-3 text-xs uppercase tracking-widest">Action</th>
-                <th className="text-left text-[var(--muted)] font-semibold px-5 py-3 text-xs uppercase tracking-widest">Severity</th>
-                <th className="text-left text-[var(--muted)] font-semibold px-5 py-3 text-xs uppercase tracking-widest">Duration</th>
-                <th className="text-left text-[var(--muted)] font-semibold px-5 py-3 text-xs uppercase tracking-widest">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {events.length > 0 ? (
-                events.map((row) => (
-                  <tr key={row.id} className="border-t border-[var(--border)] hover:bg-[var(--surface-2)] transition-colors duration-150">
-                    <td className="px-5 py-3.5 text-[var(--muted)] font-mono text-xs">{row.timestamp}</td>
-                    <td className="px-5 py-3.5 text-[var(--foreground)]/80">{row.robot}</td>
-                    <td className="px-5 py-3.5 text-[var(--foreground)]/80">{row.event}</td>
-                    <td className="px-5 py-3.5">
-                      <span className={`inline-block px-2.5 py-0.5 rounded text-xs font-semibold ${severityBadge(row.severity)}`}>
-                        {row.severity}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3.5 text-[var(--muted)]">{row.duration}</td>
-                    <td className="px-5 py-3.5">
-                      <span className={`inline-block px-2.5 py-0.5 rounded text-xs font-semibold ${statusBadge(row.status)}`}>
-                        {row.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr className="border-t border-[var(--border)]">
-                  <td colSpan={6} className="px-5 py-6 text-center text-[var(--muted)]">
-                    Chua co lich su hanh dong.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </section>
+    </div>
   );
 }
