@@ -7,7 +7,32 @@ import cv2
 import requests
 from django.conf import settings  # type: ignore[import-untyped]
 import numpy as np
-from ..models import Robot
+from ..models import ActionEvent, Robot
+
+
+def _get_or_create_robot(robot_id: str) -> Robot:
+    robot, _ = Robot.objects.get_or_create(
+        pk=robot_id,
+        defaults={
+            "name": robot_id.replace("-", " ").title(),
+        },
+    )
+    return robot
+
+
+def log_obstacle_detected(robot_id: str, distance_m: float) -> ActionEvent:
+    """
+    Persist a navigation obstacle event so session summaries can count it.
+    """
+    robot = _get_or_create_robot(robot_id)
+    return ActionEvent.objects.create(
+        robot=robot,
+        event="obstacle_detected",
+        severity=ActionEvent.Severity.WARNING,
+        status=ActionEvent.Status.ACTIVE,
+        detail=f"nearest={distance_m:.2f}m",
+        payload={"distance_m": round(float(distance_m), 3)},
+    )
 
 
 class ROSClient:
@@ -36,13 +61,7 @@ class ROSClient:
     # Helpers nội bộ
     # ------------------------------------------------------------------
     def _get_robot(self) -> Robot:
-        robot, _ = Robot.objects.get_or_create(
-            pk=self.robot_id,
-            defaults={
-                "name": self.robot_id.replace("-", " ").title(),
-            },
-        )
-        return robot
+        return _get_or_create_robot(self.robot_id)
 
     def _get_base_url(self) -> str:
         """

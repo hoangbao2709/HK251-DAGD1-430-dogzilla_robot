@@ -208,6 +208,9 @@ export const RobotAPI = {
   evaluationMetrics: () =>
     api<any>(`${CONTROL_PREFIX}/${robotId}/evaluation/metrics/`),
 
+  sessionSummary: () =>
+    api<any>(`${CONTROL_PREFIX}/${robotId}/session/summary/`),
+
   frameUrl: (ts?: number) =>
     `${API_BASE}${CONTROL_PREFIX}/${robotId}/frame/${ts ? `?t=${ts}` : ""}`,
 

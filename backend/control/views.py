@@ -164,6 +164,27 @@ class ActionEventListView(APIView):
         )
 
 
+class SessionSummaryView(APIView):
+    def get(self, request, robot_id):
+        robot = get_or_create_robot(robot_id)
+        today = now().date()
+
+        obstacle_count = ActionEvent.objects.filter(
+            robot=robot,
+            event="obstacle_detected",
+            timestamp__date=today,
+        ).count()
+
+        return Response(
+            {
+                "ok": True,
+                "robot_id": robot_id,
+                "obstacle_events_today": obstacle_count,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
 class ConnectView(APIView):
     def post(self, request, robot_id):
         robot = get_or_create_robot(robot_id)
@@ -380,6 +401,7 @@ class RobotStatusView(APIView):
             "pitch_current": s.get("pitch_current"),
             "yaw_current": s.get("yaw_current"),
             "battery": s.get("battery"),
+            "voltage": s.get("voltage"),
             "fw": s.get("fw"),
             "fps": s.get("fps"),
             "system": s.get("system"),

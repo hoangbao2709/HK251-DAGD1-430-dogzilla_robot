@@ -109,8 +109,52 @@ def _compute_from_trajectory(trajectory: list[dict[str, Any]]) -> dict[str, Any]
     }
 
 
+def compute_path_efficiency(raw_metrics: dict[str, Any]) -> float | None:
+    """
+    Estimate path efficiency as straight-line distance over actual path length.
+    """
+    trajectory = raw_metrics.get("trajectory") or []
+    path_length_m = raw_metrics.get("path_length_m")
+
+    if path_length_m is None:
+        path_length_m = _compute_from_trajectory(trajectory).get("path_length_m")
+
+    try:
+        path_length = float(path_length_m)
+    except (TypeError, ValueError):
+        return None
+
+    if path_length <= 0:
+        return None
+
+    points = [item for item in trajectory if isinstance(item, dict)]
+    if len(points) < 2:
+        return None
+
+    start = points[0]
+    end = points[-1]
+
+    try:
+        dx = float(end.get("x", 0)) - float(start.get("x", 0))
+        dy = float(end.get("y", 0)) - float(start.get("y", 0))
+    except (TypeError, ValueError):
+        return None
+
+    optimal_distance = math.hypot(dx, dy)
+    if optimal_distance <= 0:
+        return None
+
+    return min(100.0, round((optimal_distance / path_length) * 100, 1))
+
+
 def build_evaluation_metrics_payload(raw_metrics: dict[str, Any]) -> dict[str, Any]:
     trajectory_metrics = _compute_from_trajectory(raw_metrics.get("trajectory") or [])
+    trajectory_metrics["path_efficiency_pct"] = compute_path_efficiency(
+        {
+            **raw_metrics,
+            "path_length_m": trajectory_metrics.get("path_length_m"),
+        }
+    )
     summary = raw_metrics.get("summary") or {}
     run_meta = raw_metrics.get("run_meta") or {}
     reference_metrics = raw_metrics.get("reference_metrics") or {}

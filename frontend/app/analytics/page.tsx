@@ -156,19 +156,15 @@ function normalizeRobotStatus(raw: any): RobotStatus {
     ...telemetry,
     system,
     // Mock values for the tactical UI
-    voltage: 11.4,
     remaining_minutes: 42,
     speed: 0.18,
     heading: raw?.yaw_current || 92,
     mission_success_rate: 87,
     avg_delivery_time: 43,
-    path_efficiency: 91,
-    obstacle_events: 3,
     missions_total: 13,
     missions_attempted: 15,
     missions_failed: 2,
     qr_scan_success_rate: 94,
-    total_distance: 127,
   };
 }
 
@@ -450,6 +446,9 @@ export default function AnalyticsPage() {
   const [statusHistory, setStatusHistory] = useState<StatusPoint[]>([]);
   const [networkHistory, setNetworkHistory] = useState<NetworkPoint[]>([]);
   const [networkMetrics, setNetworkMetrics] = useState<JsonRecord | null>(null);
+  const [pathEfficiency, setPathEfficiency] = useState<number | null>(null);
+  const [totalDistance, setTotalDistance] = useState<number | null>(null);
+  const [obstacleEvents, setObstacleEvents] = useState<number | null>(null);
   const [events, setEvents] = useState<EventItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorText, setErrorText] = useState("");
@@ -477,6 +476,27 @@ export default function AnalyticsPage() {
         setEvents((response?.items ?? []).map(normalizeEventItem));
       } catch {
         setEvents([]);
+      }
+
+      try {
+        const evalResp = await RobotAPI.evaluationMetrics();
+        const derived = evalResp?.derived_metrics ?? {};
+        const nextPathEfficiency = Number(derived.path_efficiency_pct);
+        const nextTotalDistance = Number(derived.path_length_m);
+
+        setPathEfficiency(Number.isFinite(nextPathEfficiency) ? nextPathEfficiency : null);
+        setTotalDistance(Number.isFinite(nextTotalDistance) ? nextTotalDistance : null);
+      } catch {
+        setPathEfficiency(null);
+        setTotalDistance(null);
+      }
+
+      try {
+        const sessionSummary = await RobotAPI.sessionSummary();
+        const nextObstacleEvents = Number(sessionSummary?.obstacle_events_today);
+        setObstacleEvents(Number.isFinite(nextObstacleEvents) ? nextObstacleEvents : null);
+      } catch {
+        setObstacleEvents(null);
       }
 
       const battery = clamp(getNumber(nextStatus?.battery, 0), 0, 100);
@@ -600,7 +620,9 @@ export default function AnalyticsPage() {
             <DataCard
               label="Battery"
               value={`${battery}%`}
-              sub={`~${status?.remaining_minutes || 42} min remaining • ${status?.voltage || 11.4}V`}
+              sub={`~${status?.remaining_minutes ?? "?"} min · ${
+                status?.voltage != null ? `${status.voltage.toFixed(1)}V` : "N/A"
+              }`}
             />
             <DataCard
               label="IMU posture"
@@ -641,12 +663,12 @@ export default function AnalyticsPage() {
             />
             <DataCard
               label="Path efficiency"
-              value={`${status?.path_efficiency || 91}%`}
+              value={pathEfficiency != null ? `${pathEfficiency}%` : "N/A"}
               sub="actual / optimal path"
             />
             <DataCard
               label="Obstacle events"
-              value={status?.obstacle_events || 3}
+              value={obstacleEvents != null ? obstacleEvents : "N/A"}
               sub={`nearest: 0.42 m • LiDAR`}
             />
           </div>
@@ -666,7 +688,7 @@ export default function AnalyticsPage() {
             </div>
             <div className="bg-[#1a1a1a] border border-[#2d2d2d] rounded-lg p-4">
               <span className="text-[#888888] text-[10px] font-bold uppercase tracking-wider">Total distance</span>
-              <div className="text-2xl font-bold mt-1">{status?.total_distance || 127}m</div>
+              <div className="text-2xl font-bold mt-1">{totalDistance != null ? `${totalDistance}m` : "N/A"}</div>
               <div className="text-[#888888] text-xs mt-1">9.8m / % battery • efficient</div>
             </div>
           </div>
