@@ -4,6 +4,7 @@ export type SlamPoint = {
 };
 
 export type SlamPose = {
+    ok?: boolean;
     x: number;
     y: number;
     theta: number;
@@ -29,7 +30,16 @@ export type SlamStatus = {
 export type SlamStateData = {
     pose?: SlamPose;
     scan?: {
+        ok?: boolean;
         points?: SlamPoint[];
+    };
+    goal?: {
+        x?: number;
+        y?: number;
+        yaw?: number;
+    };
+    paths?: {
+        a_star?: SlamPoint[];
     };
     render_info?: SlamRenderInfo;
     status?: SlamStatus;
@@ -127,8 +137,7 @@ export type ApiEnvelope<T> = {
     log?: string;
 };
 
-export type MapViewMode = "lidar" | "slam";
-
+export type MapMode = "view" | "navigate";export type NavPlacementMode = "goal" | "initialPose";
 export type KeyValueCard = {
     label: string;
     value: string;
