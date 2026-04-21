@@ -207,11 +207,11 @@ export function MapPanel({
 
                         {mapViewMode === "lidar" ? (
                             lidarFrameUrl ? (
-                                <iframe
+                                <img
                                     key={lidarFrameUrl}
                                     src={lidarFrameUrl}
-                                    title="LiDAR map"
-                                    className="absolute inset-0 h-full w-full border-0 bg-[var(--surface-elev)]"
+                                    alt="LiDAR map"
+                                    className="absolute inset-0 h-full w-full object-contain bg-[var(--surface-elev)]"
                                 />
                             ) : (
                                 <div className="absolute inset-0 flex items-center justify-center bg-[var(--surface-elev)] text-xs text-[var(--muted)]">
@@ -288,11 +288,11 @@ export function MapPanel({
 
                                 {mapViewMode === "lidar" ? (
                                     lidarFrameUrl ? (
-                                        <iframe
+                                        <img
                                             key={`modal-${lidarFrameUrl}`}
                                             src={lidarFrameUrl}
-                                            title="LiDAR map expanded"
-                                            className="absolute inset-0 h-full w-full border-0 bg-[var(--surface-elev)]"
+                                            alt="LiDAR map expanded"
+                                            className="absolute inset-0 h-full w-full object-contain bg-[var(--surface-elev)]"
                                         />
                                     ) : (
                                         <div className="absolute inset-0 flex items-center justify-center text-sm text-[var(--muted)]">
