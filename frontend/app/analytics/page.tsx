@@ -117,6 +117,8 @@ type SessionEvent = {
   type: string;
 };
 
+type EffPoint = { time: string; eff: number; obs: number };
+
 type PatrolResult = {
   point: string;
   status: string;
@@ -391,9 +393,23 @@ function StatusHistoryChart({ data }: { data: StatusPoint[] }) {
   );
 }
 
-function DeliveryBarChart() {
-  const bars = [4, 6, 5, 8, 9, 7, 5, 8, 4, 6];
-  const max = 10;
+function DeliveryBarChart({ missions }: { missions: PatrolMission[] }) {
+  const bars = missions.map(m => ({
+    // Lấy reach_time_sec của điểm đầu tiên trong mission
+    value: m.results?.[0]?.reach_time_sec ?? 0,
+    success: m.status === "completed",
+  }));
+
+  if (bars.length === 0) {
+    return (
+      <div className="relative w-full h-[140px] bg-[#1a1a1a] rounded-lg
+                       border border-[#2d2d2d] p-4 flex items-center justify-center">
+        <span className="text-[#888888] text-sm">Chưa có mission data</span>
+      </div>
+    );
+  }
+
+  const max = Math.max(...bars.map(b => b.value), 1);
   return (
     <div className="relative w-full h-[140px] bg-[#1a1a1a] rounded-lg border border-[#2d2d2d] p-4">
       <div className="flex justify-between items-center mb-2">
@@ -409,12 +425,13 @@ function DeliveryBarChart() {
           </div>
         </div>
       </div>
-      <div className="flex items-end justify-between h-[80px] pt-2">
-        {bars.map((v, i) => (
+      <div className="flex items-end justify-between h-[80px] pt-2 gap-1">
+        {bars.map((b, i) => (
           <div
             key={i}
-            className={`w-[8%] rounded-t-sm ${i === 4 || i === 8 ? "bg-[#f87171]" : "bg-[#4ade80]"}`}
-            style={{ height: `${(v / max) * 100}%`, opacity: 0.7 }}
+            className={`flex-1 rounded-t-sm ${b.success ? "bg-[#4ade80]" : "bg-[#f87171]"}`}
+            style={{ height: `${(b.value / max) * 100}%`, opacity: 0.75 }}
+            title={`${b.value}s — ${b.success ? "success" : "failed"}`}
           />
         ))}
       </div>
@@ -422,22 +439,35 @@ function DeliveryBarChart() {
   );
 }
 
-function EfficiencyChart() {
+
+function EfficiencyChart({ data }: { data: EffPoint[] }) {
   const width = 600;
   const height = 100;
-  const points = [40, 42, 45, 48, 52, 55, 58, 62, 65, 68];
-  const points2 = [30, 32, 28, 35, 33, 30, 32, 36, 34, 33];
 
-  const toX = (i: number) => (i / 9) * width;
-  const toY = (v: number) => height - (v / 100) * height;
+  const safeData = data.length >= 2 ? data : [
+    { time: "", eff: 0, obs: 0 },
+    { time: "", eff: 0, obs: 0 },
+  ];
 
-  const d1 = points.map((v, i) => `${i === 0 ? "M" : "L"} ${toX(i)} ${toY(v)}`).join(" ");
-  const d2 = points2.map((v, i) => `${i === 0 ? "M" : "L"} ${toX(i)} ${toY(v)}`).join(" ");
+  const maxObs = Math.max(...safeData.map(d => d.obs), 1);
+  const toX = (i: number) => (i / (safeData.length - 1)) * width;
+  const toYEff = (v: number) => height - (v / 100) * height;
+  const toYObs = (v: number) => height - (v / maxObs) * height;
+
+  const d1 = safeData
+    .map((p, i) => `${i === 0 ? "M" : "L"} ${toX(i)} ${toYEff(p.eff)}`)
+    .join(" ");
+  const d2 = safeData
+    .map((p, i) => `${i === 0 ? "M" : "L"} ${toX(i)} ${toYObs(p.obs)}`)
+    .join(" ");
 
   return (
-    <div className="relative w-full h-[140px] bg-[#1a1a1a] rounded-lg border border-[#2d2d2d] p-4 mt-2">
+    <div className="relative w-full h-[140px] bg-[#1a1a1a] rounded-lg
+                     border border-[#2d2d2d] p-4 mt-2">
       <div className="flex justify-between items-center mb-2">
-        <span className="text-xs font-bold text-gray-400">Path efficiency & obstacle events (trend)</span>
+        <span className="text-xs font-bold text-gray-400">
+          Path efficiency & obstacle events (trend)
+        </span>
         <div className="flex gap-4">
           <div className="flex items-center gap-1.5">
             <div className="w-2 h-2 rounded-full bg-[#a78bfa]" />
@@ -445,14 +475,22 @@ function EfficiencyChart() {
           </div>
           <div className="flex items-center gap-1.5">
             <div className="w-2 h-2 rounded-full bg-[#f59e0b]" />
-            <span className="text-[10px] text-gray-400">obstacles/min</span>
+            <span className="text-[10px] text-gray-400">obstacles/session</span>
           </div>
         </div>
       </div>
-      <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-[90px]" preserveAspectRatio="none">
-        <path d={d1} fill="none" stroke="#a78bfa" strokeWidth="2.5" />
-        <path d={d2} fill="none" stroke="#f59e0b" strokeWidth="1.5" strokeDasharray="5 3" />
-      </svg>
+      {data.length < 2 ? (
+        <div className="flex items-center justify-center h-[80px]">
+          <span className="text-[#888888] text-xs">Đang tích lũy data...</span>
+        </div>
+      ) : (
+        <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-[90px]"
+             preserveAspectRatio="none">
+          <path d={d1} fill="none" stroke="#a78bfa" strokeWidth="2.5" />
+          <path d={d2} fill="none" stroke="#f59e0b" strokeWidth="1.5"
+                strokeDasharray="5 3" />
+        </svg>
+      )}
     </div>
   );
 }
@@ -465,6 +503,7 @@ export default function AnalyticsPage() {
   const [pathEfficiency, setPathEfficiency] = useState<number | null>(null);
   const [totalDistance, setTotalDistance] = useState<number | null>(null);
   const [obstacleEvents, setObstacleEvents] = useState<number | null>(null);
+  const [effHistory, setEffHistory] = useState<EffPoint[]>([]);
   const [events, setEvents] = useState<EventItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorText, setErrorText] = useState("");
@@ -569,6 +608,11 @@ export default function AnalyticsPage() {
         ].slice(-12)
       );
       setLastRefresh(timestamp);
+      setEffHistory(prev => [...prev, {
+        time: timestamp,
+        eff: pathEfficiency ?? 0,
+        obs: obstacleEvents ?? 0,
+      }].slice(-20));
     } catch (err: any) {
       setErrorText(err?.message || "Failed to load robot status");
     } finally {
@@ -736,10 +780,10 @@ export default function AnalyticsPage() {
             <div className="bg-[#1a1a1a] border border-[#2d2d2d] rounded-lg p-4">
               <span className="text-[#888888] text-[10px] font-bold uppercase tracking-wider">Missions hôm nay</span>
               <div className="flex items-baseline gap-2 mt-1">
-                <span className="text-2xl font-bold">{status?.missions_total || 13}</span>
-                <span className="text-[#888888] text-sm">/ {status?.missions_attempted || 15} attempted</span>
+                <span className="text-2xl font-bold">{missionStats.completed}</span>
+                <span className="text-[#888888] text-sm">/ {missionStats.attempted} attempted</span>
               </div>
-              <div className="text-[#888888] text-xs mt-1">2 failed • 0 aborted</div>
+              <div className="text-[#888888] text-xs mt-1">{missionStats.failed} failed • 0 aborted</div>
             </div>
             <div className="bg-[#1a1a1a] border border-[#2d2d2d] rounded-lg p-4">
               <span className="text-[#888888] text-[10px] font-bold uppercase tracking-wider">QR scan success</span>
@@ -761,9 +805,9 @@ export default function AnalyticsPage() {
           </h2>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <StatusHistoryChart data={statusHistory} />
-            <DeliveryBarChart />
+            <DeliveryBarChart missions={patrolMissions} />
           </div>
-          <EfficiencyChart />
+          <EfficiencyChart data={effHistory} />
         </section>
 
         {/* ZONE 4 - NETWORK */}
