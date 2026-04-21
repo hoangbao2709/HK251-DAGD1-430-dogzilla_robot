@@ -842,10 +842,10 @@ export default function RemoteView({
               }`}
             >
               {isRunning ? (
-                <img
-                  src={lidarMapSrc}
-                  alt="LiDAR map"
-                  className={`absolute inset-0 w-full h-full object-contain transition-opacity duration-300 ${
+                <iframe
+                  src={lidarUrl}
+                  title="LiDAR map"
+                  className={`absolute inset-0 w-full h-full border-0 transition-opacity duration-300 ${
                     lidarFrameLoaded ? "opacity-100" : "opacity-0"
                   }`}
                   onLoad={() => {

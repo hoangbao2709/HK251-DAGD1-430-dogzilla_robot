@@ -130,10 +130,15 @@ export default function AutonomousControlPage() {
     const [lidarStatusReady, setLidarStatusReady] = useState(false);
     const [lidarCommandError, setLidarCommandError] = useState("");
     const [slamDisplayAngle, setSlamDisplayAngle] = useState(0);
-
+    const [dogServer, setDogServer] = useState(
+        () => getSelectedRobotAddr() || DEFAULT_DOG_SERVER
+    );
     const recognitionRef = useRef<any>(null);
     const lastLidarRunningRef = useRef(false);
-
+    useEffect(() => {
+        setDogServer(getSelectedRobotAddr() || DEFAULT_DOG_SERVER);
+    }, []);
+    
     useEffect(() => {
         setThemeMounted(true);
     }, []);
@@ -614,9 +619,23 @@ export default function AutonomousControlPage() {
             : slamState?.status?.slam_ok === false
               ? "SLAM is offline"
               : "Waiting for navigation data";
-    const lidarFrameUrl = useMemo(() => {
-        return RobotAPI.slamMapUrl(lidarFrameNonce || mapReloadKey);
-    }, [lidarFrameNonce, mapReloadKey]);
+    const lidarFrameUrl  = useMemo(() => {
+        try {
+        const url = new URL(dogServer);
+        const host = url.hostname;
+        const port = url.port;
+
+        if (port === "9000" || port === "") {
+            return `${url.protocol}//${host}:8080`;
+        }
+        if (port === "9002") {
+            return `${url.protocol}//${host}:9002/lidar/`;
+        }
+        return `${url.origin.replace(/\/$/, "")}/lidar/`;
+        } catch {
+        return "";
+        }
+    }, [dogServer]);
 
     const startListening = () => {
         const SpeechRecognition =
