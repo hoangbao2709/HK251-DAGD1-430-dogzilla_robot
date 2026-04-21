@@ -489,12 +489,12 @@ class LidarView(APIView):
         try:
             if action == "start":
                 try:
-                    slam_state = client.get_slam_state() or {}
+                    slam_status = client.get_slam_status() or {}
                 except Exception as e:
-                    slam_state = {}
-                    logger.warning("Lidar preflight state check failed for %s: %s", robot_id, e)
+                    slam_status = {}
+                    logger.info("Lidar preflight status unavailable for %s: %s", robot_id, e)
 
-                if slam_state.get("running") is True or slam_state.get("lidar_running") is True:
+                if slam_status.get("running") is True:
                     log_line = build_log(robot_id, "LIDAR", {"action": action}, True, None)
                     return Response(
                         {

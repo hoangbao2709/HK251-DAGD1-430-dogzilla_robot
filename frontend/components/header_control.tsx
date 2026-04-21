@@ -65,20 +65,6 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function buildLidarPoseUrl(lidarUrl: string) {
-  if (!lidarUrl) return "";
-  if (lidarUrl.endsWith("/pose") || lidarUrl.endsWith("/pose/")) return lidarUrl;
-
-  try {
-    const u = new URL(lidarUrl);
-    if (!u.pathname.endsWith("/")) u.pathname += "/";
-    u.pathname += "pose";
-    return u.toString();
-  } catch {
-    return `${lidarUrl.replace(/\/$/, "")}/pose`;
-  }
-}
-
 export default function HeaderControl({
   mode,
   onToggle,
@@ -137,25 +123,32 @@ export default function HeaderControl({
   }, []);
 
   useEffect(() => {
-    if (!lidarUrl || !lidarActive) {
+    if (!lidarActive) {
       setLocationText("-");
       return;
     }
 
-    const poseUrl = buildLidarPoseUrl(lidarUrl);
     let stop = false;
 
     async function fetchPose() {
       try {
-        const res = await fetch(poseUrl, { cache: "no-store" });
-        if (!res.ok) throw new Error(`Pose HTTP ${res.status}`);
-        const raw = await res.json();
+        const raw = await api<any>(`${CONTROL_PREFIX}/${robotId}/slam/state/`);
         if (stop) return;
-        const p: LidarPose = raw;
+        const p: LidarPose = raw?.data ?? raw ?? {};
         if (typeof p?.x === "number" && typeof p?.y === "number") {
           const thetaText =
             typeof p.theta === "number" ? `, θ: ${p.theta.toFixed(2)} rad` : "";
           setLocationText(`x: ${p.x.toFixed(2)} m, y: ${p.y.toFixed(2)} m${thetaText}`);
+        } else if (
+          typeof (p as any)?.pose?.x === "number" &&
+          typeof (p as any)?.pose?.y === "number"
+        ) {
+          const pose = (p as any).pose;
+          const thetaText =
+            typeof pose.theta === "number" ? `, θ: ${pose.theta.toFixed(2)} rad` : "";
+          setLocationText(
+            `x: ${pose.x.toFixed(2)} m, y: ${pose.y.toFixed(2)} m${thetaText}`
+          );
         } else {
           setLocationText("-");
         }
@@ -170,7 +163,7 @@ export default function HeaderControl({
       stop = true;
       clearInterval(id);
     };
-  }, [lidarActive, lidarUrl]);
+  }, [lidarActive]);
 
   const sys = telemetry?.system ?? null;
   const cpuText = sys?.cpu_percent != null ? `${sys.cpu_percent}%` : loading ? "…" : "-";

@@ -76,6 +76,7 @@ export default function RemoteView({
   const [lidarBusy, setLidarBusy] = useState(false);
   const [lidarError, setLidarError] = useState<string | null>(null);
   const [lidarFrameLoaded, setLidarFrameLoaded] = useState(false);
+  const [lidarMapNonce, setLidarMapNonce] = useState(0);
   const [speed, setSpeed] = useState<"slow" | "normal" | "high">("normal");
   const [speedBusy, setSpeedBusy] = useState(false);
   const [fps, setFps] = useState(30);
@@ -116,8 +117,6 @@ export default function RemoteView({
     setCommandLog(prev => [line, ...prev].slice(0, 50)); 
   }, []);
   const lastConnectionStateRef = useRef<boolean | null>(null);
-  const lidarPollInFlightRef = useRef(false);
-  const lidarFailureCountRef = useRef(0);
   const [sliders, setSliders] = useState<BodyState>({
     tx: 0,
     ty: 0,
@@ -154,49 +153,50 @@ export default function RemoteView({
     };
   }, []);
   useEffect(() => {
-    if (!connected || !lidarUrl) {
+    if (!connected) {
       setIsRunning(false);
       setLidarFrameLoaded(false);
       return;
     }
 
     let stop = false;
-
-    async function pingLidar() {
-      if (lidarPollInFlightRef.current) return;
-      lidarPollInFlightRef.current = true;
-
+    async function fetchControlStatus() {
       try {
-        const res = await fetch(lidarUrl, { cache: "no-store" });
+        const res: any = await RobotAPI.controlStatus();
         if (stop) return;
-        if (res.ok) {
-          lidarFailureCountRef.current = 0;
-          setIsRunning(true);
+        const data = res?.data ?? res ?? {};
+        const running = Boolean(data?.lidar_running ?? data?.lidar?.running ?? false);
+        setIsRunning(running);
+        if (running) {
           setLidarError(null);
         } else {
-          throw new Error(`LiDAR HTTP ${res.status}`);
+          setLidarFrameLoaded(false);
         }
       } catch {
         if (stop) return;
-        lidarFailureCountRef.current += 1;
-        if (lidarFailureCountRef.current >= 2) {
-          setIsRunning(false);
-          setLidarFrameLoaded(false);
-        }
+        setIsRunning(false);
+        setLidarFrameLoaded(false);
       } finally {
-        lidarPollInFlightRef.current = false;
       }
     }
 
-    pingLidar();
-    const id = setInterval(pingLidar, 2500);
+    fetchControlStatus();
+    const id = setInterval(fetchControlStatus, 2500);
 
     return () => {
       stop = true;
       clearInterval(id);
-      lidarPollInFlightRef.current = false;
     };
-  }, [connected, lidarUrl]);
+  }, [connected]);
+  useEffect(() => {
+    if (!isRunning) return;
+
+    const id = setInterval(() => {
+      setLidarMapNonce((value) => value + 1);
+    }, 1000);
+
+    return () => clearInterval(id);
+  }, [isRunning]);
   useEffect(() => {
     let stop = false;
     let iv: ReturnType<typeof setInterval> | null = null;
@@ -349,8 +349,10 @@ export default function RemoteView({
       appendLog(
         res?.log || `[LIDAR] ${next ? "start" : "stop"} (frontend toggle)`
       );
-      lidarFailureCountRef.current = 0;
       setIsRunning(next);
+      if (next) {
+        setLidarMapNonce((value) => value + 1);
+      }
       if (!next) {
         setLidarFrameLoaded(false);
       }
@@ -531,6 +533,7 @@ export default function RemoteView({
     : isRunning
     ? "Stop Lidar"
     : "Start Lidar";
+  const lidarMapSrc = RobotAPI.slamMapUrl(lidarMapNonce);
   if (isMobile) {
     return (
       <section className="h-screen w-full bg-[var(--background)] text-[var(--foreground)] relative">
@@ -839,10 +842,10 @@ export default function RemoteView({
               }`}
             >
               {isRunning ? (
-                <iframe
-                  src={lidarUrl}
-                  title="LiDAR map"
-                  className={`absolute inset-0 w-full h-full border-0 transition-opacity duration-300 ${
+                <img
+                  src={lidarMapSrc}
+                  alt="LiDAR map"
+                  className={`absolute inset-0 w-full h-full object-contain transition-opacity duration-300 ${
                     lidarFrameLoaded ? "opacity-100" : "opacity-0"
                   }`}
                   onLoad={() => {
