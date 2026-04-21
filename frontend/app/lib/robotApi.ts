@@ -50,13 +50,13 @@ type MoveVectorPayload = {
 
 type MoveCommandPayload = {
   command:
-    | "forward"
-    | "backward"
-    | "left"
-    | "right"
-    | "turnleft"
-    | "turnright"
-    | "stop";
+  | "forward"
+  | "backward"
+  | "left"
+  | "right"
+  | "turnleft"
+  | "turnright"
+  | "stop";
   step?: number;
   speed?: number;
   mode?: "slow" | "normal" | "high";
@@ -270,4 +270,7 @@ export const RobotAPI = {
         payload: Record<string, unknown>;
       }>;
     }>(`${CONTROL_PREFIX}/${robotId}/events/?limit=${limit}&offset=${offset}`),
+
+  patrolHistory: () =>
+    api<any>(`${CONTROL_PREFIX}/${robotId}/patrol/history/`),
 };

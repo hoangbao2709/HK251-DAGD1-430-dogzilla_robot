@@ -117,6 +117,23 @@ type SessionEvent = {
   type: string;
 };
 
+type PatrolResult = {
+  point: string;
+  status: string;
+  attempts: number;
+  reach_time_sec: number | null;
+  started_at: string | null;
+  finished_at: string | null;
+};
+
+type PatrolMission = {
+  mission_id: string;
+  status: string;
+  started_at: string | null;
+  finished_at: string | null;
+  results: PatrolResult[];
+};
+
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
@@ -158,7 +175,6 @@ function normalizeRobotStatus(raw: any): RobotStatus {
     // Mock values for the tactical UI
     remaining_minutes: 42,
     speed: 0.18,
-    heading: raw?.yaw_current || 92,
     mission_success_rate: 87,
     avg_delivery_time: 43,
     missions_total: 13,
@@ -456,6 +472,15 @@ export default function AnalyticsPage() {
   const [isPaused, setIsPaused] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
 
+  const [missionStats, setMissionStats] = useState({
+    attempted: 0,
+    completed: 0,
+    failed: 0,
+    successRate: 0,
+    avgDelivery: 0,
+  });
+  const [patrolMissions, setPatrolMissions] = useState<PatrolMission[]>([]);
+
   const refreshStatus = useCallback(async () => {
     try {
       setErrorText("");
@@ -497,6 +522,32 @@ export default function AnalyticsPage() {
         setObstacleEvents(Number.isFinite(nextObstacleEvents) ? nextObstacleEvents : null);
       } catch {
         setObstacleEvents(null);
+      }
+
+      try {
+        const histResp = await RobotAPI.patrolHistory() as any;
+        const missions: PatrolMission[] = histResp?.history ?? [];
+        setPatrolMissions(missions);
+
+        const attempted = missions.length;
+        const completed = missions.filter(m => m.status === "completed").length;
+        const failed = missions.filter(m => m.status === "failed").length;
+        const successRate = attempted > 0
+          ? Math.round(completed / attempted * 100) : 0;
+
+        // avg delivery time
+        const times = missions
+          .filter(m => m.status === "completed")
+          .flatMap(m => (m.results ?? [])
+            .map(r => r.reach_time_sec)
+            .filter((t): t is number => t != null && t > 0));
+        const avgDelivery = times.length > 0
+          ? Math.round(times.reduce((a, b) => a + b, 0) / times.length) : 0;
+
+        setMissionStats({ attempted, completed, failed, successRate, avgDelivery });
+      } catch (err) {
+        // giữ nguyên state cũ nếu API lỗi
+        console.error("Failed to fetch patrol history:", err);
       }
 
       const battery = clamp(getNumber(nextStatus?.battery, 0), 0, 100);
@@ -629,9 +680,8 @@ export default function AnalyticsPage() {
             <DataCard
               label="Battery"
               value={`${battery}%`}
-              sub={`~${status?.remaining_minutes ?? "?"} min · ${
-                status?.voltage != null ? `${status.voltage.toFixed(1)}V` : "N/A"
-              }`}
+              sub={`~${status?.remaining_minutes ?? "?"} min · ${status?.voltage != null ? `${status.voltage.toFixed(1)}V` : "N/A"
+                }`}
             />
             <DataCard
               label="IMU posture"
@@ -662,13 +712,13 @@ export default function AnalyticsPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
             <DataCard
               label="Mission success rate"
-              value={`${status?.mission_success_rate || 87}%`}
-              trend="↑ 5% so với hôm qua"
+              value={missionStats.attempted > 0 ? `${missionStats.successRate}%` : "N/A"}
+              trend={undefined}
             />
             <DataCard
               label="Avg delivery time"
-              value={`${status?.avg_delivery_time || 43}s`}
-              trend="↓ 8s cải thiện"
+              value={missionStats.avgDelivery > 0 ? `${missionStats.avgDelivery}s` : "N/A"}
+              trend={undefined}
               trendColor="text-red-400"
             />
             <DataCard
@@ -733,10 +783,10 @@ export default function AnalyticsPage() {
 
           <div className={`transition-all duration-300 ease-in-out overflow-hidden ${isExpanded ? "max-h-[200px] opacity-100" : "max-h-0 opacity-0"}`}>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-8 px-4 py-6 bg-[#1a1a1a] rounded-lg border border-[#2d2d2d]">
-              <MiniMetric label="Uplink" value={`${(networkSummary.uplink || 142).toFixed(0)} kbps`} color="text-white font-bold" />
-              <MiniMetric label="Downlink" value={`${(networkSummary.downlink || 380).toFixed(0)} kbps`} color="text-white font-bold" />
-              <MiniMetric label="Latency" value={`${(networkSummary.latency || 28).toFixed(0)} ms`} color="text-white font-bold" />
-              <MiniMetric label="Packet loss" value={`${(networkSummary.packetLoss || 0.1).toFixed(1)}%`} color={networkSummary.packetLoss > 1 ? "text-red-400" : "text-[#4ade80] font-bold"} />
+              <MiniMetric label="Uplink" value={networkSummary.uplink > 0 ? `${networkSummary.uplink.toFixed(0)} kbps` : "N/A"} color="text-white font-bold" />
+              <MiniMetric label="Downlink" value={networkSummary.downlink > 0 ? `${networkSummary.downlink.toFixed(0)} kbps` : "N/A"} color="text-white font-bold" />
+              <MiniMetric label="Latency" value={networkSummary.latency > 0 ? `${networkSummary.latency.toFixed(0)} ms` : "N/A"} color="text-white font-bold" />
+              <MiniMetric label="Packet loss" value={networkSummary.packetLoss >= 0 && hasNetworkData ? `${networkSummary.packetLoss.toFixed(1)}%` : "N/A"} color={networkSummary.packetLoss > 1 ? "text-red-400" : "text-[#4ade80] font-bold"} />
             </div>
           </div>
         </section>
