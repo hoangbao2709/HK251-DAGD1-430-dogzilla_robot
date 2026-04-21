@@ -577,6 +577,10 @@ class ROSClient:
         url = f"{self._build_slam_base_url()}/state"
         return self._get_json_by_url(url)
 
+    def get_slam_status(self) -> Dict[str, Any]:
+        url = f"{self._build_slam_base_url()}/slam_status"
+        return self._get_json_by_url(url)
+
     def get_evaluation_metrics(
         self,
         *,

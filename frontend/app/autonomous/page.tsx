@@ -124,7 +124,7 @@ export default function AutonomousControlPage() {
     const [commandError, setCommandError] = useState("");
     const [isListening, setIsListening] = useState(false);
     const [sidebarOpen, setSidebarOpen] = useState(true);
-    const [mapViewMode, setMapViewMode] = useState<MapViewMode>("lidar");
+    const [mapViewMode, setMapViewMode] = useState<MapViewMode>("slam");
     const [lidarBusy, setLidarBusy] = useState(false);
     const [lidarEnabled, setLidarEnabled] = useState(false);
     const [lidarStatusReady, setLidarStatusReady] = useState(false);
@@ -133,8 +133,6 @@ export default function AutonomousControlPage() {
 
     const recognitionRef = useRef<any>(null);
     const lastLidarRunningRef = useRef(false);
-    const lidarPollInFlightRef = useRef(false);
-    const lidarFailureCountRef = useRef(0);
 
     useEffect(() => {
         setThemeMounted(true);
@@ -245,7 +243,6 @@ export default function AutonomousControlPage() {
                 setLidarBusy(true);
                 setLidarCommandError("");
                 await RobotAPI.lidar(nextEnabled ? "start" : "stop");
-                lidarFailureCountRef.current = 0;
                 setLidarEnabled(nextEnabled);
                 setLidarStatusReady(true);
 
@@ -495,6 +492,24 @@ export default function AutonomousControlPage() {
     }, [drawSlamOverlay, mapModalOpen]);
 
     useEffect(() => {
+        if (!connected) {
+            setLidarEnabled(false);
+            setLidarStatusReady(true);
+            return;
+        }
+
+        const isRunning = Boolean(
+            controlStatus?.lidar_running ?? controlStatus?.lidar?.running ?? false
+        );
+        setLidarEnabled(isRunning);
+        setLidarStatusReady(true);
+
+        if (!isRunning) {
+            setSlamState(null);
+        }
+    }, [connected, controlStatus]);
+
+    useEffect(() => {
         const isRunning = Boolean(
             controlStatus?.lidar_running ?? controlStatus?.lidar?.running ?? false
         );
@@ -599,84 +614,9 @@ export default function AutonomousControlPage() {
             : slamState?.status?.slam_ok === false
               ? "SLAM is offline"
               : "Waiting for navigation data";
-    const lidarUrl = useMemo(() => {
-        try {
-            const url = new URL(robotAddr.trim() || DEFAULT_DOG_SERVER);
-            const host = url.hostname;
-            const port = url.port;
-
-            if (port === "9000" || port === "") {
-                return `${url.protocol}//${host}:8080`;
-            }
-
-            if (port === "8080") {
-                return url.origin.replace(/\/$/, "");
-            }
-
-            if (port === "9002") {
-                return `${url.protocol}//${host}:9002/lidar/`;
-            }
-
-            return `${url.origin.replace(/\/$/, "")}/lidar/`;
-        } catch {
-            return "";
-        }
-    }, [robotAddr]);
-
     const lidarFrameUrl = useMemo(() => {
-        if (!lidarUrl) return "";
-        const separator = lidarUrl.includes("?") ? "&" : "?";
-        return `${lidarUrl}${separator}frame=${lidarFrameNonce}`;
-    }, [lidarFrameNonce, lidarUrl]);
-
-    useEffect(() => {
-        if (!connected || !lidarUrl) {
-            setLidarEnabled(false);
-            setLidarStatusReady(true);
-            return;
-        }
-
-        let stop = false;
-
-        const pingLidar = async () => {
-            if (lidarPollInFlightRef.current) return;
-            lidarPollInFlightRef.current = true;
-
-            try {
-                const res = await fetch(lidarUrl, { cache: "no-store" });
-                if (stop) return;
-
-                if (res.ok) {
-                    lidarFailureCountRef.current = 0;
-                    setLidarEnabled(true);
-                    setLidarStatusReady(true);
-                    setLidarCommandError("");
-                } else {
-                    throw new Error(`LiDAR HTTP ${res.status}`);
-                }
-            } catch {
-                if (stop) return;
-
-                lidarFailureCountRef.current += 1;
-                setLidarStatusReady(true);
-
-                if (lidarFailureCountRef.current >= 2) {
-                    setLidarEnabled(false);
-                }
-            } finally {
-                lidarPollInFlightRef.current = false;
-            }
-        };
-
-        pingLidar();
-        const timer = setInterval(pingLidar, 2500);
-
-        return () => {
-            stop = true;
-            clearInterval(timer);
-            lidarPollInFlightRef.current = false;
-        };
-    }, [connected, lidarUrl]);
+        return RobotAPI.slamMapUrl(lidarFrameNonce || mapReloadKey);
+    }, [lidarFrameNonce, mapReloadKey]);
 
     const startListening = () => {
         const SpeechRecognition =
