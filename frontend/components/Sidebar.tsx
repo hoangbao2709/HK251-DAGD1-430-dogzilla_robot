@@ -98,8 +98,7 @@ export default function Sidebar() {
         `}
       >
         {!isMobile && (
-          <button
-            onClick={() => setCollapsed((prev) => !prev)}
+          <button onClick={() => setCollapsed((prev) => !prev)}
             className="
               absolute -right-4 top-8
               w-9 h-9 sm:w-10 sm:h-10
@@ -189,7 +188,7 @@ export default function Sidebar() {
         {!isLoggedIn && (
           <button
             onClick={goLogin}
-            className={`
+            className={`cursor-pointer 
               flex items-center gap-3 text-xs sm:text-sm
               px-3 py-2 w-full rounded-xl
               bg-gradient-to-r from-[#FD749B] via-[#8c63ff] to-[#00b8ff]
@@ -206,7 +205,7 @@ export default function Sidebar() {
         {isLoggedIn && (
           <button
             onClick={logout}
-            className={`
+            className={`cursor-pointer 
               flex items-center gap-3 text-xs sm:text-sm
               text-[var(--foreground)]/70 hover:text-[var(--foreground)]
               hover:bg-red-500/10

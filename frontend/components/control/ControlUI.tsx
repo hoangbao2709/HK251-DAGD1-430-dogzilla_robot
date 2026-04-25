@@ -148,7 +148,7 @@ export function Btn({
   }
 
   return (
-    <button onClick={onClick} className={`${base} ${styles} ${className}`}>
+    <button onClick={onClick} className={`cursor-pointer ${base} ${styles} ${className}`}>
       {label}
     </button>
   );

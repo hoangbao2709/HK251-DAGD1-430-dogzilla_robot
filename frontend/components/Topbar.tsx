@@ -186,13 +186,12 @@ export default function Topbar() {
             </div>
             <div className="max-h-72 overflow-y-auto">
               {filteredItems.map((item) => (
-                <button
-                  key={`${item.label}-${item.href}`}
+                <button key={`${item.label}-${item.href}`}
                   onMouseDown={(e) => {
                     e.preventDefault();
                     handleNavigate(item.href);
                   }}
-                  className="flex w-full items-start gap-3 px-4 py-3 text-left transition hover:bg-[var(--surface-2)]"
+                  className="cursor-pointer flex w-full items-start gap-3 px-4 py-3 text-left transition hover:bg-[var(--surface-2)]"
                 >
                   <div className="mt-0.5 h-2.5 w-2.5 shrink-0 rounded-full bg-cyan-400" />
                   <div className="min-w-0">

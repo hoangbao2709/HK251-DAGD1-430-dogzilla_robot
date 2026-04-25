@@ -61,7 +61,7 @@ export default function ManualControlPage() {
       <div className="relative min-h-screen w-full bg-[radial-gradient(circle_at_top_left,rgba(253,116,155,0.12),transparent_28%),radial-gradient(circle_at_top_right,rgba(0,184,255,0.10),transparent_24%),var(--background)] text-[var(--foreground)]">
         <button
           onClick={goToConnection}
-          className="
+          className="cursor-pointer 
             fixed left-3 top-3 z-50
             flex items-center gap-1
             px-3 py-1.5 rounded-full

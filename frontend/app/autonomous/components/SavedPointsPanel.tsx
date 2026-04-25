@@ -58,21 +58,21 @@ export function SavedPointsPanel({
                     <button
                         onClick={onCreatePoint}
                         disabled={pointActionLoading}
-                        className="rounded-full bg-[#10b981] px-4 py-2 text-sm font-semibold text-white shadow-[0_10px_20px_rgba(11,183,111,0.22)] transition hover:bg-[#0ea56f] disabled:opacity-50"
+                        className="cursor-pointer rounded-full bg-[#10b981] px-4 py-2 text-sm font-semibold text-white shadow-[0_10px_20px_rgba(11,183,111,0.22)] transition hover:bg-[#0ea56f] disabled:opacity-50"
                     >
                         Save point
                     </button>
                     <button
                         onClick={onDeleteLast}
                         disabled={pointActionLoading || pointNames.length === 0}
-                        className="rounded-full bg-[#ff5574] px-4 py-2 text-sm font-semibold text-white shadow-[0_10px_20px_rgba(255,59,87,0.18)] transition hover:bg-[#f43f5e] disabled:opacity-50"
+                        className="cursor-pointer rounded-full bg-[#ff5574] px-4 py-2 text-sm font-semibold text-white shadow-[0_10px_20px_rgba(255,59,87,0.18)] transition hover:bg-[#f43f5e] disabled:opacity-50"
                     >
                         Delete last
                     </button>
                     <button
                         onClick={onClearAll}
                         disabled={pointActionLoading || pointNames.length === 0}
-                        className="rounded-full bg-[#f6c94c] px-4 py-2 text-sm font-semibold text-[#4a3200] shadow-[0_10px_20px_rgba(255,191,31,0.16)] transition hover:bg-[#eab308] disabled:opacity-50"
+                        className="cursor-pointer rounded-full bg-[#f6c94c] px-4 py-2 text-sm font-semibold text-[#4a3200] shadow-[0_10px_20px_rgba(255,191,31,0.16)] transition hover:bg-[#eab308] disabled:opacity-50"
                     >
                         Clear all
                     </button>
@@ -121,17 +121,15 @@ export function SavedPointsPanel({
                                     </div>
 
                                     <div className="flex gap-2">
-                                        <button
-                                            onClick={() => onGoToPoint(name)}
+                                        <button onClick={() => onGoToPoint(name)}
                                             disabled={pointActionLoading}
-                                            className={savedButtonClass}
+                                            className={`cursor-pointer ${savedButtonClass}`}
                                         >
                                             Go to
                                         </button>
-                                        <button
-                                            onClick={() => onDeletePoint(name)}
+                                        <button onClick={() => onDeletePoint(name)}
                                             disabled={pointActionLoading}
-                                            className="flex-1 rounded-full bg-[#ff5574] px-3 py-2 text-xs font-semibold text-white shadow-[0_8px_18px_rgba(255,55,88,0.16)] transition hover:bg-[#f43f5e] disabled:opacity-50"
+                                            className="cursor-pointer flex-1 rounded-full bg-[#ff5574] px-3 py-2 text-xs font-semibold text-white shadow-[0_8px_18px_rgba(255,55,88,0.16)] transition hover:bg-[#f43f5e] disabled:opacity-50"
                                         >
                                             Delete
                                         </button>

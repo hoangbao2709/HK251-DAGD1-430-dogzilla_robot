@@ -122,9 +122,8 @@ export default function ConnectionCard({
       </div>
 
       <div className="flex flex-col items-end gap-2">
-        <button
-          onClick={() => onConnect?.(device)}
-          className={`w-24 rounded-xl px-4 py-2 text-center text-sm transition ${
+        <button onClick={() => onConnect?.(device)}
+          className={`cursor-pointer w-24 rounded-xl px-4 py-2 text-center text-sm transition ${
             isDark
               ? "bg-[#fd749b] text-white hover:bg-[#f05b86]"
               : "bg-[#7c4dff] text-white hover:bg-[#693be6]"
@@ -134,9 +133,8 @@ export default function ConnectionCard({
         </button>
 
         {onDelete && (
-          <button
-            onClick={() => onDelete(device)}
-            className={`w-24 rounded-xl px-4 py-1 text-center text-xs transition ${
+          <button onClick={() => onDelete(device)}
+            className={`cursor-pointer w-24 rounded-xl px-4 py-1 text-center text-xs transition ${
               isDark
                 ? "bg-rose-500/15 text-rose-200 hover:bg-rose-500/25"
                 : "bg-rose-500/10 text-rose-700 hover:bg-rose-500/20"

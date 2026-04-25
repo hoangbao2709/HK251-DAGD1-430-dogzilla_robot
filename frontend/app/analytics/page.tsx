@@ -688,18 +688,17 @@ export default function AnalyticsPage() {
               {isPaused ? "Paused" : "Live • auto-refresh 5s"}
             </span>
           </div>
-          <button
-            onClick={() => setIsPaused(!isPaused)}
-            className="flex items-center gap-2 bg-[#1a1a1a] border border-[#2d2d2d] hover:bg-[#252525] transition-colors rounded-lg px-4 py-2 text-sm font-bold"
+          <button onClick={() => setIsPaused(!isPaused)}
+            className="cursor-pointer flex items-center gap-2 bg-[#1a1a1a] border border-[#2d2d2d] hover:bg-[#252525] transition-colors rounded-lg px-4 py-2 text-sm font-bold"
           >
             {isPaused ? <Play size={14} className="fill-current" /> : <Pause size={14} className="fill-current" />}
             {isPaused ? "Pause" : "Pause"}
           </button>
-          <button className="flex items-center gap-2 bg-[#1a1a1a] border border-[#2d2d2d] hover:bg-[#252525] transition-colors rounded-lg px-4 py-2 text-sm font-bold">
+          <button className="cursor-pointer flex items-center gap-2 bg-[#1a1a1a] border border-[#2d2d2d] hover:bg-[#252525] transition-colors rounded-lg px-4 py-2 text-sm font-bold">
             <Download size={14} />
             Export session
           </button>
-          <button className="p-2 hover:bg-[#1a1a1a] rounded-lg text-gray-400">
+          <button className="cursor-pointer p-2 hover:bg-[#1a1a1a] rounded-lg text-gray-400">
             <MoreHorizontal size={20} />
           </button>
         </div>
@@ -816,9 +815,8 @@ export default function AnalyticsPage() {
             <h2 className="text-[#888888] text-[10px] font-bold uppercase tracking-[0.2em]">
               Zone 4 — Network (Collapsed by default)
             </h2>
-            <button
-              onClick={() => setIsExpanded(!isExpanded)}
-              className="flex items-center gap-2 bg-[#1a1a1a] border border-[#2d2d2d] rounded-lg px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider hover:bg-[#252525] transition-colors"
+            <button onClick={() => setIsExpanded(!isExpanded)}
+              className="cursor-pointer flex items-center gap-2 bg-[#1a1a1a] border border-[#2d2d2d] rounded-lg px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider hover:bg-[#252525] transition-colors"
             >
               <Expand size={12} />
               {isExpanded ? "Collapse" : "Expand"}

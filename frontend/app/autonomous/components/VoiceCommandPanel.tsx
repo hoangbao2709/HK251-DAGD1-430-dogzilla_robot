@@ -83,12 +83,12 @@ export function VoiceCommandPanel({
                     <div className={labelClass}>Controls</div>
                     <div className="mt-3 grid gap-2">
                         {!isListening ? (
-                            <button onClick={onStartListening} className={secondaryButtonClass}>
+                            <button onClick={onStartListening} className={`cursor-pointer ${secondaryButtonClass}`}>
                                 <Mic size={16} />
                                 Start mic
                             </button>
                         ) : (
-                            <button onClick={onStopListening} className={secondaryButtonClass}>
+                            <button onClick={onStopListening} className={`cursor-pointer ${secondaryButtonClass}`}>
                                 <Square size={16} />
                                 Stop mic
                             </button>
@@ -96,7 +96,7 @@ export function VoiceCommandPanel({
                         <button
                             onClick={onSendVoiceCommand}
                             disabled={isSendingCommand}
-                            className={primaryButtonClass}
+                            className={`cursor-pointer ${primaryButtonClass}`}
                         >
                             <Send size={16} />
                             {isSendingCommand ? "Sending..." : "Send now"}
