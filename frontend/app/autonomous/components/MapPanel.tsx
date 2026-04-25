@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type RefObject } from "react";
+import { useEffect, useState, type RefObject } from "react";
 import { Expand, X } from "lucide-react";
 import type { MapViewMode } from "../types";
 import { SectionLabel } from "./Shared";
@@ -112,6 +112,8 @@ export function MapPanel({
     drawSlamOverlay,
 }: MapPanelProps) {
     const [controlsOpen, setControlsOpen] = useState(true);
+    const [lidarFrameLoaded, setLidarFrameLoaded] = useState(false);
+    const [lidarFrameError, setLidarFrameError] = useState(false);
     const lidarToggleDisabled = lidarBusy || !lidarStatusReady;
     const lidarToggleLabel = !lidarStatusReady
         ? "Checking..."
@@ -126,6 +128,19 @@ export function MapPanel({
         transform: `rotate(${slamDisplayAngle}deg)`,
         transformOrigin: "center center" as const,
     };
+    const showLidarFrame = mapViewMode === "lidar" && lidarEnabled && Boolean(lidarFrameUrl);
+    const lidarPlaceholderText = !lidarFrameUrl
+        ? "LiDAR URL unavailable"
+        : lidarFrameError
+          ? "Cannot load LiDAR stream"
+          : lidarEnabled
+            ? "Waiting for LiDAR stream..."
+            : "LiDAR is currently off";
+
+    useEffect(() => {
+        setLidarFrameLoaded(false);
+        setLidarFrameError(false);
+    }, [lidarEnabled, lidarFrameUrl, mapViewMode]);
 
     return (
         <>
@@ -206,18 +221,36 @@ export function MapPanel({
                         ) : null}
 
                         {mapViewMode === "lidar" ? (
-                            lidarFrameUrl ? (
-                                <img
-                                    key={lidarFrameUrl}
-                                    src={lidarFrameUrl}
-                                    alt="LiDAR map"
-                                    className="absolute inset-0 h-full w-full object-contain bg-[var(--surface-elev)]"
-                                />
-                            ) : (
-                                <div className="absolute inset-0 flex items-center justify-center bg-[var(--surface-elev)] text-xs text-[var(--muted)]">
-                                    LiDAR URL unavailable
+                            <>
+                                {showLidarFrame ? (
+                                    <iframe
+                                        key={lidarFrameUrl}
+                                        src={lidarFrameUrl}
+                                        title="LiDAR map"
+                                        className={`absolute inset-0 h-full w-full border-0 bg-[var(--surface-elev)] transition-opacity duration-300 ${
+                                            lidarFrameLoaded ? "opacity-100" : "opacity-0"
+                                        }`}
+                                        onLoad={() => {
+                                            setLidarFrameLoaded(true);
+                                            setLidarFrameError(false);
+                                        }}
+                                        onError={() => {
+                                            setLidarFrameLoaded(false);
+                                            setLidarFrameError(true);
+                                        }}
+                                    />
+                                ) : null}
+
+                                <div
+                                    className={`absolute inset-0 flex items-center justify-center bg-[var(--surface-elev)] text-xs text-[var(--muted)] transition-opacity duration-300 ${
+                                        showLidarFrame && lidarFrameLoaded && !lidarFrameError
+                                            ? "pointer-events-none opacity-0"
+                                            : "opacity-100"
+                                    }`}
+                                >
+                                    {lidarPlaceholderText}
                                 </div>
-                            )
+                            </>
                         ) : (
                             <div className="absolute inset-0" style={rotatedStyle}>
                                 <img
@@ -287,18 +320,38 @@ export function MapPanel({
                                 ) : null}
 
                                 {mapViewMode === "lidar" ? (
-                                    lidarFrameUrl ? (
-                                        <img
-                                            key={`modal-${lidarFrameUrl}`}
-                                            src={lidarFrameUrl}
-                                            alt="LiDAR map expanded"
-                                            className="absolute inset-0 h-full w-full object-contain bg-[var(--surface-elev)]"
-                                        />
-                                    ) : (
-                                        <div className="absolute inset-0 flex items-center justify-center text-sm text-[var(--muted)]">
-                                            LiDAR URL unavailable
+                                    <>
+                                        {showLidarFrame ? (
+                                            <iframe
+                                                key={`modal-${lidarFrameUrl}`}
+                                                src={lidarFrameUrl}
+                                                title="LiDAR map expanded"
+                                                className={`absolute inset-0 h-full w-full border-0 bg-[var(--surface-elev)] transition-opacity duration-300 ${
+                                                    lidarFrameLoaded ? "opacity-100" : "opacity-0"
+                                                }`}
+                                                onLoad={() => {
+                                                    setLidarFrameLoaded(true);
+                                                    setLidarFrameError(false);
+                                                }}
+                                                onError={() => {
+                                                    setLidarFrameLoaded(false);
+                                                    setLidarFrameError(true);
+                                                }}
+                                            />
+                                        ) : null}
+
+                                        <div
+                                            className={`absolute inset-0 flex items-center justify-center text-sm text-[var(--muted)] transition-opacity duration-300 ${
+                                                showLidarFrame &&
+                                                lidarFrameLoaded &&
+                                                !lidarFrameError
+                                                    ? "pointer-events-none opacity-0"
+                                                    : "opacity-100"
+                                            }`}
+                                        >
+                                            {lidarPlaceholderText}
                                         </div>
-                                    )
+                                    </>
                                 ) : (
                                     <div className="absolute inset-0" style={rotatedStyle}>
                                         <img
