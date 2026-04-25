@@ -76,7 +76,54 @@ def mission_to_dict(mission: Any) -> dict[str, Any]:
             for r in mission.results
         ],
     }
-        
+
+class QRMetricView(APIView):
+    def get(self, request, robot_id):
+        try:
+            robot = get_or_create_robot(robot_id)
+            today = now().date()
+
+            attempts = ActionEvent.objects.filter(
+                robot=robot,
+                event="qr_scan_metric",
+                status="Attempt",
+                timestamp__date=today,
+            ).count()
+
+            successes = ActionEvent.objects.filter(
+                robot=robot,
+                event="qr_scan_metric",
+                status="Success",
+                timestamp__date=today,
+            ).count()
+
+            success_rate = round((successes / attempts * 100), 1) if attempts > 0 else 0.0
+
+            return Response(
+                {
+                    "success": True,
+                    "robot_id": robot_id,
+                    "qr_scan": {
+                        "attempts": attempts,
+                        "successes": successes,
+                        "success_rate_pct": success_rate,
+                        "total_today": attempts,
+                    },
+                    "timestamp": now().isoformat(),
+                },
+                status=status.HTTP_200_OK,
+            )
+        except Exception as e:
+            logger.exception("QRMetricView error")
+            return Response(
+                {
+                    "success": False,
+                    "robot_id": robot_id,
+                    "error": str(e),
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
 class CameraProcessView(APIView):
     def get(self, request, robot_id):
         client = ROSClient(robot_id)
@@ -1220,7 +1267,7 @@ class PatrolStartView(APIView):
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
-            
+
 class PatrolStopView(APIView):
     def post(self, request, robot_id):
         patrol_manager.stop(robot_id)

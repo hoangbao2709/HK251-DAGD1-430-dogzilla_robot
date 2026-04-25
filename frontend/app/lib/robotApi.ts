@@ -147,6 +147,9 @@ export const RobotAPI = {
   qrState: () =>
     api<any>(`${CONTROL_PREFIX}/${robotId}/qr/state/`),
 
+  qrMetrics: () =>
+    api<any>(`${CONTROL_PREFIX}/${robotId}/qr-metrics/`),
+
   qrPosition: () =>
     api<any>(`${CONTROL_PREFIX}/${robotId}/qr/position/`),
 

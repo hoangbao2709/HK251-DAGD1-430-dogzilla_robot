@@ -485,10 +485,10 @@ function EfficiencyChart({ data }: { data: EffPoint[] }) {
         </div>
       ) : (
         <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-[90px]"
-             preserveAspectRatio="none">
+          preserveAspectRatio="none">
           <path d={d1} fill="none" stroke="#a78bfa" strokeWidth="2.5" />
           <path d={d2} fill="none" stroke="#f59e0b" strokeWidth="1.5"
-                strokeDasharray="5 3" />
+            strokeDasharray="5 3" />
         </svg>
       )}
     </div>
@@ -519,6 +519,12 @@ export default function AnalyticsPage() {
     avgDelivery: 0,
   });
   const [patrolMissions, setPatrolMissions] = useState<PatrolMission[]>([]);
+
+  const [qrMetrics, setQrMetrics] = useState({
+    attempts: 0,
+    successes: 0,
+    successRate: 0,
+  });
 
   const refreshStatus = useCallback(async () => {
     try {
@@ -561,6 +567,18 @@ export default function AnalyticsPage() {
         setObstacleEvents(Number.isFinite(nextObstacleEvents) ? nextObstacleEvents : null);
       } catch {
         setObstacleEvents(null);
+      }
+
+      try {
+        const qrResp = await RobotAPI.qrMetrics();
+        const qrData = qrResp?.qr_scan || {};
+        setQrMetrics({
+          attempts: Number(qrData.attempts) || 0,
+          successes: Number(qrData.successes) || 0,
+          successRate: Number(qrData.success_rate_pct) || 0,
+        });
+      } catch (err) {
+        console.warn("Failed to fetch QR metrics:", err);
       }
 
       try {
@@ -785,10 +803,33 @@ export default function AnalyticsPage() {
               </div>
               <div className="text-[#888888] text-xs mt-1">{missionStats.failed} failed • 0 aborted</div>
             </div>
-            <div className="bg-[#1a1a1a] border border-[#2d2d2d] rounded-lg p-4">
+            {/* <div className="bg-[#1a1a1a] border border-[#2d2d2d] rounded-lg p-4">
               <span className="text-[#888888] text-[10px] font-bold uppercase tracking-wider">QR scan success</span>
               <div className="text-2xl font-bold mt-1">{status?.qr_scan_success_rate || 94}%</div>
               <div className="text-[#888888] text-xs mt-1">17/18 scans • avg 320ms</div>
+            </div> */}
+            <div className="bg-[#1a1a1a] border border-[#2d2d2d] rounded-lg p-4">
+              <span className="text-[#888888] text-[10px] font-bold uppercase tracking-wider">QR scan success rate</span>
+              <div className="flex items-baseline gap-3 mt-2">
+                <span className="text-3xl font-bold text-[#4ade80]">
+                  {qrMetrics.successRate}%
+                </span>
+                <span className="text-[#888888] text-sm">
+                  {qrMetrics.successes} / {qrMetrics.attempts}
+                </span>
+              </div>
+
+              {/* Progress Bar */}
+              <div className="mt-3 h-1.5 bg-[#2d2d2d] rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-emerald-400 to-cyan-400 rounded-full transition-all duration-500"
+                  style={{ width: `${qrMetrics.successRate}%` }}
+                />
+              </div>
+
+              <div className="text-[#888888] text-xs mt-2">
+                Hôm nay • Attempt: {qrMetrics.attempts} • Success: {qrMetrics.successes}
+              </div>
             </div>
             <div className="bg-[#1a1a1a] border border-[#2d2d2d] rounded-lg p-4">
               <span className="text-[#888888] text-[10px] font-bold uppercase tracking-wider">Total distance</span>

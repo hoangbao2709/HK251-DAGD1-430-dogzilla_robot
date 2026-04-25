@@ -8,6 +8,13 @@ from .ros import ROSClient
 from .models import QRItem, DetectionResult
 from .qr_detector import detect_qr_items, PYZBAR_AVAILABLE, PYZBAR_IMPORT_ERROR
 from .overlay import draw_overlay
+
+# Django models cho việc lưu event
+from ..models import ActionEvent
+import logging
+
+logger = logging.getLogger(__name__)
+
 QR_SIZE_M = 0.12
 DEADBAND_DEG = 5.0
 TARGET_PUSH_M = 0.35
@@ -22,6 +29,69 @@ CAMERA_MATRIX = np.array([
 ], dtype=np.float32)
 
 DIST_COEFFS = np.array([0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)
+
+# Trạng thái tracking QR per robot
+qr_tracking_state: dict[str, dict] = {}
+
+
+def save_qr_metric_event(robot_id: str, event_type: str, detail: str = "", payload: dict | None = None):
+    """Lưu sự kiện Attempt hoặc Success vào ActionEvent"""
+    try:
+        ActionEvent.objects.create(
+            robot_id=robot_id,
+            event="qr_scan_metric",
+            status=event_type,  # "Attempt" hoặc "Success"
+            detail=detail,
+            payload=payload or {},
+            severity="Info",
+        )
+    except Exception as e:
+        logger.warning(f"Failed to save qr_scan_metric event for {robot_id}: {e}")
+
+
+def update_qr_tracking_state(robot_id: str, detected_items: list[QRItem]):
+    """Cập nhật trạng thái và ghi Attempt/Success khi phát hiện QR"""
+    global qr_tracking_state
+    if robot_id not in qr_tracking_state:
+        qr_tracking_state[robot_id] = {
+            "current_text": None,
+            "in_view": False,
+            "success_logged": False
+        }
+
+    state = qr_tracking_state[robot_id]
+    current_text = detected_items[0].text.strip() if detected_items else None
+
+    if current_text:  # Đang nhìn thấy QR
+        if not state["in_view"] or state["current_text"] != current_text:
+            # Bắt đầu nhìn thấy QR mới → Attempt
+            state["in_view"] = True
+            state["current_text"] = current_text
+            state["success_logged"] = False
+            save_qr_metric_event(
+                robot_id,
+                "Attempt",
+                detail=f"Bắt đầu thấy QR: {current_text}",
+                payload={"qr_text": current_text}
+            )
+
+        # Success: Giải mã thành công (text hợp lệ)
+        if not state.get("success_logged", False) and current_text:
+            save_qr_metric_event(
+                robot_id,
+                "Success",
+                detail=f"Giải mã thành công QR: {current_text}",
+                payload={"qr_text": current_text}
+            )
+            state["success_logged"] = True
+
+    else:  # Không còn thấy QR
+        if state["in_view"]:
+            state["in_view"] = False
+            state["current_text"] = None
+            state["success_logged"] = False
+
+    qr_tracking_state[robot_id] = state
 
 
 def qr_item_to_dict(item: QRItem) -> Dict[str, Any]:
@@ -108,6 +178,9 @@ def detect_qr_state_once(robot_id: str) -> Dict[str, Any]:
         detect_width=DETECT_WIDTH,
     )
 
+    # === TRACKING QR METRICS ===
+    update_qr_tracking_state(robot_id, result.items)
+
     if not result.ok or not result.items:
         warning = None
         if not PYZBAR_AVAILABLE and PYZBAR_IMPORT_ERROR:
@@ -170,6 +243,9 @@ def generate_qr_video_frames(robot_id: str):
                 min_target_distance_m=MIN_TARGET_DISTANCE_M,
                 detect_width=DETECT_WIDTH,
             )
+
+            # Tracking metrics ngay cả trong video stream
+            update_qr_tracking_state(robot_id, result.items)
 
             vis = draw_overlay(frame, result)
 

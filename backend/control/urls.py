@@ -46,9 +46,13 @@ from .views import (
     PatrolResumeView,
     PatrolStatusView,
     PatrolHistoryView,
+    QRMetricView,   
 )
 
+
+
 urlpatterns = [
+    path("api/robots/<str:robot_id>/qr-metrics/", QRMetricView.as_view(), name="robot-qr-metrics"),
     path("api/robots/", RobotListView.as_view(), name="robots-list"),
     path("api/robots/<str:robot_id>/network/metrics/", NetworkMetricsView.as_view(), name="robot-network-metrics"),
     path("api/robots/<str:robot_id>/evaluation/metrics/", EvaluationMetricsView.as_view(), name="robot-evaluation-metrics"),
@@ -97,7 +101,7 @@ urlpatterns = [
     path("api/robots/<str:robot_id>/delete-point/", DeletePointView.as_view(), name="robot-delete-point"),
     path("api/robots/<str:robot_id>/go-to-point/", GoToPointView.as_view(), name="robot-go-to-point"),
     path("api/robots/<str:robot_id>/go-to-marker/", GoToMarkerView.as_view(), name="robot-go-to-marker"),
-    
+
     path("api/robots/<str:robot_id>/patrol/start/", PatrolStartView.as_view(), name="robot-patrol-start"),
     path("api/robots/<str:robot_id>/patrol/stop/", PatrolStopView.as_view(), name="robot-patrol-stop"),
     path("api/robots/<str:robot_id>/patrol/pause/", PatrolPauseView.as_view(), name="robot-patrol-pause"),
