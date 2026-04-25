@@ -181,7 +181,7 @@ export default function RegisterPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full rounded-xl border border-sky-400/40 bg-gradient-to-r from-sky-500/30 via-indigo-500/30 to-pink-500/30 px-4 py-3 font-semibold hover:from-sky-500/40 hover:via-indigo-500/40 hover:to-pink-500/40 disabled:opacity-60"
+              className="cursor-pointer w-full rounded-xl border border-sky-400/40 bg-gradient-to-r from-sky-500/30 via-indigo-500/30 to-pink-500/30 px-4 py-3 font-semibold hover:from-sky-500/40 hover:via-indigo-500/40 hover:to-pink-500/40 disabled:opacity-60"
             >
               {loading ? "Creating account..." : "Create account"}
             </button>

@@ -136,10 +136,9 @@ export default function LoginPage() {
                   className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 pr-16 text-sm sm:text-base outline-none placeholder:text-white/40 focus:border-indigo-400/50 focus:ring-2 focus:ring-indigo-400/30"
                   autoComplete="current-password"
                 />
-                <button
-                  type="button"
+                <button type="button"
                   onClick={() => setShowPassword((s) => !s)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg px-3 py-1 text-xs bg-white/5 border border-white/10 hover:bg-white/10"
+                  className="cursor-pointer absolute right-2 top-1/2 -translate-y-1/2 rounded-lg px-3 py-1 text-xs bg-white/5 border border-white/10 hover:bg-white/10"
                   aria-label={showPassword ? "Hide password" : "Show password"}
                 >
                   {showPassword ? "Hide" : "Show"}
@@ -172,7 +171,7 @@ export default function LoginPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full rounded-xl border border-fuchsia-400/40 bg-gradient-to-r from-pink-500/30 via-indigo-500/30 to-sky-500/30 px-4 py-3 text-sm sm:text-base font-semibold hover:from-pink-500/40 hover:via-indigo-500/40 hover:to-sky-500/40 disabled:opacity-60"
+                className="cursor-pointer w-full rounded-xl border border-fuchsia-400/40 bg-gradient-to-r from-pink-500/30 via-indigo-500/30 to-sky-500/30 px-4 py-3 text-sm sm:text-base font-semibold hover:from-pink-500/40 hover:via-indigo-500/40 hover:to-sky-500/40 disabled:opacity-60"
               >
                 {loading ? "Signing in..." : "Sign in"}
               </button>
@@ -187,13 +186,13 @@ export default function LoginPage() {
               <div className="grid grid-cols-2 gap-3">
                 <button
                   type="button"
-                  className="rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-xs sm:text-sm hover:bg-white/10"
+                  className="cursor-pointer rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-xs sm:text-sm hover:bg-white/10"
                 >
                   Login with Google
                 </button>
                 <button
                   type="button"
-                  className="rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-xs sm:text-sm hover:bg-white/10"
+                  className="cursor-pointer rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-xs sm:text-sm hover:bg-white/10"
                 >
                   Login with GitHub
                 </button>

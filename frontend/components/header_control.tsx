@@ -200,7 +200,7 @@ export default function HeaderControl({
           </span>
           <button
             onClick={onToggle}
-            className={`relative h-8 w-14 rounded-full border p-1 transition-all duration-300 ${
+            className={`cursor-pointer relative h-8 w-14 rounded-full border p-1 transition-all duration-300 ${
               isFPV
                 ? "border-cyan-300 bg-gradient-to-r from-[#FD749B]/30 via-[#7C4DFF]/25 to-[#00C2FF]/25"
                 : "border-violet-300 bg-gradient-to-r from-[#E8DDFF] to-[#D9F5FF]"
@@ -233,9 +233,8 @@ export default function HeaderControl({
 
           <div className="ml-auto flex items-center gap-2">
             <span className={`text-[11px] ${isDark ? "text-white/55" : "text-[var(--muted-2)]"}`}>View:</span>
-            <button
-              onClick={() => setViewMode("debug")}
-              className={`rounded-lg border px-2 py-1 text-[11px] transition-all ${
+            <button onClick={() => setViewMode("debug")}
+              className={`cursor-pointer rounded-lg border px-2 py-1 text-[11px] transition-all ${
                 viewMode === "debug"
                   ? "border-pink-300 bg-gradient-to-r from-[#FD749B] to-[#7C4DFF] text-white"
                   : isDark
@@ -245,9 +244,8 @@ export default function HeaderControl({
             >
               Debug
             </button>
-            <button
-              onClick={() => setViewMode("info")}
-              className={`rounded-lg border px-2 py-1 text-[11px] transition-all ${
+            <button onClick={() => setViewMode("info")}
+              className={`cursor-pointer rounded-lg border px-2 py-1 text-[11px] transition-all ${
                 viewMode === "info"
                   ? "border-sky-300 bg-gradient-to-r from-[#00C2FF] to-[#7C4DFF] text-white"
                   : isDark
@@ -317,9 +315,8 @@ export default function HeaderControl({
           )}
         </div>
 
-        <button
-          onClick={() => setCollapsed((v) => !v)}
-          className="absolute -bottom-3 right-6 flex h-7 w-7 items-center justify-center rounded-full border border-[var(--border)] bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(242,236,255,0.96))] text-[var(--foreground)] shadow-md transition-all hover:bg-[var(--surface)] dark:border-white/10 dark:bg-[rgba(255,255,255,0.06)] dark:text-white"
+        <button onClick={() => setCollapsed((v) => !v)}
+          className="cursor-pointer absolute -bottom-3 right-6 flex h-7 w-7 items-center justify-center rounded-full border border-[var(--border)] bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(242,236,255,0.96))] text-[var(--foreground)] shadow-md transition-all hover:bg-[var(--surface)] dark:border-white/10 dark:bg-[rgba(255,255,255,0.06)] dark:text-white"
           aria-label="Toggle details"
         >
           <ChevronDown

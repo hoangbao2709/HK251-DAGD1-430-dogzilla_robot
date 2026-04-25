@@ -546,9 +546,8 @@ export default function RemoteView({
             <div className="absolute inset-y-0 right-0 w-72 max-w-[80%] bg-[var(--surface)] border-l border-[var(--border)] p-4 flex flex-col gap-4 shadow-2xl">
               <div className="flex items-center justify-between mb-1">
                 <div className="text-sm font-semibold">Controls</div>
-                <button
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="w-8 h-8 flex items-center justify-center rounded-full bg-[var(--surface-2)] text-[var(--foreground)] text-lg leading-none"
+                <button onClick={() => setMobileMenuOpen(false)}
+                  className="cursor-pointer w-8 h-8 flex items-center justify-center rounded-full bg-[var(--surface-2)] text-[var(--foreground)] text-lg leading-none"
                 >
                   ×
                 </button>
@@ -662,9 +661,8 @@ export default function RemoteView({
                 </span>
               )}
             </div>
-            <button
-              onClick={() => setMobileMenuOpen(true)}
-            className="w-9 h-9 rounded-full border border-[var(--border)] bg-[var(--surface)] flex items-center justify-center text-lg leading-none text-[var(--foreground)] active:scale-95"
+            <button onClick={() => setMobileMenuOpen(true)}
+            className="cursor-pointer w-9 h-9 rounded-full border border-[var(--border)] bg-[var(--surface)] flex items-center justify-center text-lg leading-none text-[var(--foreground)] active:scale-95"
               aria-label="Open control menu"
             >
               ☰
@@ -704,7 +702,7 @@ export default function RemoteView({
                   <div className="flex items-center gap-3">
                     <button
                       onClick={turnLeft}
-                      className={`w-10 h-10 rounded-full bg-[var(--surface-2)] text-[var(--foreground)] text-lg flex items-center justify-center border border-[var(--border)] ${
+                      className={`cursor-pointer w-10 h-10 rounded-full bg-[var(--surface-2)] text-[var(--foreground)] text-lg flex items-center justify-center border border-[var(--border)] ${
                         lefting ? "bg-cyan-600/70 text-white" : "hover:bg-[var(--surface)]"
                       }`}
                     >
@@ -713,14 +711,14 @@ export default function RemoteView({
 
                     <button
                       onClick={stopMove}
-                      className="w-12 h-12 rounded-full bg-rose-500 text-white text-xs font-semibold flex items-center justify-center shadow-lg active:scale-95"
+                      className="cursor-pointer w-12 h-12 rounded-full bg-rose-500 text-white text-xs font-semibold flex items-center justify-center shadow-lg active:scale-95"
                     >
                       Stop
                     </button>
 
                     <button
                       onClick={turnRight}
-                      className={`w-10 h-10 rounded-full bg-[var(--surface-2)] text-[var(--foreground)] text-lg flex items-center justify-center border border-[var(--border)] ${
+                      className={`cursor-pointer w-10 h-10 rounded-full bg-[var(--surface-2)] text-[var(--foreground)] text-lg flex items-center justify-center border border-[var(--border)] ${
                         righting ? "bg-cyan-600/70 text-white" : "hover:bg-[var(--surface)]"
                       }`}
                     >

@@ -14,9 +14,8 @@ export default function ThemeToggle() {
   const isDark = resolvedTheme === "dark";
 
   return (
-    <button
-      onClick={() => setTheme(isDark ? "light" : "dark")}
-      className="inline-flex items-center gap-2 rounded-xl border border-[var(--border)]
+    <button onClick={() => setTheme(isDark ? "light" : "dark")}
+      className="cursor-pointer inline-flex items-center gap-2 rounded-xl border border-[var(--border)]
                  bg-[var(--surface)] px-3 py-2 text-xs font-medium
                  text-[var(--foreground)] transition active:scale-95"
     >
