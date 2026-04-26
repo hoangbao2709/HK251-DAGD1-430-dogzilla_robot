@@ -35,63 +35,42 @@ qr_tracking_state: dict[str, dict] = {}
 
 
 def save_qr_metric_event(robot_id: str, event_type: str, detail: str = "", payload: dict | None = None):
-    """Lưu sự kiện Attempt hoặc Success vào ActionEvent"""
     try:
+        from ..models import ActionEvent, Robot
+        robot, _ = Robot.objects.get_or_create(pk=robot_id)
         ActionEvent.objects.create(
-            robot_id=robot_id,
+            robot=robot,
             event="qr_scan_metric",
-            status=event_type,  # "Attempt" hoặc "Success"
+            status=event_type,
             detail=detail,
             payload=payload or {},
             severity="Info",
         )
+        logger.info(f"[QR METRIC] Saved {event_type} for {robot_id}")
     except Exception as e:
         logger.warning(f"Failed to save qr_scan_metric event for {robot_id}: {e}")
 
 
 def update_qr_tracking_state(robot_id: str, detected_items: list[QRItem]):
-    """Cập nhật trạng thái và ghi Attempt/Success khi phát hiện QR"""
+    """Chỉ cập nhật trạng thái in_view, KHÔNG log Attempt/Success ở đây."""
     global qr_tracking_state
     if robot_id not in qr_tracking_state:
         qr_tracking_state[robot_id] = {
             "current_text": None,
             "in_view": False,
-            "success_logged": False
         }
 
     state = qr_tracking_state[robot_id]
     current_text = detected_items[0].text.strip() if detected_items else None
 
-    if current_text:  # Đang nhìn thấy QR
-        if not state["in_view"] or state["current_text"] != current_text:
-            # Bắt đầu nhìn thấy QR mới → Attempt
-            state["in_view"] = True
-            state["current_text"] = current_text
-            state["success_logged"] = False
-            save_qr_metric_event(
-                robot_id,
-                "Attempt",
-                detail=f"Bắt đầu thấy QR: {current_text}",
-                payload={"qr_text": current_text}
-            )
-
-        # Success: Giải mã thành công (text hợp lệ)
-        if not state.get("success_logged", False) and current_text:
-            save_qr_metric_event(
-                robot_id,
-                "Success",
-                detail=f"Giải mã thành công QR: {current_text}",
-                payload={"qr_text": current_text}
-            )
-            state["success_logged"] = True
-
-    else:  # Không còn thấy QR
-        if state["in_view"]:
-            state["in_view"] = False
-            state["current_text"] = None
-            state["success_logged"] = False
-
+    state["in_view"] = bool(current_text)
+    state["current_text"] = current_text
     qr_tracking_state[robot_id] = state
+
+
+def get_current_qr_state(robot_id: str) -> dict:
+    """Cho views.py biết QR hiện tại có đang được thấy không."""
+    return qr_tracking_state.get(robot_id, {"in_view": False, "current_text": None})
 
 
 def qr_item_to_dict(item: QRItem) -> Dict[str, Any]:

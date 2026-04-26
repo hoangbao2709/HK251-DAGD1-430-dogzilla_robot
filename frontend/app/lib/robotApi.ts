@@ -150,6 +150,12 @@ export const RobotAPI = {
   qrMetrics: () =>
     api<any>(`${CONTROL_PREFIX}/${robotId}/qr-metrics/`),
 
+  logQRAttempt: (payload: { name: string; success: boolean; reason?: string }) =>
+  api<any>(`${CONTROL_PREFIX}/${robotId}/qr-metrics/`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  }),
+
   qrPosition: () =>
     api<any>(`${CONTROL_PREFIX}/${robotId}/qr/position/`),
 

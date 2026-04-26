@@ -15,7 +15,7 @@ from .services.ros import ROSClient
 from .services.evaluation_metrics import build_evaluation_metrics_payload, build_snapshot_key
 from .line_tracking_backend import LineTrackingServer
 from .services.mcp_voice import AmbiguousCommandError, process_text_command
-from .services.qr_detect import detect_qr_state_once, generate_qr_video_frames
+from .services.qr_detect import detect_qr_state_once, generate_qr_video_frames, get_current_qr_state, save_qr_metric_event
 from .services.patrol_manager import patrol_manager
 from .services.patrol_store import get_current_mission, get_history
 logger = logging.getLogger(__name__)
@@ -123,6 +123,28 @@ class QRMetricView(APIView):
                 },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+    def post(self, request, robot_id):
+        """Frontend gọi để log Attempt/Success"""
+        body = request.data or {}
+        success = bool(body.get("success", False))
+        name = str(body.get("name", "UNKNOWN"))
+        reason = str(body.get("reason", ""))
+
+        save_qr_metric_event(
+            robot_id,
+            "Attempt",
+            detail=f"Save Point '{name}' | {reason}",
+            payload={"point_name": name, "success": success, "reason": reason},
+        )
+        if success:
+            save_qr_metric_event(
+                robot_id,
+                "Success",
+                detail=f"Lưu thành công Point '{name}'",
+                payload={"point_name": name},
+            )
+        return Response({"ok": True}, status=200)
 
 class CameraProcessView(APIView):
     def get(self, request, robot_id):
@@ -978,75 +1000,24 @@ class PointsView(APIView):
 
     def post(self, request, robot_id):
         body = request.data or {}
-
         try:
             name = str(body.get("name", "")).strip()
             x = float(body.get("x"))
             y = float(body.get("y"))
             yaw = float(body.get("yaw", 0.0))
         except Exception as e:
-            return Response(
-                {
-                    "success": False,
-                    "robot_id": robot_id,
-                    "error": f"invalid payload: {e}",
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return Response({"success": False, "error": f"invalid payload: {e}"}, status=400)
 
         if not name:
-            return Response(
-                {
-                    "success": False,
-                    "robot_id": robot_id,
-                    "error": "name is required",
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return Response({"success": False, "error": "name is required"}, status=400)
 
         try:
-            result = ROSClient(robot_id).create_point(
-                name=name,
-                x=x,
-                y=y,
-                yaw=yaw,
-            )
-
-            log_line = build_log(
-                robot_id,
-                "CREATE_POINT",
-                {"name": name, "x": x, "y": y, "yaw": yaw},
-                True,
-                None,
-            )
-
-            return Response(
-                {
-                    "success": True,
-                    "robot_id": robot_id,
-                    "result": result,
-                    "log": log_line,
-                },
-                status=status.HTTP_200_OK,
-            )
+            result = ROSClient(robot_id).create_point(name=name, x=x, y=y, yaw=yaw)
+            log_line = build_log(robot_id, "CREATE_POINT", {"name": name, "x": x, "y": y, "yaw": yaw}, True, None)
+            return Response({"success": True, "robot_id": robot_id, "result": result, "log": log_line}, status=200)
         except Exception as e:
-            log_line = build_log(
-                robot_id,
-                "CREATE_POINT",
-                {"name": name, "x": x, "y": y, "yaw": yaw},
-                False,
-                str(e),
-            )
-
-            return Response(
-                {
-                    "success": False,
-                    "robot_id": robot_id,
-                    "error": str(e),
-                    "log": log_line,
-                },
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+            log_line = build_log(robot_id, "CREATE_POINT", {"name": name, "x": x, "y": y, "yaw": yaw}, False, str(e))
+            return Response({"success": False, "robot_id": robot_id, "error": str(e), "log": log_line}, status=500)
 
 
 class DeletePointView(APIView):

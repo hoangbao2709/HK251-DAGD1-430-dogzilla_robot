@@ -357,7 +357,7 @@ export default function AutonomousControlPage() {
       await fetch(`${slamBaseUrl}/clear_path`);
       setPendingPlacement(null);
       await fetchSlamState();
-    } catch {}
+    } catch { }
   }, [slamBaseUrl, fetchSlamState]);
 
   const resetSlamView = useCallback(() => {
@@ -412,7 +412,7 @@ export default function AutonomousControlPage() {
 
         setPendingPlacement(null);
         await fetchSlamState();
-      } catch {}
+      } catch { }
     },
     [mapMode, slamState, pendingPlacement, navPlacementMode, slamBaseUrl, fetchSlamState]
   );
@@ -628,28 +628,52 @@ export default function AutonomousControlPage() {
 
   const createPointFromObstacle = async () => {
     const obstacle = findNearestObstacleAhead(slamState);
+    const qrText = (qrState?.ok && qrState.items?.length
+      ? qrState.items[0].text
+      : null);
+    const pointName = (qrText || "POINT").trim() || "POINT";
+
+    // CASE 1: Không có obstacle → Attempt thất bại
     if (!obstacle || !slamBaseUrl) {
       window.alert("Chua co obstacle phia truoc de luu.");
+      await RobotAPI.logQRAttempt({
+        name: pointName,
+        success: false,
+        reason: "no_obstacle",
+      }).catch(() => { });
       return;
     }
 
-    const name =
-      (qrState?.ok && qrState.items?.length ? qrState.items[0].text : "POINT").trim() ||
-      "POINT";
-
-    if (savedPoints[name]) {
-      window.alert(`Diem ${name} da ton tai.`);
+    // CASE 2: Point đã tồn tại → không tính Attempt
+    if (savedPoints[pointName]) {
+      window.alert(`Diem ${pointName} da ton tai.`);
       return;
     }
 
     try {
       setPointActionLoading(true);
+
+      // Lưu vào ROS
       await fetch(`${slamBaseUrl}/points`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, x: obstacle.x, y: obstacle.y, yaw: 0.0 }),
+        body: JSON.stringify({ name: pointName, x: obstacle.x, y: obstacle.y, yaw: 0.0 }),
       });
+
+      // CASE 3: Lưu ROS thành công → Attempt + Success
+      await RobotAPI.logQRAttempt({
+        name: pointName,
+        success: true,
+      }).catch(() => { });
+
       await fetchPoints();
+    } catch {
+      // CASE 4: Lưu ROS thất bại → Attempt không thành công
+      await RobotAPI.logQRAttempt({
+        name: pointName,
+        success: false,
+        reason: "ros_error",
+      }).catch(() => { });
     } finally {
       setPointActionLoading(false);
     }
@@ -749,7 +773,7 @@ export default function AutonomousControlPage() {
   const stopListening = () => {
     try {
       recognitionRef.current?.stop?.();
-    } catch {}
+    } catch { }
     setIsListening(false);
   };
 
@@ -784,7 +808,7 @@ export default function AutonomousControlPage() {
     return () => {
       try {
         recognitionRef.current?.stop?.();
-      } catch {}
+      } catch { }
     };
   }, []);
 
