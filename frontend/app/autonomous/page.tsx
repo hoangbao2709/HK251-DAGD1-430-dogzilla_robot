@@ -711,13 +711,32 @@ export default function AutonomousControlPage() {
   };
 
   const goToPoint = async (name: string) => {
-    if (!slamBaseUrl) return;
     try {
       setPointActionLoading(true);
-      await fetch(`${slamBaseUrl}/go_to_point`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
+      await RobotAPI.patrolStart({
+        route_name: `point_${name}`,
+        points: [name],
+        wait_sec_per_point: 0,
+        max_retry_per_point: 1,
+        skip_on_fail: true,
+      });
+    } finally {
+      setPointActionLoading(false);
+    }
+  };
+
+  const startPatrolAll = async () => {
+    const names = Object.keys(savedPoints || {}).sort();
+    if (!names.length) return;
+
+    try {
+      setPointActionLoading(true);
+      await RobotAPI.patrolStart({
+        route_name: "saved_points_route",
+        points: names,
+        wait_sec_per_point: 3,
+        max_retry_per_point: 1,
+        skip_on_fail: true,
       });
     } finally {
       setPointActionLoading(false);
@@ -913,6 +932,7 @@ export default function AutonomousControlPage() {
             savedPoints={savedPoints}
             pointActionLoading={pointActionLoading}
             onCreatePoint={createPointFromObstacle}
+            onStartPatrol={startPatrolAll}
             onDeleteLast={deleteLastPoint}
             onClearAll={clearAllPoints}
             onGoToPoint={goToPoint}

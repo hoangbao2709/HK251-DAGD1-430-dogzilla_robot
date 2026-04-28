@@ -282,4 +282,25 @@ export const RobotAPI = {
 
   patrolHistory: () =>
     api<any>(`${CONTROL_PREFIX}/${robotId}/patrol/history/`),
+
+  patrolStart: (payload: {
+    route_name?: string;
+    points: string[];
+    wait_sec_per_point?: number;
+    max_retry_per_point?: number;
+    skip_on_fail?: boolean;
+  }) =>
+    api<any>(`${CONTROL_PREFIX}/${robotId}/patrol/start/`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  patrolStop: () =>
+    api<any>(`${CONTROL_PREFIX}/${robotId}/patrol/stop/`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    }),
+
+  patrolStatus: () =>
+    api<any>(`${CONTROL_PREFIX}/${robotId}/patrol/status/`),
 };

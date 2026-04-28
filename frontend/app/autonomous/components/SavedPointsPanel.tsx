@@ -9,6 +9,7 @@ type SavedPointsPanelProps = {
     savedPoints: PointsResponse;
     pointActionLoading: boolean;
     onCreatePoint: () => void;
+    onStartPatrol: () => void;
     onDeleteLast: () => void;
     onClearAll: () => void;
     onGoToPoint: (name: string) => void;
@@ -21,6 +22,7 @@ export function SavedPointsPanel({
     savedPoints,
     pointActionLoading,
     onCreatePoint,
+    onStartPatrol,
     onDeleteLast,
     onClearAll,
     onGoToPoint,
@@ -61,6 +63,13 @@ export function SavedPointsPanel({
                         className="cursor-pointer rounded-full bg-[#10b981] px-4 py-2 text-sm font-semibold text-white shadow-[0_10px_20px_rgba(11,183,111,0.22)] transition hover:bg-[#0ea56f] disabled:opacity-50"
                     >
                         Save point
+                    </button>
+                    <button
+                        onClick={onStartPatrol}
+                        disabled={pointActionLoading || pointNames.length === 0}
+                        className="cursor-pointer rounded-full bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white shadow-[0_10px_20px_rgba(37,99,235,0.18)] transition hover:bg-[#1d4ed8] disabled:opacity-50"
+                    >
+                        Patrol all
                     </button>
                     <button
                         onClick={onDeleteLast}

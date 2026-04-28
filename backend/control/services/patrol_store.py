@@ -1,10 +1,10 @@
 import threading
 from typing import Dict, List, Optional
-from .patrol_types import PatrolMission
+from ..models import PatrolHistory, Robot
+from .patrol_types import PatrolMission, PatrolPointResult
 
 _lock = threading.Lock()
 _current_missions: Dict[str, PatrolMission] = {}
-_history: Dict[str, List[PatrolMission]] = {}
 
 
 def set_current_mission(robot_id: str, mission: Optional[PatrolMission]) -> None:
@@ -20,13 +20,88 @@ def get_current_mission(robot_id: str) -> Optional[PatrolMission]:
         return _current_missions.get(robot_id)
 
 
+def _point_result_to_dict(result: PatrolPointResult) -> dict:
+    return {
+        "point": result.point,
+        "status": result.status,
+        "attempts": result.attempts,
+        "started_at": result.started_at,
+        "finished_at": result.finished_at,
+        "reach_time_sec": result.reach_time_sec,
+        "distance_on_finish": result.distance_on_finish,
+        "message": result.message,
+    }
+
+
+def mission_to_payload(mission: PatrolMission) -> dict:
+    return {
+        "mission_id": mission.mission_id,
+        "robot_id": mission.robot_id,
+        "route_name": mission.route_name,
+        "points": mission.points,
+        "wait_sec_per_point": mission.wait_sec_per_point,
+        "max_retry_per_point": mission.max_retry_per_point,
+        "skip_on_fail": mission.skip_on_fail,
+        "status": mission.status,
+        "current_index": mission.current_index,
+        "started_at": mission.started_at,
+        "finished_at": mission.finished_at,
+        "results": [_point_result_to_dict(result) for result in mission.results],
+    }
+
+
+def payload_to_mission(payload: dict) -> PatrolMission:
+    mission = PatrolMission(
+        mission_id=str(payload.get("mission_id") or ""),
+        robot_id=str(payload.get("robot_id") or ""),
+        route_name=str(payload.get("route_name") or ""),
+        points=list(payload.get("points") or []),
+        wait_sec_per_point=int(payload.get("wait_sec_per_point") or 3),
+        max_retry_per_point=int(payload.get("max_retry_per_point") or 1),
+        skip_on_fail=bool(payload.get("skip_on_fail", True)),
+        status=str(payload.get("status") or "IDLE"),
+        current_index=int(payload.get("current_index") or 0),
+        started_at=float(payload.get("started_at") or 0.0),
+        finished_at=payload.get("finished_at"),
+    )
+    mission.results = [
+        PatrolPointResult(
+            point=str(item.get("point") or ""),
+            status=str(item.get("status") or "PENDING"),
+            attempts=int(item.get("attempts") or 0),
+            started_at=item.get("started_at"),
+            finished_at=item.get("finished_at"),
+            reach_time_sec=item.get("reach_time_sec"),
+            distance_on_finish=item.get("distance_on_finish"),
+            message=str(item.get("message") or ""),
+        )
+        for item in payload.get("results") or []
+        if isinstance(item, dict)
+    ]
+    return mission
+
+
 def append_history(robot_id: str, mission: PatrolMission) -> None:
-    with _lock:
-        if robot_id not in _history:
-            _history[robot_id] = []
-        _history[robot_id].append(mission)
+    payload = mission_to_payload(mission)
+    robot, _ = Robot.objects.get_or_create(
+        pk=robot_id,
+        defaults={
+            "name": robot_id.replace("-", " ").title(),
+        },
+    )
+    PatrolHistory.objects.update_or_create(
+        mission_id=mission.mission_id,
+        defaults={
+            "robot": robot,
+            "route_name": mission.route_name,
+            "status": mission.status,
+            "started_at": mission.started_at,
+            "finished_at": mission.finished_at,
+            "payload": payload,
+        },
+    )
 
 
 def get_history(robot_id: str) -> List[PatrolMission]:
-    with _lock:
-        return list(_history.get(robot_id, []))
+    records = PatrolHistory.objects.filter(robot_id=robot_id).order_by("-finished_at", "-started_at")
+    return [payload_to_mission(record.payload) for record in records]

@@ -5,6 +5,8 @@ from django.utils import timezone
 
 from .models import ActionEvent, Robot
 from .services.evaluation_metrics import build_evaluation_metrics_payload
+from .services.patrol_store import append_history, get_history
+from .services.patrol_types import PatrolMission, PatrolPointResult
 
 
 class EvaluationMetricsTests(SimpleTestCase):
@@ -86,3 +88,38 @@ class SessionSummaryTests(TestCase):
         self.assertTrue(response.data["ok"])
         self.assertEqual(response.data["obstacle_events_today"], 1)
         self.assertEqual(response.data["robot_id"], "robot-a")
+
+
+class PatrolHistoryTests(TestCase):
+    def test_persists_patrol_history_to_database(self):
+        mission = PatrolMission(
+            mission_id="patrol_test123",
+            robot_id="robot-history",
+            route_name="test_route",
+            points=["A", "B"],
+            status="DONE",
+            current_index=1,
+            started_at=100.0,
+            finished_at=120.0,
+        )
+        mission.results.append(
+            PatrolPointResult(
+                point="A",
+                status="SUCCESS",
+                attempts=1,
+                started_at=101.0,
+                finished_at=110.0,
+                reach_time_sec=9.0,
+                distance_on_finish=0.2,
+                message="reached",
+            )
+        )
+
+        append_history("robot-history", mission)
+
+        history = get_history("robot-history")
+        self.assertEqual(len(history), 1)
+        self.assertEqual(history[0].mission_id, "patrol_test123")
+        self.assertEqual(history[0].status, "DONE")
+        self.assertEqual(history[0].results[0].point, "A")
+        self.assertEqual(history[0].results[0].status, "SUCCESS")

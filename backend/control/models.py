@@ -73,3 +73,20 @@ class EvaluationSnapshot(models.Model):
 
     def __str__(self) -> str:
         return f"{self.robot_id} @ {self.run_started_at}"
+
+
+class PatrolHistory(models.Model):
+    mission_id = models.CharField(max_length=64, unique=True, db_index=True)
+    robot = models.ForeignKey(Robot, on_delete=models.CASCADE, related_name="patrol_history")
+    route_name = models.CharField(max_length=128, blank=True, default="")
+    status = models.CharField(max_length=32, db_index=True)
+    started_at = models.FloatField(db_index=True)
+    finished_at = models.FloatField(null=True, blank=True, db_index=True)
+    payload = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-finished_at", "-started_at"]
+
+    def __str__(self) -> str:
+        return f"{self.robot_id} {self.mission_id} {self.status}"

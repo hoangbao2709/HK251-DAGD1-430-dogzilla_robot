@@ -14,7 +14,7 @@ from .serializers import RobotSerializer
 from .services.ros import ROSClient
 from .services.evaluation_metrics import build_evaluation_metrics_payload, build_snapshot_key
 from .line_tracking_backend import LineTrackingServer
-from .services.mcp_voice import AmbiguousCommandError, process_text_command
+from .services.mcp_voice import AmbiguousCommandError, map_text_to_tool, process_text_command
 from .services.qr_detect import detect_qr_state_once, generate_qr_video_frames, get_current_qr_state, save_qr_metric_event
 from .services.patrol_manager import patrol_manager
 from .services.patrol_store import get_current_mission, get_history
@@ -762,6 +762,7 @@ class ControlStatusView(APIView):
 
 class TextCommandView(APIView):
     def post(self, request, *args, **kwargs):
+        robot_id = kwargs.get("robot_id", "robot-a")
         robot_addr = (
             request.data.get("addr")
             or request.data.get("robot_ip")
@@ -789,10 +790,36 @@ class TextCommandView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        robot = get_or_create_robot(robot_id)
+        if robot.addr != robot_addr:
+            robot.addr = robot_addr
+            robot.save(update_fields=["addr"])
+
         try:
             print("[TextCommandView] robot_addr =", robot_addr)
             print("[TextCommandView] text =", text)
-            result = process_text_command(robot_addr=robot_addr, text=text)
+            tool_name, arguments, mapping = map_text_to_tool(text)
+            if tool_name == "goto_waypoints":
+                points = arguments.get("points") or []
+                mission = patrol_manager.start(
+                    robot_id=robot_id,
+                    route_name="voice_route",
+                    points=points,
+                )
+                result = {
+                    "ok": True,
+                    "robot_addr": robot_addr,
+                    "tool": tool_name,
+                    "arguments": arguments,
+                    "mapping": mapping,
+                    "content": {
+                        "success": True,
+                        "message": "Started patrol mission",
+                        "mission": mission_to_dict(mission),
+                    },
+                }
+            else:
+                result = process_text_command(robot_addr=robot_addr, text=text)
             log_line = (
                 f'TEXT_COMMAND {json.dumps({"addr": robot_addr, "text": text}, ensure_ascii=False)} → OK'
             )
