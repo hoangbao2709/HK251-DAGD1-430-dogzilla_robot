@@ -199,6 +199,18 @@ export const RobotAPI = {
       body: JSON.stringify(payload),
     }),
 
+  manualGoal: (payload: {
+    x: number;
+    y: number;
+    yaw?: number;
+    addr?: string;
+    route_name?: string;
+  }) =>
+    api<any>(`${CONTROL_PREFIX}/${robotId}/manual-goal/`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
   qrVideoFeedUrl: () =>
     `${API_BASE}${CONTROL_PREFIX}/${robotId}/qr/video-feed/`,
 

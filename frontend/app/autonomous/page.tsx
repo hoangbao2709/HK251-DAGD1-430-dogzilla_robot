@@ -179,6 +179,8 @@ export default function AutonomousControlPage() {
   const [controlStatus, setControlStatus] = useState<ControlStatusResponse | null>(
     null
   );
+  const [lidarBusy, setLidarBusy] = useState(false);
+  const [lidarError, setLidarError] = useState<string | null>(null);
 
   const [cameraError, setCameraError] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
@@ -360,6 +362,36 @@ export default function AutonomousControlPage() {
     } catch { }
   }, [slamBaseUrl, fetchSlamState]);
 
+  const handleToggleLidar = useCallback(async () => {
+    if (lidarBusy) return;
+
+    const running = Boolean(
+      controlStatus?.lidar_running ?? controlStatus?.lidar?.running ?? false
+    );
+    const next = !running;
+
+    try {
+      setLidarBusy(true);
+      setLidarError(null);
+      await RobotAPI.lidar(next ? "start" : "stop");
+      setControlStatus((previous) => ({
+        ...(previous || {}),
+        lidar_running: next,
+        lidar: {
+          ...(previous?.lidar || {}),
+          running: next,
+        },
+      }));
+    } catch (error) {
+      setLidarError(
+        error instanceof Error ? error.message : "Khong dieu khien duoc LiDAR"
+      );
+    } finally {
+      setLidarBusy(false);
+      fetchControlStatus();
+    }
+  }, [controlStatus, fetchControlStatus, lidarBusy]);
+
   const resetSlamView = useCallback(() => {
     setSlamDisplayAngle(0);
   }, []);
@@ -399,22 +431,29 @@ export default function AutonomousControlPage() {
       );
 
       try {
-        const endpoint =
-          navPlacementMode === "goal" ? "set_goal_pose" : "set_initial_pose";
-
-        await fetch(
-          `${slamBaseUrl}/${endpoint}?x=${encodeURIComponent(
-            pendingPlacement.x
-          )}&y=${encodeURIComponent(pendingPlacement.y)}&yaw=${encodeURIComponent(
-            yaw
-          )}`
-        );
+        if (navPlacementMode === "goal") {
+          await RobotAPI.manualGoal({
+            x: pendingPlacement.x,
+            y: pendingPlacement.y,
+            yaw,
+            addr: dogServer,
+            route_name: "manual_map_goal",
+          });
+        } else {
+          await fetch(
+            `${slamBaseUrl}/set_initial_pose?x=${encodeURIComponent(
+              pendingPlacement.x
+            )}&y=${encodeURIComponent(pendingPlacement.y)}&yaw=${encodeURIComponent(
+              yaw
+            )}`
+          );
+        }
 
         setPendingPlacement(null);
         await fetchSlamState();
       } catch { }
     },
-    [mapMode, slamState, pendingPlacement, navPlacementMode, slamBaseUrl, fetchSlamState]
+    [mapMode, slamState, pendingPlacement, navPlacementMode, dogServer, slamBaseUrl, fetchSlamState]
   );
 
   const drawSlamOverlay = useCallback(() => {
@@ -896,6 +935,8 @@ export default function AutonomousControlPage() {
             slamMapSrc={slamMapSrc}
             lidarUrl={lidarUrl}
             lidarActive={lidarActive}
+            lidarBusy={lidarBusy}
+            lidarControlError={lidarError}
             isModalOpen={mapModalOpen}
             navPlacementMode={navPlacementMode}
             hasPendingPlacement={Boolean(pendingPlacement)}
@@ -912,6 +953,7 @@ export default function AutonomousControlPage() {
             onSetNavPlacementMode={setNavPlacementMode}
             onCancelPlacement={() => setPendingPlacement(null)}
             onClearPath={clearPath}
+            onToggleLidar={handleToggleLidar}
             onToggleRobot={() => setShowRobot((v) => !v)}
             onTogglePath={() => setShowPath((v) => !v)}
             onToggleGrid={() => setShowGrid((v) => !v)}

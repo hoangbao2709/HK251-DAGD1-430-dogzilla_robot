@@ -12,6 +12,15 @@ def _present(value: Any) -> bool:
     return value is not None
 
 
+def _float_or_none(value: Any) -> float | None:
+    try:
+        if value is None:
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _compute_from_trajectory(trajectory: list[dict[str, Any]]) -> dict[str, Any]:
     points = [
         (
@@ -149,6 +158,33 @@ def compute_path_efficiency(raw_metrics: dict[str, Any]) -> float | None:
 
 def build_evaluation_metrics_payload(raw_metrics: dict[str, Any]) -> dict[str, Any]:
     trajectory_metrics = _compute_from_trajectory(raw_metrics.get("trajectory") or [])
+    distance_metrics = raw_metrics.get("distance_metrics") or {}
+    distance_total_m = _float_or_none(distance_metrics.get("total_m"))
+    if distance_total_m is None:
+        distance_total_m = _float_or_none(raw_metrics.get("path_length_m"))
+
+    if distance_total_m is not None:
+        trajectory_metrics["trajectory_path_length_m"] = trajectory_metrics.get("path_length_m")
+        trajectory_metrics["path_length_m"] = _safe_round(distance_total_m, 4)
+        trajectory_metrics["path_length_source"] = "distance_api"
+
+        duration_sec = (
+            _float_or_none(distance_metrics.get("duration_sec"))
+            or _float_or_none((raw_metrics.get("summary") or {}).get("run_duration_sec"))
+            or _float_or_none(trajectory_metrics.get("trajectory_window_sec"))
+        )
+        if duration_sec and duration_sec > 0:
+            trajectory_metrics["mean_speed_mps"] = _safe_round(distance_total_m / duration_sec, 4)
+    else:
+        trajectory_metrics["path_length_source"] = "trajectory"
+
+    if distance_metrics:
+        trajectory_metrics["distance_sample_count"] = distance_metrics.get("sample_count")
+        trajectory_metrics["distance_ignored_jump_count"] = distance_metrics.get("ignored_jump_count")
+        trajectory_metrics["distance_duration_sec"] = distance_metrics.get("duration_sec")
+        trajectory_metrics["distance_started_at"] = distance_metrics.get("started_at")
+        trajectory_metrics["distance_last_update"] = distance_metrics.get("last_update")
+
     trajectory_metrics["path_efficiency_pct"] = compute_path_efficiency(
         {
             **raw_metrics,

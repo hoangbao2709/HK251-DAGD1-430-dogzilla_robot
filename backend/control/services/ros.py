@@ -113,6 +113,11 @@ class ROSClient:
         resp.raise_for_status()
         return resp.json()
 
+    def _get_text_by_url(self, url: str, params: Dict[str, Any] | None = None) -> str:
+        resp = self.session.get(url, params=params, timeout=self.timeout)
+        resp.raise_for_status()
+        return resp.text
+
     def _post_json_by_url(self, url: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         resp = self.session.post(url, json=payload, timeout=self.timeout)
 
@@ -581,6 +586,14 @@ class ROSClient:
         url = f"{self._build_slam_base_url()}/slam_status"
         return self._get_json_by_url(url)
 
+    def get_navigation_metrics(self) -> Dict[str, Any]:
+        url = f"{self._build_slam_base_url()}/metrics"
+        return self._get_json_by_url(url)
+
+    def get_distance_metrics(self) -> Dict[str, Any]:
+        url = f"{self._build_slam_base_url()}/distance"
+        return self._get_json_by_url(url)
+
     def get_evaluation_metrics(
         self,
         *,
@@ -603,7 +616,17 @@ class ROSClient:
 
         resp = self.session.get(url, params=params or None, timeout=self.timeout)
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+
+        try:
+            distance_metrics = self.get_distance_metrics()
+            data["distance_metrics"] = distance_metrics
+            if distance_metrics.get("total_m") is not None:
+                data["path_length_m"] = distance_metrics.get("total_m")
+        except Exception as exc:
+            data["distance_metrics_error"] = str(exc)
+
+        return data
 
     def get_robot_pose(self) -> Dict[str, Any]:
         state = self.get_slam_state() or {}
@@ -612,7 +635,8 @@ class ROSClient:
 
     def clear_navigation(self) -> Dict[str, Any]:
         url = f"{self._build_slam_base_url()}/clear_path"
-        return self._get_json_by_url(url)
+        text = self._get_text_by_url(url)
+        return {"success": True, "message": text.strip()}
 
     def get_points(self) -> Dict[str, Any]:
         """
@@ -674,3 +698,23 @@ class ROSClient:
             "yaw": yaw,
         }
         return self._post_json_by_url(url, payload)
+
+    def set_goal_pose(self, x: float, y: float, yaw: float = 0.0) -> Dict[str, Any]:
+        url = f"{self._build_slam_base_url()}/set_goal_pose"
+        text = self._get_text_by_url(
+            url,
+            params={
+                "x": float(x),
+                "y": float(y),
+                "yaw": float(yaw),
+            },
+        )
+        return {
+            "success": text.strip().upper() == "OK",
+            "message": text.strip(),
+            "goal": {
+                "x": float(x),
+                "y": float(y),
+                "yaw": float(yaw),
+            },
+        }

@@ -11,6 +11,8 @@ type MapPanelProps = {
   slamMapSrc: string;
   lidarUrl: string;
   lidarActive: boolean;
+  lidarBusy: boolean;
+  lidarControlError: string | null;
   isModalOpen: boolean;
   navPlacementMode: NavPlacementMode;
   hasPendingPlacement: boolean;
@@ -27,6 +29,7 @@ type MapPanelProps = {
   onSetNavPlacementMode: (mode: NavPlacementMode) => void;
   onCancelPlacement: () => void;
   onClearPath: () => void;
+  onToggleLidar: () => void;
   onToggleRobot: () => void;
   onTogglePath: () => void;
   onToggleGrid: () => void;
@@ -46,6 +49,8 @@ export function MapPanel({
   slamMapSrc,
   lidarUrl,
   lidarActive,
+  lidarBusy,
+  lidarControlError,
   isModalOpen,
   navPlacementMode,
   hasPendingPlacement,
@@ -59,6 +64,7 @@ export function MapPanel({
   onSetNavPlacementMode,
   onCancelPlacement,
   onClearPath,
+  onToggleLidar,
   onSlamImageClick,
   drawSlamOverlay,
 }: MapPanelProps) {
@@ -87,11 +93,21 @@ export function MapPanel({
 
   const lidarStatus = lidarError
     ? "LiDAR error"
+    : lidarControlError
+      ? "LiDAR error"
     : lidarActive
       ? lidarFrameLoaded
         ? "Live"
         : "Loading..."
       : "Offline";
+  const lidarButtonLabel = lidarBusy
+    ? lidarActive
+      ? "Stopping LiDAR..."
+      : "Starting LiDAR..."
+    : lidarActive
+      ? "Stop Lidar"
+      : "Start Lidar";
+  const lidarMessage = lidarError || lidarControlError;
 
   return (
     <>
@@ -122,6 +138,18 @@ export function MapPanel({
                   Navigate
                 </button>
               </div>
+
+              <button
+                onClick={onToggleLidar}
+                disabled={lidarBusy}
+                className={`cursor-pointer rounded-lg px-3 py-1.5 text-xs font-semibold transition disabled:cursor-wait disabled:opacity-60 ${
+                  lidarActive
+                    ? "bg-emerald-500 text-black hover:bg-emerald-400"
+                    : "border border-[var(--border)] bg-[var(--surface)] text-[var(--foreground)] hover:bg-[var(--surface-2)]"
+                }`}
+              >
+                {lidarButtonLabel}
+              </button>
 
               <button
                 onClick={onOpenModal}
@@ -223,8 +251,8 @@ export function MapPanel({
                   }`}
                 >
                   <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-center text-[var(--foreground)]/70">
-                    {lidarError
-                      ? `LiDAR error: ${lidarError}`
+                    {lidarMessage
+                      ? `LiDAR error: ${lidarMessage}`
                       : lidarActive
                         ? "Waiting for LiDAR stream..."
                         : "LiDAR is currently off"}
@@ -257,13 +285,27 @@ export function MapPanel({
                 </div>
               </div>
 
-              <button
-                onClick={onCloseModal}
-                className="cursor-pointer inline-flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-elev)] px-3 py-2 text-xs font-semibold text-[var(--foreground)] transition hover:bg-[var(--surface-2)]"
-              >
-                <X size={14} />
-                Close
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={onToggleLidar}
+                  disabled={lidarBusy}
+                  className={`cursor-pointer rounded-lg px-3 py-2 text-xs font-semibold transition disabled:cursor-wait disabled:opacity-60 ${
+                    lidarActive
+                      ? "bg-emerald-500 text-black hover:bg-emerald-400"
+                      : "border border-[var(--border)] bg-[var(--surface-elev)] text-[var(--foreground)] hover:bg-[var(--surface-2)]"
+                  }`}
+                >
+                  {lidarButtonLabel}
+                </button>
+
+                <button
+                  onClick={onCloseModal}
+                  className="cursor-pointer inline-flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-elev)] px-3 py-2 text-xs font-semibold text-[var(--foreground)] transition hover:bg-[var(--surface-2)]"
+                >
+                  <X size={14} />
+                  Close
+                </button>
+              </div>
             </div>
 
             <div className="flex-1 p-4">
@@ -309,8 +351,8 @@ export function MapPanel({
                       }`}
                     >
                       <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-center text-[var(--foreground)]/70">
-                        {lidarError
-                          ? `LiDAR error: ${lidarError}`
+                        {lidarMessage
+                          ? `LiDAR error: ${lidarMessage}`
                           : lidarActive
                             ? "Waiting for LiDAR stream..."
                             : "LiDAR is currently off"}

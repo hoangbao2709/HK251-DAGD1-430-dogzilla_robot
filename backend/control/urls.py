@@ -40,6 +40,7 @@ from .views import (
     DeletePointView,
     GoToPointView,
     GoToMarkerView,
+    ManualGoalView,
     PatrolStartView,
     PatrolStopView,
     PatrolPauseView,
@@ -101,6 +102,7 @@ urlpatterns = [
     path("api/robots/<str:robot_id>/delete-point/", DeletePointView.as_view(), name="robot-delete-point"),
     path("api/robots/<str:robot_id>/go-to-point/", GoToPointView.as_view(), name="robot-go-to-point"),
     path("api/robots/<str:robot_id>/go-to-marker/", GoToMarkerView.as_view(), name="robot-go-to-marker"),
+    path("api/robots/<str:robot_id>/manual-goal/", ManualGoalView.as_view(), name="robot-manual-goal"),
 
     path("api/robots/<str:robot_id>/patrol/start/", PatrolStartView.as_view(), name="robot-patrol-start"),
     path("api/robots/<str:robot_id>/patrol/stop/", PatrolStopView.as_view(), name="robot-patrol-stop"),

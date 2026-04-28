@@ -49,6 +49,31 @@ class EvaluationMetricsTests(SimpleTestCase):
         self.assertTrue(payload["paper_tables"]["table_i_localization"]["exact"])
         self.assertTrue(payload["persistence"]["eligible"])
 
+    def test_prefers_distance_api_total_for_path_length(self):
+        payload = build_evaluation_metrics_payload(
+            {
+                "trajectory": [
+                    {"t": 100.0, "x": 0.0, "y": 0.0, "theta": 0.0, "ok": True},
+                    {"t": 101.0, "x": 100.0, "y": 0.0, "theta": 0.0, "ok": True},
+                ],
+                "distance_metrics": {
+                    "total_m": 12.34,
+                    "sample_count": 120,
+                    "ignored_jump_count": 0,
+                    "duration_sec": 23.0,
+                    "started_at": 100.0,
+                    "last_update": 123.0,
+                },
+            }
+        )
+
+        derived = payload["derived_metrics"]
+        self.assertEqual(derived["trajectory_path_length_m"], 100.0)
+        self.assertEqual(derived["path_length_m"], 12.34)
+        self.assertEqual(derived["path_length_source"], "distance_api")
+        self.assertEqual(derived["mean_speed_mps"], 0.5365)
+        self.assertEqual(derived["distance_sample_count"], 120)
+
 
 class SessionSummaryTests(TestCase):
     def test_counts_only_today_obstacle_events_for_robot(self):

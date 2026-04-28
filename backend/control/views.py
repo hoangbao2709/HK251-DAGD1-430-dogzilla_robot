@@ -1230,6 +1230,60 @@ class GoToMarkerView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
+
+class ManualGoalView(APIView):
+    def post(self, request, robot_id):
+        body = request.data or {}
+
+        try:
+            x = float(body.get("x"))
+            y = float(body.get("y"))
+            yaw = float(body.get("yaw", 0.0))
+        except Exception as e:
+            return Response(
+                {
+                    "success": False,
+                    "robot_id": robot_id,
+                    "error": f"invalid payload: {e}",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        addr = str(body.get("addr") or "").strip()
+        if addr:
+            robot = get_or_create_robot(robot_id)
+            if robot.addr != addr:
+                robot.addr = addr
+                robot.save(update_fields=["addr"])
+
+        route_name = str(body.get("route_name") or "manual_goal").strip() or "manual_goal"
+
+        try:
+            mission = patrol_manager.start_manual_goal(
+                robot_id=robot_id,
+                route_name=route_name,
+                x=x,
+                y=y,
+                yaw=yaw,
+            )
+            return Response(
+                {
+                    "success": True,
+                    "robot_id": robot_id,
+                    "mission": mission_to_dict(mission),
+                },
+                status=status.HTTP_200_OK,
+            )
+        except Exception as e:
+            return Response(
+                {
+                    "success": False,
+                    "robot_id": robot_id,
+                    "error": str(e),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
 class PatrolStartView(APIView):
     def post(self, request, robot_id):
         body = request.data or {}
