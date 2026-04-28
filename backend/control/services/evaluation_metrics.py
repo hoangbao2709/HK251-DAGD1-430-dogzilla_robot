@@ -158,6 +158,21 @@ def compute_path_efficiency(raw_metrics: dict[str, Any]) -> float | None:
 
 def build_evaluation_metrics_payload(raw_metrics: dict[str, Any]) -> dict[str, Any]:
     trajectory_metrics = _compute_from_trajectory(raw_metrics.get("trajectory") or [])
+    state = raw_metrics.get("state") or {}
+    pose = state.get("pose") or {}
+    if trajectory_metrics.get("trajectory_samples") == 0 and pose.get("ok"):
+        pose_x = _float_or_none(pose.get("x"))
+        pose_y = _float_or_none(pose.get("y"))
+        pose_theta = _float_or_none(pose.get("theta"))
+        if pose_x is not None and pose_y is not None:
+            trajectory_metrics["final_drift_from_origin_m"] = _safe_round(math.hypot(pose_x, pose_y), 4)
+            trajectory_metrics["net_displacement_m"] = None
+            trajectory_metrics["bbox_x_m"] = [_safe_round(pose_x, 4), _safe_round(pose_x, 4)]
+            trajectory_metrics["bbox_y_m"] = [_safe_round(pose_y, 4), _safe_round(pose_y, 4)]
+        if pose_theta is not None:
+            trajectory_metrics["final_heading_abs_deg"] = _safe_round(abs(math.degrees(pose_theta)), 3)
+        trajectory_metrics["pose_source"] = "state_api"
+
     distance_metrics = raw_metrics.get("distance_metrics") or {}
     distance_total_m = _float_or_none(distance_metrics.get("total_m"))
     if distance_total_m is None:

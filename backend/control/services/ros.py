@@ -582,6 +582,13 @@ class ROSClient:
         url = f"{self._build_slam_base_url()}/state"
         return self._get_json_by_url(url)
 
+    def get_slam_state_light(self) -> Dict[str, Any]:
+        url = f"{self._build_slam_base_url()}/state_light"
+        try:
+            return self._get_json_by_url(url)
+        except Exception:
+            return self.get_slam_state()
+
     def get_slam_status(self) -> Dict[str, Any]:
         url = f"{self._build_slam_base_url()}/slam_status"
         return self._get_json_by_url(url)
@@ -597,7 +604,7 @@ class ROSClient:
     def get_evaluation_metrics(
         self,
         *,
-        full: bool = True,
+        full: bool = False,
         trajectory: bool = False,
         pose_traces: bool = False,
         reference_trajectory: bool = False,
@@ -617,6 +624,16 @@ class ROSClient:
         resp = self.session.get(url, params=params or None, timeout=self.timeout)
         resp.raise_for_status()
         data = resp.json()
+
+        try:
+            state = self.get_slam_state_light()
+            data["state"] = {
+                "status": state.get("status") or {},
+                "goal": state.get("goal") or {},
+                "pose": state.get("pose") or {},
+            }
+        except Exception as exc:
+            data["state_error"] = str(exc)
 
         try:
             distance_metrics = self.get_distance_metrics()

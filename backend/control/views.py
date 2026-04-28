@@ -314,11 +314,10 @@ class EvaluationMetricsView(APIView):
             def _truthy(name: str) -> bool:
                 return str(request.query_params.get(name, "")).strip().lower() in {"1", "true", "yes", "on"}
 
-            full_requested = request.query_params.get("full")
-            full = True if full_requested is None else _truthy("full")
+            robot_full = _truthy("robot_full") or _truthy("debug")
 
             raw_metrics = ROSClient(robot_id).get_evaluation_metrics(
-                full=full,
+                full=robot_full,
                 trajectory=_truthy("trajectory"),
                 pose_traces=_truthy("pose_traces"),
                 reference_trajectory=_truthy("reference_trajectory"),

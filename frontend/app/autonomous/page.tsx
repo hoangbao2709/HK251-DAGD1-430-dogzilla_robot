@@ -335,12 +335,12 @@ export default function AutonomousControlPage() {
 
     const timers = [
       setInterval(fetchRobotStatus, 3000),
-      setInterval(fetchSlamState, 700),
+      setInterval(fetchSlamState, 1500),
       setInterval(fetchQrState, 700),
       setInterval(fetchQrPosition, 700),
-      setInterval(fetchControlStatus, 3000),
-      setInterval(fetchPoints, 2500),
-      setInterval(() => setMapReloadKey((value) => value + 1), 1000),
+      setInterval(fetchControlStatus, 5000),
+      setInterval(fetchPoints, 5000),
+      setInterval(() => setMapReloadKey((value) => value + 1), 3000),
     ];
 
     return () => timers.forEach(clearInterval);

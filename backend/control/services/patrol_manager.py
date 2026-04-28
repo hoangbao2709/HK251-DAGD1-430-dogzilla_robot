@@ -129,8 +129,8 @@ class PatrolManager:
 
     def _distance_to_point(self, robot_id: str, target_x: float, target_y: float) -> tuple[Optional[float], dict]:
         client = ROSClient(robot_id)
-        state = client.get_slam_state()
-        pose = client.get_robot_pose()
+        state = client.get_slam_state_light()
+        pose = state.get("pose") or {}
 
         if not pose.get("ok"):
             return None, state
