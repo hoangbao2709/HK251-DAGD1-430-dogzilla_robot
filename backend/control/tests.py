@@ -1,12 +1,15 @@
 from datetime import timedelta
+from unittest.mock import patch
 
 from django.test import SimpleTestCase, TestCase
 from django.utils import timezone
 
 from .models import ActionEvent, Robot
 from .services.evaluation_metrics import build_evaluation_metrics_payload
+from .services.patrol_manager import PatrolManager
 from .services.patrol_store import append_history, get_history
 from .services.patrol_types import PatrolMission, PatrolPointResult
+from .services.slam_payload import build_slam_ui_state
 
 
 class EvaluationMetricsTests(SimpleTestCase):
@@ -73,6 +76,45 @@ class EvaluationMetricsTests(SimpleTestCase):
         self.assertEqual(derived["path_length_source"], "distance_api")
         self.assertEqual(derived["mean_speed_mps"], 0.5365)
         self.assertEqual(derived["distance_sample_count"], 120)
+
+
+class SlamPayloadTests(SimpleTestCase):
+    def test_builds_ui_state_from_raw_scan_on_backend(self):
+        payload = build_slam_ui_state(
+            {
+                "map_version": 7,
+                "render_info": {"resolution": 0.05},
+                "pose": {"ok": True, "x": 0.0, "y": 0.0, "theta": 0.0},
+                "goal": {"x": 2.0, "y": 0.0, "yaw": 0.0},
+                "paths": {
+                    "received_plan": [
+                        {"x": 0.0, "y": 0.0},
+                        {"x": 1.0, "y": 0.0},
+                    ],
+                },
+                "scan": {
+                    "ok": True,
+                    "raw": {
+                        "range_min": 0.05,
+                        "range_max": 5.0,
+                        "samples": [
+                            {"angle": 0.0, "range": 1.0},
+                            {"angle": 1.57, "range": 0.5},
+                        ],
+                    },
+                    "transform": {"x": 0.0, "y": 0.0, "yaw": 0.0},
+                    "stamp": 123.0,
+                    "frame_id": "laser",
+                },
+                "status": {"slam_ok": True},
+            }
+        )
+
+        self.assertEqual(payload["map_version"], 7)
+        self.assertEqual(len(payload["scan"]["points"]), 2)
+        self.assertEqual(payload["paths"]["a_star"][1]["x"], 1.0)
+        self.assertAlmostEqual(payload["nearest_obstacle_ahead"]["x"], 1.0)
+        self.assertAlmostEqual(payload["nearest_obstacle_ahead"]["dist"], 1.0)
 
 
 class SessionSummaryTests(TestCase):
@@ -148,3 +190,48 @@ class PatrolHistoryTests(TestCase):
         self.assertEqual(history[0].status, "DONE")
         self.assertEqual(history[0].results[0].point, "A")
         self.assertEqual(history[0].results[0].status, "SUCCESS")
+
+
+class PatrolManagerStopTests(TestCase):
+    def test_stop_during_single_point_marks_stopped_without_retry(self):
+        manager = PatrolManager()
+        manager.poll_interval_sec = 0.01
+        manager.point_timeout_sec = 1.0
+
+        mission = PatrolMission(
+            mission_id="patrol_stop_test",
+            robot_id="robot-stop",
+            route_name="point_A",
+            points=["A"],
+            wait_sec_per_point=0,
+            max_retry_per_point=1,
+            skip_on_fail=True,
+            status="RUNNING",
+        )
+        manager._stop_flags[mission.robot_id] = False
+
+        class FakeROSClient:
+            def __init__(self, robot_id: str) -> None:
+                self.robot_id = robot_id
+                self.go_to_calls: list[str] = []
+
+            def get_points(self):
+                return {"A": {"x": 1.0, "y": 1.0}}
+
+            def go_to_point(self, point_name: str):
+                self.go_to_calls.append(point_name)
+                manager._stop_flags[mission.robot_id] = True
+                return {"success": True}
+
+            def get_slam_state_light(self):
+                return {"pose": {"ok": True, "x": 0.0, "y": 0.0}}
+
+        fake_client = FakeROSClient(mission.robot_id)
+
+        with patch("control.services.patrol_manager.ROSClient", return_value=fake_client):
+            manager._run_patrol(mission)
+
+        self.assertEqual(fake_client.go_to_calls, ["A"])
+        self.assertEqual(mission.status, "STOPPED")
+        self.assertEqual(mission.results[0].status, "ABORTED")
+        self.assertEqual(mission.results[0].message, "mission stopped")

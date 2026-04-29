@@ -162,6 +162,22 @@ export const RobotAPI = {
   slamState: () =>
     api<any>(`${CONTROL_PREFIX}/${robotId}/slam/state/`),
 
+  clearNavigation: () =>
+    api<any>(`${CONTROL_PREFIX}/${robotId}/slam/clear/`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    }),
+
+  setInitialPose: (payload: {
+    x: number;
+    y: number;
+    yaw?: number;
+  }) =>
+    api<any>(`${CONTROL_PREFIX}/${robotId}/slam/initial-pose/`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
   points: () =>
     api<any>(`${CONTROL_PREFIX}/${robotId}/points/`),
 
@@ -172,6 +188,15 @@ export const RobotAPI = {
     yaw?: number;
   }) =>
     api<any>(`${CONTROL_PREFIX}/${robotId}/points/`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  createPointFromObstacle: (payload: {
+    name: string;
+    yaw?: number;
+  }) =>
+    api<any>(`${CONTROL_PREFIX}/${robotId}/points/from-obstacle/`, {
       method: "POST",
       body: JSON.stringify(payload),
     }),

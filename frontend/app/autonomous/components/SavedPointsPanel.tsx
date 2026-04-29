@@ -8,8 +8,11 @@ type SavedPointsPanelProps = {
     pointNames: string[];
     savedPoints: PointsResponse;
     pointActionLoading: boolean;
+    patrolRunning: boolean;
+    activePatrolPointName: string | null;
     onCreatePoint: () => void;
     onStartPatrol: () => void;
+    onStopNavigation: () => void;
     onDeleteLast: () => void;
     onClearAll: () => void;
     onGoToPoint: (name: string) => void;
@@ -21,8 +24,11 @@ export function SavedPointsPanel({
     pointNames,
     savedPoints,
     pointActionLoading,
+    patrolRunning,
+    activePatrolPointName,
     onCreatePoint,
     onStartPatrol,
+    onStopNavigation,
     onDeleteLast,
     onClearAll,
     onGoToPoint,
@@ -51,11 +57,19 @@ export function SavedPointsPanel({
     const savedStatFill = isDark ? "bg-[#241139]" : "";
     const savedButtonClass =
         "flex-1 rounded-full bg-[#10b981] px-3 py-2 text-xs font-semibold text-white";
+    const activePoint = activePatrolPointName?.toUpperCase() ?? null;
 
     return (
         <DarkCard className={savedShellClass}>
             <div className={savedHeaderClass}>
-                <SectionLabel>Saved points</SectionLabel>
+                <div className="flex flex-wrap items-center gap-2">
+                    <SectionLabel>Saved points</SectionLabel>
+                    {patrolRunning ? (
+                        <span className="rounded-full bg-[#2563eb]/20 px-3 py-1 text-xs font-semibold text-[#60a5fa] ring-1 ring-[#2563eb]/25">
+                            Running {activePoint ? `to ${activePoint}` : "route"}
+                        </span>
+                    ) : null}
+                </div>
                 <div className="flex flex-wrap gap-2">
                     <button
                         onClick={onCreatePoint}
@@ -66,21 +80,28 @@ export function SavedPointsPanel({
                     </button>
                     <button
                         onClick={onStartPatrol}
-                        disabled={pointActionLoading || pointNames.length === 0}
+                        disabled={pointActionLoading || patrolRunning || pointNames.length === 0}
                         className="cursor-pointer rounded-full bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white shadow-[0_10px_20px_rgba(37,99,235,0.18)] transition hover:bg-[#1d4ed8] disabled:opacity-50"
                     >
                         Patrol all
                     </button>
                     <button
+                        onClick={onStopNavigation}
+                        disabled={pointActionLoading}
+                        className="cursor-pointer rounded-full bg-[#ef4444] px-4 py-2 text-sm font-semibold text-white shadow-[0_10px_20px_rgba(239,68,68,0.18)] transition hover:bg-[#dc2626] disabled:opacity-50"
+                    >
+                        Stop & clear
+                    </button>
+                    <button
                         onClick={onDeleteLast}
-                        disabled={pointActionLoading || pointNames.length === 0}
+                        disabled={pointActionLoading || patrolRunning || pointNames.length === 0}
                         className="cursor-pointer rounded-full bg-[#ff5574] px-4 py-2 text-sm font-semibold text-white shadow-[0_10px_20px_rgba(255,59,87,0.18)] transition hover:bg-[#f43f5e] disabled:opacity-50"
                     >
                         Delete last
                     </button>
                     <button
                         onClick={onClearAll}
-                        disabled={pointActionLoading || pointNames.length === 0}
+                        disabled={pointActionLoading || patrolRunning || pointNames.length === 0}
                         className="cursor-pointer rounded-full bg-[#f6c94c] px-4 py-2 text-sm font-semibold text-[#4a3200] shadow-[0_10px_20px_rgba(255,191,31,0.16)] transition hover:bg-[#eab308] disabled:opacity-50"
                     >
                         Clear all
@@ -94,9 +115,14 @@ export function SavedPointsPanel({
                 <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
                     {pointNames.map((name) => {
                         const point = savedPoints[name];
+                        const isActivePoint =
+                            patrolRunning && activePoint === name.toUpperCase();
 
                         return (
-                            <div key={name} className={savedPointCardClass}>
+                            <div
+                                key={name}
+                                className={`${savedPointCardClass} ${isActivePoint ? "ring-2 ring-[#2563eb]/60" : ""}`}
+                            >
                                 <div className="space-y-4">
                                     <div className={isDark ? "text-lg font-semibold text-white" : "text-lg font-semibold text-[#24163f]"}>
                                         {name}
@@ -131,17 +157,26 @@ export function SavedPointsPanel({
 
                                     <div className="flex gap-2">
                                         <button onClick={() => onGoToPoint(name)}
-                                            disabled={pointActionLoading}
+                                            disabled={pointActionLoading || patrolRunning}
                                             className={`cursor-pointer ${savedButtonClass}`}
                                         >
-                                            Go to
+                                            {isActivePoint ? "Going" : "Go to"}
                                         </button>
-                                        <button onClick={() => onDeletePoint(name)}
-                                            disabled={pointActionLoading}
-                                            className="cursor-pointer flex-1 rounded-full bg-[#ff5574] px-3 py-2 text-xs font-semibold text-white shadow-[0_8px_18px_rgba(255,55,88,0.16)] transition hover:bg-[#f43f5e] disabled:opacity-50"
-                                        >
-                                            Delete
-                                        </button>
+                                        {isActivePoint ? (
+                                            <button onClick={onStopNavigation}
+                                                disabled={pointActionLoading}
+                                                className="cursor-pointer flex-1 rounded-full bg-[#ef4444] px-3 py-2 text-xs font-semibold text-white shadow-[0_8px_18px_rgba(239,68,68,0.16)] transition hover:bg-[#dc2626] disabled:opacity-50"
+                                            >
+                                                Stop
+                                            </button>
+                                        ) : (
+                                            <button onClick={() => onDeletePoint(name)}
+                                                disabled={pointActionLoading || patrolRunning}
+                                                className="cursor-pointer flex-1 rounded-full bg-[#ff5574] px-3 py-2 text-xs font-semibold text-white shadow-[0_8px_18px_rgba(255,55,88,0.16)] transition hover:bg-[#f43f5e] disabled:opacity-50"
+                                            >
+                                                Delete
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
                             </div>

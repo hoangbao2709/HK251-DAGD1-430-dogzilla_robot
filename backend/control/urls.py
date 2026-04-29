@@ -36,7 +36,10 @@ from .views import (
     QRVideoFeedView,
     SlamStateView,
     SlamMapView,
+    ClearNavigationView,
+    InitialPoseView,
     PointsView,
+    PointFromObstacleView,
     DeletePointView,
     GoToPointView,
     GoToMarkerView,
@@ -97,8 +100,11 @@ urlpatterns = [
 
     path("api/robots/<str:robot_id>/slam/state/", SlamStateView.as_view(), name="robot-slam-state"),
     path("api/robots/<str:robot_id>/slam/map.png", SlamMapView.as_view(), name="robot-slam-map"),
+    path("api/robots/<str:robot_id>/slam/clear/", ClearNavigationView.as_view(), name="robot-slam-clear"),
+    path("api/robots/<str:robot_id>/slam/initial-pose/", InitialPoseView.as_view(), name="robot-slam-initial-pose"),
 
     path("api/robots/<str:robot_id>/points/", PointsView.as_view(), name="robot-points"),
+    path("api/robots/<str:robot_id>/points/from-obstacle/", PointFromObstacleView.as_view(), name="robot-point-from-obstacle"),
     path("api/robots/<str:robot_id>/delete-point/", DeletePointView.as_view(), name="robot-delete-point"),
     path("api/robots/<str:robot_id>/go-to-point/", GoToPointView.as_view(), name="robot-go-to-point"),
     path("api/robots/<str:robot_id>/go-to-marker/", GoToMarkerView.as_view(), name="robot-go-to-marker"),

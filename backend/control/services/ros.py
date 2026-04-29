@@ -8,6 +8,7 @@ import requests
 from django.conf import settings  # type: ignore[import-untyped]
 import numpy as np
 from ..models import ActionEvent, Robot
+from .slam_payload import build_slam_ui_state
 
 
 def _get_or_create_robot(robot_id: str) -> Robot:
@@ -589,6 +590,21 @@ class ROSClient:
         except Exception:
             return self.get_slam_state()
 
+    def get_slam_state_for_ui(
+        self,
+        *,
+        include_scan_points: bool = True,
+        max_scan_points: int = 120,
+        max_path_points: int = 240,
+    ) -> Dict[str, Any]:
+        state = self.get_slam_state_light()
+        return build_slam_ui_state(
+            state,
+            include_scan_points=include_scan_points,
+            max_scan_points=max_scan_points,
+            max_path_points=max_path_points,
+        )
+
     def get_slam_status(self) -> Dict[str, Any]:
         url = f"{self._build_slam_base_url()}/slam_status"
         return self._get_json_by_url(url)
@@ -654,6 +670,26 @@ class ROSClient:
         url = f"{self._build_slam_base_url()}/clear_path"
         text = self._get_text_by_url(url)
         return {"success": True, "message": text.strip()}
+
+    def set_initial_pose(self, x: float, y: float, yaw: float = 0.0) -> Dict[str, Any]:
+        url = f"{self._build_slam_base_url()}/set_initial_pose"
+        text = self._get_text_by_url(
+            url,
+            params={
+                "x": float(x),
+                "y": float(y),
+                "yaw": float(yaw),
+            },
+        )
+        return {
+            "success": text.strip().upper() == "OK",
+            "message": text.strip(),
+            "pose": {
+                "x": float(x),
+                "y": float(y),
+                "yaw": float(yaw),
+            },
+        }
 
     def get_points(self) -> Dict[str, Any]:
         """

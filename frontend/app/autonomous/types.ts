@@ -3,6 +3,10 @@ export type SlamPoint = {
     y: number;
 };
 
+export type SlamObstacle = SlamPoint & {
+    dist: number;
+};
+
 export type SlamPose = {
     ok?: boolean;
     x: number;
@@ -43,6 +47,7 @@ export type SlamStateData = {
     };
     render_info?: SlamRenderInfo;
     status?: SlamStatus;
+    nearest_obstacle_ahead?: SlamObstacle | null;
 };
 
 export type RobotTelemetry = {
@@ -128,6 +133,39 @@ export type MarkerPoint = {
 
 export type PointsResponse = Record<string, MarkerPoint>;
 
+export type PatrolPointResult = {
+    point: string;
+    status: string;
+    attempts: number;
+    started_at?: number | null;
+    finished_at?: number | null;
+    reach_time_sec?: number | null;
+    distance_on_finish?: number | null;
+    message?: string;
+};
+
+export type PatrolMission = {
+    mission_id: string;
+    robot_id: string;
+    route_name: string;
+    points: string[];
+    wait_sec_per_point: number;
+    max_retry_per_point: number;
+    skip_on_fail: boolean;
+    status: string;
+    current_index: number;
+    started_at?: number | null;
+    finished_at?: number | null;
+    results?: PatrolPointResult[];
+};
+
+export type PatrolStatusResponse = {
+    success?: boolean;
+    robot_id?: string;
+    running?: boolean;
+    mission?: PatrolMission | null;
+};
+
 export type ApiEnvelope<T> = {
     success?: boolean;
     robot_id?: string;
@@ -137,7 +175,8 @@ export type ApiEnvelope<T> = {
     log?: string;
 };
 
-export type MapMode = "view" | "navigate";export type NavPlacementMode = "goal" | "initialPose";
+export type MapMode = "view" | "navigate";
+export type NavPlacementMode = "goal" | "initialPose";
 export type KeyValueCard = {
     label: string;
     value: string;

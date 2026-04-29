@@ -14,6 +14,8 @@ import type {
   ControlStatusResponse,
   MapMode,
   NavPlacementMode,
+  PatrolMission,
+  PatrolStatusResponse,
   PointsResponse,
   QrPositionData,
   QrStateData,
@@ -21,15 +23,6 @@ import type {
   SlamRenderInfo,
   SlamStateData,
 } from "./types";
-
-function getSlamBaseUrl(server: string) {
-  try {
-    const url = new URL(server);
-    return `${url.protocol}//${url.hostname}:8080`;
-  } catch {
-    return "";
-  }
-}
 
 function getLidarUrl(server: string) {
   try {
@@ -131,37 +124,6 @@ function clientToWorldPoint(
   };
 }
 
-function normalizeAngle(angle: number) {
-  return Math.atan2(Math.sin(angle), Math.cos(angle));
-}
-
-function findNearestObstacleAhead(state: SlamStateData | null) {
-  if (!state?.pose || !state?.scan?.points?.length) return null;
-
-  const pose = state.pose;
-  const yaw = pose.theta || 0;
-
-  let best: { x: number; y: number; dist: number } | null = null;
-  let bestDist = Infinity;
-
-  for (const point of state.scan.points) {
-    const dx = point.x - pose.x;
-    const dy = point.y - pose.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    if (!isFinite(dist) || dist < 0.05) continue;
-
-    const angle = Math.atan2(dy, dx);
-    const diff = Math.abs(normalizeAngle(angle - yaw));
-
-    if (diff <= 0.35 && dist < bestDist) {
-      bestDist = dist;
-      best = { x: point.x, y: point.y, dist };
-    }
-  }
-
-  return best;
-}
-
 export default function AutonomousControlPage() {
   const { resolvedTheme } = useTheme();
 
@@ -189,6 +151,8 @@ export default function AutonomousControlPage() {
 
   const [savedPoints, setSavedPoints] = useState<PointsResponse>({});
   const [pointActionLoading, setPointActionLoading] = useState(false);
+  const [patrolRunning, setPatrolRunning] = useState(false);
+  const [patrolMission, setPatrolMission] = useState<PatrolMission | null>(null);
 
   const mapImgRef = useRef<HTMLImageElement | null>(null);
   const overlayRef = useRef<HTMLCanvasElement | null>(null);
@@ -233,7 +197,6 @@ export default function AutonomousControlPage() {
   }, []);
 
   const isDark = themeMounted && resolvedTheme === "dark";
-  const slamBaseUrl = useMemo(() => getSlamBaseUrl(dogServer), [dogServer]);
   const lidarUrl = useMemo(() => getLidarUrl(dogServer), [dogServer]);
 
   useEffect(() => {
@@ -260,19 +223,16 @@ export default function AutonomousControlPage() {
   }, []);
 
   const fetchSlamState = useCallback(async () => {
-    if (!slamBaseUrl) return;
-
     try {
-      const res = await fetch(`${slamBaseUrl}/state`, { cache: "no-store" });
-      if (!res.ok) throw new Error("Khong lay duoc /state");
-      const data = await res.json();
+      const json = await RobotAPI.slamState();
+      const data = json?.data ?? json ?? null;
       setSlamState(data);
       setSlamError("");
     } catch (error) {
       setSlamState(null);
       setSlamError(error instanceof Error ? error.message : "Khong lay duoc /state");
     }
-  }, [slamBaseUrl]);
+  }, []);
 
   const fetchQrState = useCallback(async () => {
     try {
@@ -313,17 +273,25 @@ export default function AutonomousControlPage() {
   }, []);
 
   const fetchPoints = useCallback(async () => {
-    if (!slamBaseUrl) return;
-
     try {
-      const res = await fetch(`${slamBaseUrl}/points`, { cache: "no-store" });
-      if (!res.ok) throw new Error("Khong lay duoc /points");
-      const data = await res.json();
+      const json = await RobotAPI.points();
+      const data = json?.data ?? json ?? {};
       setSavedPoints(data || {});
     } catch {
       setSavedPoints({});
     }
-  }, [slamBaseUrl]);
+  }, []);
+
+  const fetchPatrolStatus = useCallback(async () => {
+    try {
+      const data = (await RobotAPI.patrolStatus()) as PatrolStatusResponse;
+      setPatrolRunning(Boolean(data?.running));
+      setPatrolMission(data?.mission ?? null);
+    } catch {
+      setPatrolRunning(false);
+      setPatrolMission(null);
+    }
+  }, []);
 
   useEffect(() => {
     fetchRobotStatus();
@@ -332,6 +300,7 @@ export default function AutonomousControlPage() {
     fetchQrPosition();
     fetchControlStatus();
     fetchPoints();
+    fetchPatrolStatus();
 
     const timers = [
       setInterval(fetchRobotStatus, 3000),
@@ -340,6 +309,7 @@ export default function AutonomousControlPage() {
       setInterval(fetchQrPosition, 700),
       setInterval(fetchControlStatus, 5000),
       setInterval(fetchPoints, 5000),
+      setInterval(fetchPatrolStatus, 1500),
       setInterval(() => setMapReloadKey((value) => value + 1), 3000),
     ];
 
@@ -351,16 +321,23 @@ export default function AutonomousControlPage() {
     fetchQrPosition,
     fetchControlStatus,
     fetchPoints,
+    fetchPatrolStatus,
   ]);
 
   const clearPath = useCallback(async () => {
-    if (!slamBaseUrl) return;
     try {
-      await fetch(`${slamBaseUrl}/clear_path`);
-      setPendingPlacement(null);
-      await fetchSlamState();
+      await RobotAPI.patrolStop();
     } catch { }
-  }, [slamBaseUrl, fetchSlamState]);
+
+    try {
+      await RobotAPI.clearNavigation();
+    } catch { }
+
+    setPendingPlacement(null);
+    setPatrolRunning(false);
+    setPatrolMission(null);
+    await Promise.allSettled([fetchSlamState(), fetchPatrolStatus()]);
+  }, [fetchSlamState, fetchPatrolStatus]);
 
   const handleToggleLidar = useCallback(async () => {
     if (lidarBusy) return;
@@ -440,20 +417,19 @@ export default function AutonomousControlPage() {
             route_name: "manual_map_goal",
           });
         } else {
-          await fetch(
-            `${slamBaseUrl}/set_initial_pose?x=${encodeURIComponent(
-              pendingPlacement.x
-            )}&y=${encodeURIComponent(pendingPlacement.y)}&yaw=${encodeURIComponent(
-              yaw
-            )}`
-          );
+          await RobotAPI.setInitialPose({
+            x: pendingPlacement.x,
+            y: pendingPlacement.y,
+            yaw,
+          });
         }
 
         setPendingPlacement(null);
         await fetchSlamState();
+        await fetchPatrolStatus();
       } catch { }
     },
-    [mapMode, slamState, pendingPlacement, navPlacementMode, dogServer, slamBaseUrl, fetchSlamState]
+    [mapMode, slamState, pendingPlacement, navPlacementMode, dogServer, fetchSlamState, fetchPatrolStatus]
   );
 
   const drawSlamOverlay = useCallback(() => {
@@ -666,23 +642,12 @@ export default function AutonomousControlPage() {
   }, [drawSlamOverlay]);
 
   const createPointFromObstacle = async () => {
-    const obstacle = findNearestObstacleAhead(slamState);
     const qrText = (qrState?.ok && qrState.items?.length
       ? qrState.items[0].text
       : null);
     const pointName = (qrText || "POINT").trim() || "POINT";
 
     // CASE 1: Không có obstacle → Attempt thất bại
-    if (!obstacle || !slamBaseUrl) {
-      window.alert("Chua co obstacle phia truoc de luu.");
-      await RobotAPI.logQRAttempt({
-        name: pointName,
-        success: false,
-        reason: "no_obstacle",
-      }).catch(() => { });
-      return;
-    }
-
     // CASE 2: Point đã tồn tại → không tính Attempt
     if (savedPoints[pointName]) {
       window.alert(`Diem ${pointName} da ton tai.`);
@@ -693,11 +658,7 @@ export default function AutonomousControlPage() {
       setPointActionLoading(true);
 
       // Lưu vào ROS
-      await fetch(`${slamBaseUrl}/points`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: pointName, x: obstacle.x, y: obstacle.y, yaw: 0.0 }),
-      });
+      await RobotAPI.createPointFromObstacle({ name: pointName, yaw: 0.0 });
 
       // CASE 3: Lưu ROS thành công → Attempt + Success
       await RobotAPI.logQRAttempt({
@@ -706,12 +667,18 @@ export default function AutonomousControlPage() {
       }).catch(() => { });
 
       await fetchPoints();
-    } catch {
+      await fetchSlamState();
+    } catch (error) {
+      const body = (error as any)?.body || {};
+      const reason = body?.reason === "no_obstacle" ? "no_obstacle" : "ros_error";
+      if (reason === "no_obstacle") {
+        window.alert("Chua co obstacle phia truoc de luu.");
+      }
       // CASE 4: Lưu ROS thất bại → Attempt không thành công
       await RobotAPI.logQRAttempt({
         name: pointName,
         success: false,
-        reason: "ros_error",
+        reason,
       }).catch(() => { });
     } finally {
       setPointActionLoading(false);
@@ -719,14 +686,9 @@ export default function AutonomousControlPage() {
   };
 
   const deletePoint = async (name: string) => {
-    if (!slamBaseUrl) return;
     try {
       setPointActionLoading(true);
-      await fetch(`${slamBaseUrl}/delete_point`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
-      });
+      await RobotAPI.deletePoint(name);
       await fetchPoints();
     } finally {
       setPointActionLoading(false);
@@ -760,6 +722,7 @@ export default function AutonomousControlPage() {
         skip_on_fail: true,
       });
     } finally {
+      await fetchPatrolStatus();
       setPointActionLoading(false);
     }
   };
@@ -778,6 +741,7 @@ export default function AutonomousControlPage() {
         skip_on_fail: true,
       });
     } finally {
+      await fetchPatrolStatus();
       setPointActionLoading(false);
     }
   };
@@ -870,13 +834,17 @@ export default function AutonomousControlPage() {
     };
   }, []);
 
-  const slamMapSrc = `${slamBaseUrl}/map.png?v=${mapReloadKey}`;
+  const slamMapSrc = RobotAPI.slamMapUrl(mapReloadKey);
   const lidarActive = Boolean(
     controlStatus?.lidar_running ?? controlStatus?.lidar?.running ?? false
   );
   const robotFps = robotStatus?.telemetry?.fps;
   const pointNames = Object.keys(savedPoints || {}).sort();
-  const obstacle = findNearestObstacleAhead(slamState);
+  const activePatrolPointName =
+    patrolMission?.points?.[patrolMission.current_index] ??
+    patrolMission?.points?.[0] ??
+    null;
+  const obstacle = slamState?.nearest_obstacle_ahead ?? null;
 
   const planningHeadline =
     slamState?.status?.planner_ok === true
@@ -973,8 +941,11 @@ export default function AutonomousControlPage() {
             pointNames={pointNames}
             savedPoints={savedPoints}
             pointActionLoading={pointActionLoading}
+            patrolRunning={patrolRunning}
+            activePatrolPointName={activePatrolPointName}
             onCreatePoint={createPointFromObstacle}
             onStartPatrol={startPatrolAll}
+            onStopNavigation={clearPath}
             onDeleteLast={deleteLastPoint}
             onClearAll={clearAllPoints}
             onGoToPoint={goToPoint}

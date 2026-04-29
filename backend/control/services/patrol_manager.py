@@ -317,6 +317,13 @@ class PatrolManager:
                 success = False
 
                 for attempt in range(1, mission.max_retry_per_point + 2):
+                    if self._is_stopped(robot_id):
+                        mission.status = "STOPPED"
+                        point_result.status = "ABORTED"
+                        point_result.message = "mission stopped"
+                        point_result.finished_at = time.time()
+                        break
+
                     point_result.attempts = attempt
                     point_result.status = "RUNNING"
                     point_result.started_at = time.time()
@@ -332,13 +339,33 @@ class PatrolManager:
                     point_result.distance_on_finish = final_dist
                     point_result.message = message
 
+                    if self._is_stopped(robot_id):
+                        mission.status = "STOPPED"
+                        point_result.status = "ABORTED"
+                        point_result.message = message or "mission stopped"
+                        break
+
                     if ok:
                         point_result.status = "SUCCESS"
                         point_result.reach_time_sec = point_result.finished_at - point_result.started_at
                         success = True
                         consecutive_fail = 0
-                        time.sleep(mission.wait_sec_per_point)
+                        wait_until = time.time() + mission.wait_sec_per_point
+                        while time.time() < wait_until:
+                            if self._is_stopped(robot_id):
+                                mission.status = "STOPPED"
+                                break
+                            time.sleep(min(0.5, wait_until - time.time()))
                         break
+
+                if self._is_stopped(robot_id) or mission.status == "STOPPED":
+                    mission.status = "STOPPED"
+                    if point_result.status == "RUNNING":
+                        point_result.status = "ABORTED"
+                        point_result.message = "mission stopped"
+                    if point_result.finished_at is None:
+                        point_result.finished_at = time.time()
+                    break
 
                 if not success:
                     point_result.status = "FAILED"

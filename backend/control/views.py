@@ -930,12 +930,80 @@ class QRPositionView(APIView):
 class SlamStateView(APIView):
     def get(self, request, robot_id):
         try:
-            data = ROSClient(robot_id).get_slam_state()
+            include_scan = str(request.query_params.get("scan", "1")).lower() not in {
+                "0",
+                "false",
+                "no",
+            }
+            data = ROSClient(robot_id).get_slam_state_for_ui(
+                include_scan_points=include_scan,
+            )
             return Response(
                 {
                     "success": True,
                     "robot_id": robot_id,
                     "data": data,
+                },
+                status=status.HTTP_200_OK,
+            )
+        except Exception as e:
+            return Response(
+                {
+                    "success": False,
+                    "robot_id": robot_id,
+                    "error": str(e),
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+
+class ClearNavigationView(APIView):
+    def post(self, request, robot_id):
+        try:
+            result = ROSClient(robot_id).clear_navigation()
+            return Response(
+                {
+                    "success": True,
+                    "robot_id": robot_id,
+                    "result": result,
+                },
+                status=status.HTTP_200_OK,
+            )
+        except Exception as e:
+            return Response(
+                {
+                    "success": False,
+                    "robot_id": robot_id,
+                    "error": str(e),
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+
+class InitialPoseView(APIView):
+    def post(self, request, robot_id):
+        body = request.data or {}
+        try:
+            x = float(body.get("x"))
+            y = float(body.get("y"))
+            yaw = float(body.get("yaw", 0.0))
+        except Exception as e:
+            return Response(
+                {
+                    "success": False,
+                    "robot_id": robot_id,
+                    "error": f"invalid payload: {e}",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            result = ROSClient(robot_id).set_initial_pose(x=x, y=y, yaw=yaw)
+            return Response(
+                {
+                    "success": True,
+                    "robot_id": robot_id,
+                    "result": result,
                 },
                 status=status.HTTP_200_OK,
             )
@@ -1044,6 +1112,80 @@ class PointsView(APIView):
         except Exception as e:
             log_line = build_log(robot_id, "CREATE_POINT", {"name": name, "x": x, "y": y, "yaw": yaw}, False, str(e))
             return Response({"success": False, "robot_id": robot_id, "error": str(e), "log": log_line}, status=500)
+
+
+class PointFromObstacleView(APIView):
+    def post(self, request, robot_id):
+        body = request.data or {}
+        name = str(body.get("name", "")).strip()
+        try:
+            yaw = float(body.get("yaw", 0.0))
+        except Exception:
+            yaw = 0.0
+
+        if not name:
+            return Response(
+                {
+                    "success": False,
+                    "robot_id": robot_id,
+                    "error": "name is required",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            client = ROSClient(robot_id)
+            state = client.get_slam_state_for_ui(include_scan_points=True)
+            obstacle = state.get("nearest_obstacle_ahead")
+
+            if not obstacle:
+                return Response(
+                    {
+                        "success": False,
+                        "robot_id": robot_id,
+                        "error": "no obstacle ahead",
+                        "reason": "no_obstacle",
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            x = float(obstacle["x"])
+            y = float(obstacle["y"])
+            result = client.create_point(name=name, x=x, y=y, yaw=yaw)
+            log_line = build_log(
+                robot_id,
+                "CREATE_POINT_FROM_OBSTACLE",
+                {"name": name, "x": x, "y": y, "yaw": yaw},
+                True,
+                None,
+            )
+            return Response(
+                {
+                    "success": True,
+                    "robot_id": robot_id,
+                    "point": {"name": name, "x": x, "y": y, "yaw": yaw},
+                    "result": result,
+                    "log": log_line,
+                },
+                status=status.HTTP_200_OK,
+            )
+        except Exception as e:
+            log_line = build_log(
+                robot_id,
+                "CREATE_POINT_FROM_OBSTACLE",
+                {"name": name},
+                False,
+                str(e),
+            )
+            return Response(
+                {
+                    "success": False,
+                    "robot_id": robot_id,
+                    "error": str(e),
+                    "log": log_line,
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
 
 class DeletePointView(APIView):
