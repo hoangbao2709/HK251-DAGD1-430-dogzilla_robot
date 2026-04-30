@@ -7,7 +7,7 @@ export const DEFAULT_DOG_SERVER = "http://100.95.128.237:9000";
 export const robotId = "robot-a";
 
 type RequestInitWithBody = RequestInit & {
-  body?: string;
+  body?: BodyInit | null;
 };
 
 async function api<T = any>(path: string, init?: RequestInitWithBody): Promise<T> {
@@ -18,7 +18,7 @@ async function api<T = any>(path: string, init?: RequestInitWithBody): Promise<T
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
     headers: {
-      ...(init?.body ? { "Content-Type": "application/json" } : {}),
+      ...(typeof init?.body === "string" ? { "Content-Type": "application/json" } : {}),
       ...(init?.headers || {}),
     },
     cache: "no-store",
@@ -177,6 +177,30 @@ export const RobotAPI = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+
+  saveSlamMap: (name: string) =>
+    api<any>(`${CONTROL_PREFIX}/${robotId}/slam/save-map/`, {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    }),
+
+  uploadSlamMap: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return api<any>(`${CONTROL_PREFIX}/${robotId}/slam/upload-map/`, {
+      method: "POST",
+      body: form,
+    });
+  },
+
+  useLiveSlamMap: () =>
+    api<any>(`${CONTROL_PREFIX}/${robotId}/slam/use-live-map/`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    }),
+
+  slamMapFileUrl: (filename: string) =>
+    `${API_BASE}${CONTROL_PREFIX}/${robotId}/slam/maps/${encodeURIComponent(filename)}`,
 
   points: () =>
     api<any>(`${CONTROL_PREFIX}/${robotId}/points/`),

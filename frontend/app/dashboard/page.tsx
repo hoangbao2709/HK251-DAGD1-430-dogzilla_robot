@@ -3,73 +3,100 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
-import ConnectionCard from "@/components/ConnectionCard";
+
+import ConnectionCard, { Device } from "@/components/ConnectionCard";
+import { getStoredSession, onAuthChanged } from "@/app/lib/auth";
 import { setSelectedRobotAddr } from "@/app/lib/selectedRobot";
-import { RobotAPI } from "./../lib/robotApi";
+import { RobotAPI } from "@/app/lib/robotApi";
 
-export type Device = {
-  id: number;
-  name: string;
-  ip: string;
-  battery: number;
-  url?: string;
-  status: "online" | "offline" | "unknown";
-};
-
-const DEVICES_COOKIE_KEY = "dogzilla_devices";
-
-function saveDevicesToCookie(devices: Device[]) {
-  if (typeof document === "undefined") return;
-
-  try {
-    const raw = JSON.stringify(devices);
-    document.cookie = `${DEVICES_COOKIE_KEY}=${encodeURIComponent(
-      raw
-    )}; path=/; max-age=31536000`;
-  } catch (err) {
-    console.error("Cannot save devices to cookie:", err);
-  }
-}
-
-function loadDevicesFromCookie(): Device[] | null {
-  if (typeof document === "undefined") return null;
-
-  try {
-    const cookies = document.cookie.split(";").map((c) => c.trim());
-    const found = cookies.find((c) => c.startsWith(`${DEVICES_COOKIE_KEY}=`));
-    if (!found) return null;
-
-    const value = decodeURIComponent(found.split("=")[1] || "");
-    if (!value) return null;
-
-    return JSON.parse(value) as Device[];
-  } catch (err) {
-    console.error("Cannot parse devices cookie:", err);
-    return null;
-  }
-}
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
+const SESSION_DEVICES_KEY = "dogzilla_session_devices";
 
 function normalizeRobotAddr(device: Device) {
   const raw = device.ip.trim();
+
   if (!raw) return "";
 
   if (raw.startsWith("http://") || raw.startsWith("https://")) {
     return raw.replace(/\/+$/, "");
   }
 
+  if (raw.includes(":")) {
+    return `http://${raw.replace(/\/+$/, "")}`;
+  }
+
   return `http://${raw}:9000`;
 }
 
+function mergeDevices(currentDevices: Device[], serverDevices: Device[]) {
+  const map = new Map<string, Device>();
+
+  for (const item of currentDevices) {
+    map.set(item.ip, item);
+  }
+
+  for (const item of serverDevices) {
+    map.set(item.ip, item);
+  }
+
+  return Array.from(map.values());
+}
+
+function loadSessionDevices(): Device[] {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const raw = window.sessionStorage.getItem(SESSION_DEVICES_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed
+      .filter((item) => item && typeof item.ip === "string" && item.ip.trim())
+      .map((item, index) => ({
+        id: Number(item.id ?? Date.now() + index),
+        name: String(item.name || `Robot ${index + 1}`),
+        ip: String(item.ip).trim(),
+        url: String(item.url || item.ip || ""),
+        battery: Number(item.battery ?? 100),
+        status: item.status === "online" || item.status === "offline" ? item.status : "unknown",
+        source: "session",
+      }));
+  } catch {
+    return [];
+  }
+}
+
+function saveSessionDevices(devices: Device[]) {
+  if (typeof window === "undefined") return;
+
+  const sessionDevices = devices
+    .filter((device) => device.source !== "database")
+    .map((device) => ({
+      id: device.id,
+      name: device.name,
+      ip: device.ip,
+      url: device.url || "",
+      battery: device.battery ?? 100,
+      status: device.status || "unknown",
+      source: "session",
+    }));
+
+  window.sessionStorage.setItem(SESSION_DEVICES_KEY, JSON.stringify(sessionDevices));
+}
+
 export default function DashboardPage() {
+  const router = useRouter();
   const { resolvedTheme } = useTheme();
+
   const [themeMounted, setThemeMounted] = useState(false);
   const [devices, setDevices] = useState<Device[]>([]);
   const [addr, setAddr] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [isPortrait, setIsPortrait] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
-  const router = useRouter();
   const canAdd = useMemo(() => addr.trim().length > 0, [addr]);
   const isDark = themeMounted && resolvedTheme === "dark";
 
@@ -78,14 +105,26 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
+    const updateLoginState = () => {
+      const session = getStoredSession();
+      setIsLoggedIn(Boolean(session?.access));
+    };
+
+    updateLoginState();
+
+    const unsubscribe = onAuthChanged(updateLoginState);
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
 
     const updateOrientation = () => {
-      const { innerWidth, innerHeight } = window;
-      setIsPortrait(innerHeight > innerWidth);
+      setIsPortrait(window.innerHeight > window.innerWidth);
     };
 
     updateOrientation();
+
     window.addEventListener("resize", updateOrientation);
     window.addEventListener("orientationchange", updateOrientation);
 
@@ -96,61 +135,197 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    const stored = loadDevicesFromCookie();
-    if (stored && stored.length > 0) {
-      setDevices(stored);
+    async function loadRememberedRobots() {
+      const session = getStoredSession();
+      const sessionDevices = loadSessionDevices();
+
+      if (!session?.access) {
+        setDevices(sessionDevices);
+        return;
+      }
+
+      try {
+        const res = await fetch(`${API_BASE}/api/auth/robots/`, {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${session.access}`,
+          },
+          cache: "no-store",
+        });
+
+        if (!res.ok) {
+          throw new Error(`Cannot load remembered robots: ${res.status}`);
+        }
+
+        const data = await res.json();
+
+        const serverDevices: Device[] = Array.isArray(data)
+          ? data.map((item: any, index: number) => ({
+              id: Number(item.id ?? Date.now() + index),
+              name: item.name || `Robot ${index + 1}`,
+              ip: item.ip || item.url || "",
+              url: item.url || item.ip || "",
+              battery: Number(item.battery ?? 100),
+              status: item.status || "unknown",
+              source: "database",
+            }))
+          : [];
+
+        setDevices((prev) => mergeDevices(mergeDevices(sessionDevices, prev), serverDevices));
+      } catch (err) {
+        console.warn("Load remembered robots failed:", err);
+        setDevices((prev) => mergeDevices(sessionDevices, prev));
+      }
     }
-  }, []);
 
-  useEffect(() => {
-    saveDevicesToCookie(devices);
-  }, [devices]);
+    loadRememberedRobots();
+  }, [isLoggedIn]);
 
-  const handleConnectDevice = async (device: Device) => {
+  const handleConnectDevice = async (device: Device, remember = false) => {
     if (loading) return;
 
     setErrorMsg(null);
     setLoading(true);
 
-    const dogzillaAddr = normalizeRobotAddr(device);
+    const robotAddr = normalizeRobotAddr(device);
 
     try {
-      const res = await RobotAPI.connect(dogzillaAddr);
+      const res = await RobotAPI.connect(robotAddr);
       const connected = Boolean(res.connected);
-      const newStatus: Device["status"] = connected ? "online" : "offline";
 
       if (!connected) {
-        throw new Error(res.error || "Khong ket noi duoc toi robot.");
+        throw new Error(res.error || "Không kết nối được tới robot.");
       }
 
-      setDevices((prev) =>
-        prev.map((d) =>
-          d.id === device.id ? { ...d, status: newStatus } : d
-        )
-      );
+      setDevices((prev) => {
+        const next: Device[] = prev.map((d) =>
+          d.ip === device.ip
+            ? {
+                ...d,
+                id: device.id,
+                status: "online" as const,
+                source: remember ? "database" : d.source ?? "session",
+              }
+            : d
+        );
+        saveSessionDevices(next);
+        return next;
+      });
 
-      setSelectedRobotAddr(dogzillaAddr);
+      setSelectedRobotAddr(robotAddr, remember);
       router.push("/control");
     } catch (e: any) {
       console.error("Connect error:", e);
 
-      setDevices((prev) =>
-        prev.map((d) =>
-          d.id === device.id ? { ...d, status: "offline" } : d
-        )
-      );
-      setErrorMsg(e?.message || "Khong ket noi duoc toi backend/robot");
+      setDevices((prev) => {
+        const next: Device[] = prev.map((d) =>
+          d.ip === device.ip
+            ? {
+                ...d,
+                status: "offline" as const,
+              }
+            : d
+        );
+        saveSessionDevices(next);
+        return next;
+      });
+
+      setErrorMsg(e?.message || "Không kết nối được tới backend/robot.");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDeleteDevice = (device: Device) => {
-    setDevices((prev) => prev.filter((d) => d.id !== device.id));
+  const handleRememberAndConnect = async (device: Device) => {
+    const session = getStoredSession();
+
+    if (!session?.access) {
+      await handleConnectDevice(device, false);
+      return;
+    }
+
+    const robotAddr = normalizeRobotAddr(device);
+
+    try {
+      setErrorMsg(null);
+
+      const res = await fetch(`${API_BASE}/api/auth/robots/`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access}`,
+        },
+        body: JSON.stringify({
+          name: device.name,
+          ip: device.ip,
+          url: robotAddr,
+          status: device.status,
+          battery: device.battery ?? 100,
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      console.log("SAVE ROBOT STATUS =", res.status);
+      console.log("SAVE ROBOT RESPONSE =", data);
+
+      if (!res.ok) {
+        throw new Error(
+          data?.error ||
+            data?.detail ||
+            `Không lưu được robot vào database. Status: ${res.status}`
+        );
+      }
+
+      const savedDevice: Device = {
+        ...device,
+        id: Number(data.id ?? device.id),
+        name: data.name ?? device.name,
+        ip: data.ip ?? device.ip,
+        url: data.url ?? robotAddr,
+        status: data.status ?? device.status,
+        battery: Number(data.battery ?? device.battery ?? 100),
+        source: "database",
+      };
+
+      setDevices((prev) =>
+        prev.map((d) => (d.ip === device.ip ? savedDevice : d))
+      );
+
+      await handleConnectDevice(savedDevice, true);
+    } catch (err: any) {
+      console.error("Remember robot error:", err);
+      setErrorMsg(err?.message || "Không lưu được robot vào database.");
+    }
+  };
+
+  const handleDeleteDevice = async (device: Device) => {
+    const session = getStoredSession();
+
+    setDevices((prev) => {
+      const next = prev.filter((d) => d.ip !== device.ip);
+      saveSessionDevices(next);
+      return next;
+    });
+
+    if (!session?.access) return;
+    if (device.source !== "database") return;
+
+    try {
+      await fetch(`${API_BASE}/api/auth/robots/${device.id}/`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${session.access}`,
+        },
+      });
+    } catch (err) {
+      console.warn("Delete remembered robot failed:", err);
+    }
   };
 
   const handleAdd = () => {
     const ip = addr.trim();
+
     if (!ip || loading) return;
 
     setErrorMsg(null);
@@ -160,19 +335,22 @@ export default function DashboardPage() {
       return;
     }
 
-    const nextId = devices.length
-      ? Math.max(...devices.map((d) => d.id)) + 1
-      : 1;
+    const nextId = Date.now();
 
     const nextDevice: Device = {
       id: nextId,
-      name: `Robot ${String.fromCharCode(64 + devices.length + 1)}`,
+      name: `Robot ${String.fromCharCode(65 + devices.length)}`,
       ip,
       battery: 100,
       status: "unknown",
+      source: "session",
     };
 
-    setDevices((prev) => [nextDevice, ...prev]);
+    setDevices((prev) => {
+      const next = [nextDevice, ...prev];
+      saveSessionDevices(next);
+      return next;
+    });
     setAddr("");
   };
 
@@ -192,7 +370,7 @@ export default function DashboardPage() {
       <div className="mb-6 flex flex-col gap-2 sm:flex-row">
         <input
           type="text"
-          placeholder="Enter device IP (vd: 192.168.2.100)"
+          placeholder="Enter device IP, ví dụ: 100.95.128.237"
           value={addr}
           onChange={(e) => setAddr(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && canAdd && handleAdd()}
@@ -202,6 +380,7 @@ export default function DashboardPage() {
               : "border border-[#d8cbff] bg-[#fffdfd] text-[#1f1640] placeholder:text-[#8d84a8] focus:ring-pink-400/30"
           }`}
         />
+
         <button
           onClick={handleAdd}
           disabled={!canAdd || loading}
@@ -209,7 +388,11 @@ export default function DashboardPage() {
             isDark
               ? "bg-[#7c4dff] text-white hover:bg-[#6b3dff]"
               : "bg-[#7c4dff] text-white hover:bg-[#6b3dff]"
-          } ${!canAdd || loading ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}
+          } ${
+            !canAdd || loading
+              ? "cursor-not-allowed opacity-50"
+              : "cursor-pointer"
+          }`}
         >
           Add
         </button>
@@ -230,9 +413,10 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {devices.map((dev) => (
           <ConnectionCard
-            key={dev.id}
+            key={`${dev.source}-${dev.id}-${dev.ip}`}
             device={dev}
             onConnect={handleConnectDevice}
+            onRememberAndConnect={handleRememberAndConnect}
             onDelete={handleDeleteDevice}
           />
         ))}

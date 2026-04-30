@@ -18,3 +18,34 @@ class UserProfile(models.Model):
 
     def __str__(self) -> str:
         return f"{self.user.username} profile"
+
+
+class RobotDevice(models.Model):
+    STATUS_CHOICES = (
+        ("online", "Online"),
+        ("offline", "Offline"),
+        ("unknown", "Unknown"),
+    )
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="robot_devices",
+    )
+    name = models.CharField(max_length=128, default="Robot")
+    ip = models.CharField(max_length=255)
+    url = models.CharField(max_length=512, blank=True, default="")
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default="unknown",
+    )
+    battery = models.IntegerField(default=100)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("user", "ip")
+
+    def __str__(self):
+        return f"{self.name} - {self.ip}"

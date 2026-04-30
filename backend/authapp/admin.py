@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import UserProfile
+from .models import UserProfile, RobotDevice
 
 
 @admin.register(UserProfile)
@@ -16,3 +16,19 @@ class UserProfileAdmin(admin.ModelAdmin):
         "robot_updated_at",
     )
     search_fields = ("user__username", "user__email", "robot_device_id")
+
+
+@admin.register(RobotDevice)
+class RobotDeviceAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "user",
+        "name",
+        "ip",
+        "url",
+        "status",
+        "battery",
+        "updated_at",
+    )
+    search_fields = ("user__username", "user__email", "name", "ip", "url")
+    list_filter = ("status",)

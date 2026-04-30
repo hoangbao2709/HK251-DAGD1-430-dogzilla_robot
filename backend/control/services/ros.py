@@ -8,6 +8,12 @@ import requests
 from django.conf import settings  # type: ignore[import-untyped]
 import numpy as np
 from ..models import ActionEvent, Robot
+from .slam_map_files import (
+    sanitize_map_name,
+    save_preview_slam_map_bundle,
+    save_raw_slam_map_bundle,
+)
+from .slam_map_renderer import render_raw_occupancy_grid_png
 from .slam_payload import build_slam_ui_state
 
 
@@ -127,6 +133,26 @@ class ROSClient:
         except Exception:
             data = {
                 "success": False,
+                "message": resp.text,
+            }
+
+        if not resp.ok:
+            raise RuntimeError(f"Request failed: {data}")
+
+        return data
+
+    def _post_file_by_url(self, url: str, *, field_name: str, filename: str, file_obj) -> Dict[str, Any]:
+        resp = self.session.post(
+            url,
+            files={field_name: (filename, file_obj)},
+            timeout=(self.timeout, self.stream_timeout),
+        )
+
+        try:
+            data = resp.json()
+        except Exception:
+            data = {
+                "success": resp.ok,
                 "message": resp.text,
             }
 
@@ -268,6 +294,41 @@ class ROSClient:
         )
         resp.raise_for_status()
         return resp
+
+    def stream_slam_map_raw(self):
+        """
+        Lấy raw OccupancyGrid từ robot. Backend sẽ render PNG từ dữ liệu này.
+        """
+        url = self._build_url(8080, "/map_raw")
+        resp = self.session.get(
+            url,
+            stream=True,
+            timeout=(self.timeout, self.stream_timeout),
+        )
+        resp.raise_for_status()
+        return resp
+
+    def render_slam_map_png_on_backend(self) -> bytes:
+        """
+        Render map PNG ở backend để robot không phải chạy numpy/PIL cho UI.
+        Fallback về /map.png để tương thích robot cũ hoặc loaded map bundle.
+        """
+        try:
+            raw = self.stream_slam_map_raw()
+            try:
+                return render_raw_occupancy_grid_png(
+                    raw.content,
+                    raw.headers,
+                    robot_id=self.robot_id,
+                )
+            finally:
+                raw.close()
+        except Exception:
+            upstream = self.stream_slam_map_png()
+            try:
+                return upstream.content
+            finally:
+                upstream.close()
 
     # ------------------------------------------------------------------
     # 4) Speed mode
@@ -670,6 +731,79 @@ class ROSClient:
         url = f"{self._build_slam_base_url()}/clear_path"
         text = self._get_text_by_url(url)
         return {"success": True, "message": text.strip()}
+
+    def save_slam_map(self, name: str) -> Dict[str, Any]:
+        safe_name = sanitize_map_name(name)
+        if not safe_name:
+            raise RuntimeError("map name is required")
+
+        raw_error: Exception | None = None
+        try:
+            raw = self.stream_slam_map_raw()
+            try:
+                return save_raw_slam_map_bundle(
+                    robot_id=self.robot_id,
+                    name=safe_name,
+                    raw_data=raw.content,
+                    headers=raw.headers,
+                )
+            finally:
+                raw.close()
+        except Exception as exc:
+            raw_error = exc
+
+        try:
+            state = self.get_slam_state_light()
+            upstream = self.stream_slam_map_png()
+            try:
+                result = save_preview_slam_map_bundle(
+                    robot_id=self.robot_id,
+                    name=safe_name,
+                    preview_png=upstream.content,
+                    map_info=state.get("map_info") or {},
+                    render_info=state.get("render_info") or {},
+                )
+                result["warning"] = f"raw map unavailable; saved preview bundle instead: {raw_error}"
+                return result
+            finally:
+                upstream.close()
+        except Exception as preview_error:
+            raise RuntimeError(
+                f"cannot save map on backend: raw map error={raw_error}; preview error={preview_error}"
+            ) from preview_error
+
+    def upload_slam_map(self, uploaded_file) -> Dict[str, Any]:
+        url = f"{self._build_slam_base_url()}/upload_map"
+        filename = getattr(uploaded_file, "name", "map.zip")
+        try:
+            uploaded_file.seek(0)
+        except Exception:
+            pass
+        return self._post_file_by_url(
+            url,
+            field_name="file",
+            filename=filename,
+            file_obj=uploaded_file,
+        )
+
+    def use_live_slam_map(self) -> Dict[str, Any]:
+        url = f"{self._build_slam_base_url()}/use_live_map"
+        text = self._get_text_by_url(url)
+        return {"success": True, "message": text.strip()}
+
+    def get_slam_map_file_response(self, filename: str):
+        safe_name = str(filename or "").strip().replace("\\", "/").split("/")[-1]
+        if not safe_name:
+            raise RuntimeError("filename is required")
+
+        url = f"{self._build_slam_base_url()}/maps/{safe_name}"
+        resp = self.session.get(
+            url,
+            stream=True,
+            timeout=(self.timeout, self.stream_timeout),
+        )
+        resp.raise_for_status()
+        return resp
 
     def set_initial_pose(self, x: float, y: float, yaw: float = 0.0) -> Dict[str, Any]:
         url = f"{self._build_slam_base_url()}/set_initial_pose"

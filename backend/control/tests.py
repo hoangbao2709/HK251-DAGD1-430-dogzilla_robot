@@ -1,7 +1,12 @@
 from datetime import timedelta
+from pathlib import Path
+import shutil
+import uuid
+import zipfile
 from unittest.mock import patch
 
-from django.test import SimpleTestCase, TestCase
+from django.conf import settings
+from django.test import SimpleTestCase, TestCase, override_settings
 from django.utils import timezone
 
 from .models import ActionEvent, Robot
@@ -9,7 +14,13 @@ from .services.evaluation_metrics import build_evaluation_metrics_payload
 from .services.patrol_manager import PatrolManager
 from .services.patrol_store import append_history, get_history
 from .services.patrol_types import PatrolMission, PatrolPointResult
+from .services.slam_map_files import find_saved_slam_map_file, save_raw_slam_map_bundle
+from .services.slam_map_renderer import render_raw_occupancy_grid_png
 from .services.slam_payload import build_slam_ui_state
+
+
+def _test_map_root() -> Path:
+    return Path(settings.BASE_DIR) / f".test_slam_maps_{uuid.uuid4().hex}"
 
 
 class EvaluationMetricsTests(SimpleTestCase):
@@ -115,6 +126,95 @@ class SlamPayloadTests(SimpleTestCase):
         self.assertEqual(payload["paths"]["a_star"][1]["x"], 1.0)
         self.assertAlmostEqual(payload["nearest_obstacle_ahead"]["x"], 1.0)
         self.assertAlmostEqual(payload["nearest_obstacle_ahead"]["dist"], 1.0)
+
+
+class SlamMapRendererTests(SimpleTestCase):
+    def test_renders_raw_occupancy_grid_png_on_backend(self):
+        raw = bytes([0, 100, 255, 0])
+        headers = {
+            "X-Map-Version": "1",
+            "X-Map-Width": "2",
+            "X-Map-Height": "2",
+            "X-Map-Resolution": "0.05",
+            "X-Map-Origin-X": "0.0",
+            "X-Map-Origin-Y": "0.0",
+        }
+
+        png = render_raw_occupancy_grid_png(raw, headers, robot_id="test")
+
+        self.assertTrue(png.startswith(b"\x89PNG\r\n\x1a\n"))
+        self.assertGreater(len(png), 20)
+
+
+class SlamMapFileTests(SimpleTestCase):
+    def test_saves_raw_map_bundle_on_backend(self):
+        raw = bytes([0, 100, 255, 0])
+        headers = {
+            "X-Map-Version": "1",
+            "X-Map-Width": "2",
+            "X-Map-Height": "2",
+            "X-Map-Resolution": "0.05",
+            "X-Map-Origin-X": "-1.0",
+            "X-Map-Origin-Y": "-2.0",
+            "X-Map-Frame-Id": "map",
+        }
+
+        root = _test_map_root()
+        root.mkdir(parents=True, exist_ok=True)
+        try:
+            with override_settings(SLAM_MAP_SAVE_ROOT=root):
+                result = save_raw_slam_map_bundle(
+                    robot_id="robot-a",
+                    name="demo map",
+                    raw_data=raw,
+                    headers=headers,
+                )
+
+                self.assertEqual(result["bundle"], "demo_map.bundle.zip")
+                path = find_saved_slam_map_file("robot-a", result["bundle"])
+                self.assertIsNotNone(path)
+                assert path is not None
+
+                with zipfile.ZipFile(path, "r") as zf:
+                    names = set(zf.namelist())
+                    self.assertIn("metadata.json", names)
+                    self.assertIn("preview.png", names)
+                    self.assertIn("demo_map.pgm", names)
+                    self.assertIn("demo_map.yaml", names)
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
+
+
+class SlamMapFileViewTests(TestCase):
+    def test_serves_backend_saved_bundle(self):
+        raw = bytes([0, 100, 255, 0])
+        headers = {
+            "X-Map-Version": "1",
+            "X-Map-Width": "2",
+            "X-Map-Height": "2",
+            "X-Map-Resolution": "0.05",
+            "X-Map-Origin-X": "0.0",
+            "X-Map-Origin-Y": "0.0",
+        }
+
+        root = _test_map_root()
+        root.mkdir(parents=True, exist_ok=True)
+        try:
+            with override_settings(SLAM_MAP_SAVE_ROOT=root):
+                result = save_raw_slam_map_bundle(
+                    robot_id="robot-a",
+                    name="demo",
+                    raw_data=raw,
+                    headers=headers,
+                )
+
+                response = self.client.get(f"/control/api/robots/robot-a/slam/maps/{result['bundle']}")
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/zip")
+        self.assertTrue(response.content.startswith(b"PK"))
 
 
 class SessionSummaryTests(TestCase):

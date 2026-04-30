@@ -32,6 +32,7 @@ export type SlamStatus = {
 };
 
 export type SlamStateData = {
+    map_version?: number;
     pose?: SlamPose;
     scan?: {
         ok?: boolean;

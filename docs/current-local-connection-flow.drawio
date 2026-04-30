@@ -1,0 +1,171 @@
+<mxfile host="app.diagrams.net">
+  <diagram id="current-local-connection-flow" name="Current Local Connection Flow">
+    <mxGraphModel dx="1400" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="800" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="frame" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;strokeWidth=1;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="1280" height="620" as="geometry" />
+        </mxCell>
+        <mxCell id="split-user-netbird" value="" style="endArrow=none;html=1;rounded=0;strokeColor=#000000;strokeWidth=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="40" y="275" as="sourcePoint" />
+            <mxPoint x="1320" y="275" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="split-netbird-robot" value="" style="endArrow=none;html=1;rounded=0;strokeColor=#000000;strokeWidth=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="40" y="425" as="sourcePoint" />
+            <mxPoint x="1320" y="425" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="split-label" value="" style="endArrow=none;html=1;rounded=0;strokeColor=#000000;strokeWidth=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="150" y="40" as="sourcePoint" />
+            <mxPoint x="150" y="660" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="label-user" value="User" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=22;fontStyle=1;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="50" y="130" width="90" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="label-netbird" value="NetBird" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=22;fontStyle=1;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="50" y="320" width="90" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="label-robot" value="Robot" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=22;fontStyle=1;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="50" y="520" width="90" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="u-start" value="Start" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#ffffff;strokeColor=#000000;fontSize=14;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="190" y="140" width="70" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="u-select" value="Select&lt;br&gt;Connection&lt;br&gt;Method" style="rhombus;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=14;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="340" y="120" width="120" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="u-local-ip" value="Enter robot's&lt;br&gt;Local IP and Port" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#ffffff;strokeColor=#000000;fontSize=14;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="560" y="70" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="u-netbird-ip" value="Enter robot's&lt;br&gt;NetBird IP and Port" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#ffffff;strokeColor=#000000;fontSize=14;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="560" y="195" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="u-add-card" value="Add robot card" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#ffffff;strokeColor=#000000;fontSize=14;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="830" y="140" width="140" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="u-connect" value="Connect to&lt;br&gt;Robot Server" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#ffffff;strokeColor=#000000;fontSize=14;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="1050" y="140" width="150" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="u-end" value="End" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#ffffff;strokeColor=#000000;fontSize=14;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="1240" y="140" width="70" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="n-user" value="User device joined&lt;br&gt;NetBird network" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#ffffff;strokeColor=#000000;fontSize=14;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="300" y="315" width="170" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="n-overlay" value="NetBird private&lt;br&gt;overlay network" style="rhombus;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=14;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="600" y="300" width="130" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="n-route" value="Route by robot&lt;br&gt;NetBird IP" style="shape=parallelogram;perimeter=parallelogramPerimeter;whiteSpace=wrap;html=1;fixedSize=1;fillColor=#ffffff;strokeColor=#000000;fontSize=14;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="850" y="315" width="170" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="r-start" value="Start" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#ffffff;strokeColor=#000000;fontSize=14;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="190" y="515" width="70" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="r-boot" value="Boot&lt;br&gt;Raspberry Pi" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#ffffff;strokeColor=#000000;fontSize=14;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="320" y="515" width="140" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="r-netbird" value="Start NetBird&lt;br&gt;client" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#ffffff;strokeColor=#000000;fontSize=14;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="530" y="515" width="140" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="r-server" value="Start local&lt;br&gt;Robot Server" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#ffffff;strokeColor=#000000;fontSize=14;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="730" y="515" width="150" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="r-display" value="Display Local IP&lt;br&gt;and NetBird IP" style="shape=parallelogram;perimeter=parallelogramPerimeter;whiteSpace=wrap;html=1;fixedSize=1;fillColor=#ffffff;strokeColor=#000000;fontSize=14;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="970" y="515" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="r-ready" value="Robot Server&lt;br&gt;Ready" style="rounded=1;whiteSpace=wrap;html=1;arcSize=18;fillColor=#ffffff;strokeColor=#000000;fontSize=14;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="990" y="445" width="160" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="r-end" value="End" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#ffffff;strokeColor=#000000;fontSize=14;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="1240" y="515" width="70" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="e-u-start" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#000000;endArrow=block;fontSize=14;" edge="1" parent="1" source="u-start" target="u-select">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-u-local" value="Via Local IP" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#000000;endArrow=block;fontSize=14;" edge="1" parent="1" source="u-select" target="u-local-ip">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-u-netbird" value="Via NetBird IP" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#000000;endArrow=block;fontSize=14;" edge="1" parent="1" source="u-select" target="u-netbird-ip">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-local-add" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#000000;endArrow=block;fontSize=14;" edge="1" parent="1" source="u-local-ip" target="u-add-card">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-netbird-add" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#000000;endArrow=block;fontSize=14;" edge="1" parent="1" source="u-netbird-ip" target="u-add-card">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-add-connect" value="save in browser session" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#000000;endArrow=block;fontSize=14;" edge="1" parent="1" source="u-add-card" target="u-connect">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-connect-end" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#000000;endArrow=block;fontSize=14;" edge="1" parent="1" source="u-connect" target="u-end">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-n-1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#000000;endArrow=block;fontSize=14;" edge="1" parent="1" source="n-user" target="n-overlay">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-n-2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#000000;endArrow=block;fontSize=14;" edge="1" parent="1" source="n-overlay" target="n-route">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-r-1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#000000;endArrow=block;fontSize=14;" edge="1" parent="1" source="r-start" target="r-boot">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-r-2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#000000;endArrow=block;fontSize=14;" edge="1" parent="1" source="r-boot" target="r-netbird">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-r-3" value="NetBird option enabled" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#000000;endArrow=block;fontSize=14;" edge="1" parent="1" source="r-netbird" target="r-server">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-r-4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#000000;endArrow=block;fontSize=14;" edge="1" parent="1" source="r-server" target="r-display">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-r-5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#000000;endArrow=block;fontSize=14;" edge="1" parent="1" source="r-display" target="r-ready">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1060" y="550" />
+              <mxPoint x="1060" y="505" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-r-6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#000000;endArrow=block;fontSize=14;" edge="1" parent="1" source="r-ready" target="r-end">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1210" y="475" />
+              <mxPoint x="1210" y="550" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-register-netbird" value="Robot NetBird IP registered" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#000000;endArrow=block;dashed=1;fontSize=14;" edge="1" parent="1" source="r-netbird" target="n-route">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="600" y="460" />
+              <mxPoint x="935" y="460" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-read-local" value="Read Local IP" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#000000;endArrow=block;dashed=1;fontSize=14;" edge="1" parent="1" source="r-display" target="u-local-ip">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1060" y="310" />
+              <mxPoint x="650" y="310" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-read-netbird" value="Read NetBird IP" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#000000;endArrow=block;dashed=1;fontSize=14;" edge="1" parent="1" source="n-route" target="u-netbird-ip">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-connect-netbird" value="HTTP over NetBird" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#000000;endArrow=block;dashed=1;fontSize=14;" edge="1" parent="1" source="u-connect" target="n-overlay">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-connect-local" value="HTTP over LAN" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#000000;endArrow=block;dashed=1;fontSize=14;" edge="1" parent="1" source="u-connect" target="r-ready">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

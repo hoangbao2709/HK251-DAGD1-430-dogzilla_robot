@@ -5,7 +5,6 @@ import {
   useEffect,
   useRef,
   useCallback,
-  useMemo,
 } from "react";
 import { HalfCircleJoystick } from "@/components/HalfCircleJoystick";
 import HeaderControl from "@/components/header_control";
@@ -53,24 +52,6 @@ export default function RemoteView({
   useEffect(() => {
     setDogServer(getSelectedRobotAddr() || DEFAULT_DOG_SERVER);
   }, []);
-
-  const lidarUrl = useMemo(() => {
-    try {
-      const url = new URL(dogServer);
-      const host = url.hostname;
-      const port = url.port;
-
-      if (port === "9000" || port === "") {
-        return `${url.protocol}//${host}:8080`;
-      }
-      if (port === "9002") {
-        return `${url.protocol}//${host}:9002/lidar/`;
-      }
-      return `${url.origin.replace(/\/$/, "")}/lidar/`;
-    } catch {
-      return "";
-    }
-  }, [dogServer]);
 
   const [isRunning, setIsRunning] = useState(false);
   const [lidarBusy, setLidarBusy] = useState(false);
@@ -534,6 +515,7 @@ export default function RemoteView({
     ? "Stop Lidar"
     : "Start Lidar";
   const lidarMapSrc = RobotAPI.slamMapUrl(lidarMapNonce);
+  const lidarDebugUrl = RobotAPI.slamMapUrl();
   if (isMobile) {
     return (
       <section className="h-screen w-full bg-[var(--background)] text-[var(--foreground)] relative">
@@ -740,7 +722,7 @@ export default function RemoteView({
           <HeaderControl
             mode={mode}
             onToggle={toggleMode}
-            lidarUrl={lidarUrl}
+            lidarUrl={lidarDebugUrl}
             lidarActive={isRunning}
             connected={connected}
             errorExternal={connectError}   
@@ -840,15 +822,19 @@ export default function RemoteView({
               }`}
             >
               {isRunning ? (
-                <iframe
-                  src={lidarUrl}
+                <img
+                  src={lidarMapSrc}
                   title="LiDAR map"
-                  className={`absolute inset-0 w-full h-full border-0 transition-opacity duration-300 ${
+                  alt="LiDAR map"
+                  className={`absolute inset-0 h-full w-full object-contain transition-opacity duration-300 ${
                     lidarFrameLoaded ? "opacity-100" : "opacity-0"
                   }`}
                   onLoad={() => {
                     setLidarFrameLoaded(true);
                     setLidarError(null);
+                  }}
+                  onError={() => {
+                    setLidarFrameLoaded(false);
                   }}
                 />
               ) : null}

@@ -1,6 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { AuthAPI } from "@/app/lib/auth";
 
 type FieldLabelProps = {
   children: React.ReactNode;
@@ -16,6 +19,7 @@ function FieldLabel({ children, htmlFor }: FieldLabelProps) {
 }
 
 export default function RegisterPage() {
+  const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -47,66 +51,23 @@ export default function RegisterPage() {
     setLoading(true);
 
     try {
-      const api = process.env.NEXT_PUBLIC_API_BASE;
-      console.log(">>> API BASE =", api);
-
-      if (!api) {
-        console.error("NEXT_PUBLIC_API_BASE is missing");
-        setError("Internal config error.");
-        return;
-      }
-
-      const url = `${api}/api/auth/register/`;
-      console.log(">>> CALLING:", url);
-
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, email, password }),
-      });
-      const rawText = await res.text();
-      console.log(">>> STATUS =", res.status);
-      console.log(">>> RAW RESPONSE =", rawText);
-
-      let json: any = null;
-      try {
-        json = rawText ? JSON.parse(rawText) : null;
-      } catch (e) {
-        console.warn(">>> JSON parse failed, using rawText");
-      }
-
-      if (!res.ok || (json && json.ok === false)) {
-        const msg =
-          (json && (json.error || json.message)) ||
-          rawText ||
-          `Request failed with status ${res.status}`;
-        setError(msg);
-        return;
-      }
-
-      if (json && json.access) {
-        localStorage.setItem("access_token", json.access);
-      }
-
-      alert(`Registered as ${json?.email || email}`);
+      await AuthAPI.register({ username, email, password });
+      router.replace("/dashboard");
     } catch (err) {
-      console.error("Register error:", err);
-      setError("Network error, please try again.");
+      setError(err instanceof Error ? err.message : "Register failed");
     } finally {
       setLoading(false);
     }
-
   }
-
 
   return (
     <main className="min-h-screen bg-[#0c0520] text-white grid place-items-center p-6">
       <div className="w-full max-w-md">
-        <div className="relative rounded-3xl border border-white/10 bg-white/5 p-6 sm:p-8 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
-          <div className="pointer-events-none absolute inset-0 rounded-3xl ring-1 ring-inset ring-sky-500/20"></div>
+        <div className="relative rounded-3xl border border-white/10 bg-white/5 p-6 shadow-[0_0_0_1px_rgba(255,255,255,0.02)] sm:p-8">
+          <div className="pointer-events-none absolute inset-0 rounded-3xl ring-1 ring-inset ring-sky-500/20" />
           <div className="mb-6 text-center">
             <div className="inline-flex items-center gap-2">
-              <span className="h-3 w-3 rounded-full bg-sky-400 shadow-[0_0_20px_2px_rgba(56,189,248,0.6)]"></span>
+              <span className="h-3 w-3 rounded-full bg-sky-400 shadow-[0_0_20px_2px_rgba(56,189,248,0.6)]" />
               <h1 className="text-2xl font-bold tracking-tight">
                 <span className="text-pink-400">ROBOT</span>{" "}
                 <span className="text-sky-300">CONTROL</span>{" "}
@@ -114,7 +75,7 @@ export default function RegisterPage() {
               </h1>
             </div>
             <p className="mt-2 text-sm text-white/70">
-              Create an account to access Remote Control Mode.
+              Create an account to access Robot Control.
             </p>
           </div>
 
@@ -152,7 +113,7 @@ export default function RegisterPage() {
                   id="password"
                   name="password"
                   type="password"
-                  placeholder="••••••••"
+                  placeholder="Enter password"
                   className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 outline-none placeholder:text-white/40 focus:border-indigo-400/50 focus:ring-2 focus:ring-indigo-400/30"
                   autoComplete="new-password"
                 />
@@ -165,7 +126,7 @@ export default function RegisterPage() {
                   id="confirmPassword"
                   name="confirmPassword"
                   type="password"
-                  placeholder="••••••••"
+                  placeholder="Confirm password"
                   className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 outline-none placeholder:text-white/40 focus:border-indigo-400/50 focus:ring-2 focus:ring-indigo-400/30"
                   autoComplete="new-password"
                 />
@@ -181,7 +142,7 @@ export default function RegisterPage() {
             <button
               type="submit"
               disabled={loading}
-              className="cursor-pointer w-full rounded-xl border border-sky-400/40 bg-gradient-to-r from-sky-500/30 via-indigo-500/30 to-pink-500/30 px-4 py-3 font-semibold hover:from-sky-500/40 hover:via-indigo-500/40 hover:to-pink-500/40 disabled:opacity-60"
+              className="cursor-pointer w-full rounded-xl border border-sky-400/40 bg-gradient-to-r from-sky-500/30 via-indigo-500/30 to-pink-500/30 px-4 py-3 font-semibold hover:from-sky-500/40 hover:via-indigo-500/40 hover:to-pink-500/40 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {loading ? "Creating account..." : "Create account"}
             </button>
@@ -190,12 +151,11 @@ export default function RegisterPage() {
 
         <p className="mt-6 text-center text-xs text-white/50">
           Already have an account?{" "}
-          <a href="/login" className="text-sky-300 hover:text-sky-200">
+          <Link href="/login" className="text-sky-300 hover:text-sky-200">
             Sign in
-          </a>
+          </Link>
         </p>
       </div>
     </main>
   );
 }
-

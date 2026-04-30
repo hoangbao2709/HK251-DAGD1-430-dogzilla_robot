@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { Search } from "lucide-react";
 import { useTheme } from "next-themes";
+import { AuthAPI, clearAuthSession, getStoredSession, onAuthChanged } from "@/app/lib/auth";
 
 type SearchItem = {
   label: string;
@@ -25,6 +26,40 @@ export default function Topbar() {
 
   useEffect(() => setMounted(true), []);
   const isDark = mounted && resolvedTheme === "dark";
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function syncAuth() {
+      const session = getStoredSession();
+      setUsername(session?.username || null);
+
+      if (!session?.access) return;
+
+      try {
+        const user = await AuthAPI.me();
+        if (cancelled) return;
+        if (user.authenticated) {
+          setUsername(user.username || session.username || null);
+        } else {
+          clearAuthSession();
+          setUsername(null);
+        }
+      } catch {
+        if (!cancelled) {
+          clearAuthSession();
+          setUsername(null);
+        }
+      }
+    }
+
+    syncAuth();
+    const unsubscribe = onAuthChanged(syncAuth);
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, []);
 
   const searchItems: SearchItem[] = [
     {
@@ -113,10 +148,7 @@ export default function Topbar() {
   }, []);
 
   function logout() {
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("access_token");
-      localStorage.removeItem("username");
-    }
+    clearAuthSession();
     setUsername(null);
     setTimeout(() => router.push("/login"), 200);
   }

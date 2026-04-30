@@ -8,6 +8,7 @@ function readCookie(name: string) {
 
   const cookies = document.cookie.split(";").map((item) => item.trim());
   const match = cookies.find((item) => item.startsWith(`${name}=`));
+
   if (!match) return null;
 
   const value = match.slice(name.length + 1);
@@ -29,13 +30,20 @@ export function getSelectedRobotAddr() {
   return null;
 }
 
-export function setSelectedRobotAddr(addr: string) {
+export function setSelectedRobotAddr(addr: string, remember = false) {
   if (typeof window === "undefined") return;
 
-  window.sessionStorage.setItem(SELECTED_ROBOT_ADDR_KEY, addr);
-  document.cookie = `${SELECTED_ROBOT_ADDR_COOKIE}=${encodeURIComponent(
-    addr
-  )}; path=/`;
+  const cleanAddr = addr.trim();
+
+  window.sessionStorage.setItem(SELECTED_ROBOT_ADDR_KEY, cleanAddr);
+
+  if (remember) {
+    document.cookie = `${SELECTED_ROBOT_ADDR_COOKIE}=${encodeURIComponent(
+      cleanAddr
+    )}; path=/; max-age=31536000`;
+  } else {
+    document.cookie = `${SELECTED_ROBOT_ADDR_COOKIE}=; path=/; max-age=0`;
+  }
 }
 
 export function clearSelectedRobotAddr() {

@@ -97,6 +97,12 @@ tai_lieu_lidar.docx
 *.bak
 temp/
 tmp/
+backend/tmp*/
+backend/saved_slam_maps/
+backend/.test_slam_maps_*/
+
+# Dogzilla server local copy
+dogzilla_server/
 
 # Dogzilla server venv (nếu có)
 dogzilla_server/venv/

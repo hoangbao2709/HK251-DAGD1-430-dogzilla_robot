@@ -3,6 +3,7 @@ from typing import Any, ClassVar
 from rest_framework.views import APIView  # type: ignore[import-untyped]
 from rest_framework.response import Response  # type: ignore[import-untyped]
 from rest_framework import status  # type: ignore[import-untyped]
+from rest_framework.parsers import FormParser, MultiPartParser  # type: ignore[import-untyped]
 from django.utils.timezone import now, localtime  # type: ignore[import-untyped]
 from django.http import StreamingHttpResponse, HttpResponse  # type: ignore[import-untyped]
 import json
@@ -18,6 +19,7 @@ from .services.mcp_voice import AmbiguousCommandError, map_text_to_tool, process
 from .services.qr_detect import detect_qr_state_once, generate_qr_video_frames, get_current_qr_state, save_qr_metric_event
 from .services.patrol_manager import patrol_manager
 from .services.patrol_store import get_current_mission, get_history
+from .services.slam_map_files import find_saved_slam_map_file
 logger = logging.getLogger(__name__)
 line_tracker = LineTrackingServer()
 
@@ -1018,6 +1020,145 @@ class InitialPoseView(APIView):
             )
 
 
+class SaveSlamMapView(APIView):
+    def post(self, request, robot_id):
+        body = request.data or {}
+        name = str(body.get("name", "")).strip()
+        if not name:
+            return Response(
+                {
+                    "success": False,
+                    "robot_id": robot_id,
+                    "error": "name is required",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            result = ROSClient(robot_id).save_slam_map(name)
+            return Response(
+                {
+                    "success": True,
+                    "robot_id": robot_id,
+                    "result": result,
+                },
+                status=status.HTTP_200_OK,
+            )
+        except Exception as e:
+            return Response(
+                {
+                    "success": False,
+                    "robot_id": robot_id,
+                    "error": str(e),
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+
+class UploadSlamMapView(APIView):
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request, robot_id):
+        uploaded_file = request.FILES.get("file")
+        if uploaded_file is None:
+            return Response(
+                {
+                    "success": False,
+                    "robot_id": robot_id,
+                    "error": "file is required",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            result = ROSClient(robot_id).upload_slam_map(uploaded_file)
+            return Response(
+                {
+                    "success": True,
+                    "robot_id": robot_id,
+                    "result": result,
+                },
+                status=status.HTTP_200_OK,
+            )
+        except Exception as e:
+            return Response(
+                {
+                    "success": False,
+                    "robot_id": robot_id,
+                    "error": str(e),
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+
+class UseLiveSlamMapView(APIView):
+    def post(self, request, robot_id):
+        try:
+            result = ROSClient(robot_id).use_live_slam_map()
+            return Response(
+                {
+                    "success": True,
+                    "robot_id": robot_id,
+                    "result": result,
+                },
+                status=status.HTTP_200_OK,
+            )
+        except Exception as e:
+            return Response(
+                {
+                    "success": False,
+                    "robot_id": robot_id,
+                    "error": str(e),
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+
+class SlamMapFileView(APIView):
+    authentication_classes: ClassVar[list[type[Any]]] = []
+    permission_classes: ClassVar[list[type[Any]]] = []
+
+    def get(self, request, robot_id, filename):
+        local_file = find_saved_slam_map_file(robot_id, filename)
+        if local_file is not None:
+            if local_file.suffix.lower() in (".yaml", ".yml"):
+                content_type = "text/yaml"
+            elif local_file.suffix.lower() == ".pgm":
+                content_type = "image/x-portable-graymap"
+            elif local_file.name.endswith(".zip"):
+                content_type = "application/zip"
+            else:
+                content_type = "application/octet-stream"
+
+            response = HttpResponse(local_file.read_bytes(), content_type=content_type)
+            response["Cache-Control"] = "no-store"
+            response["Content-Disposition"] = f'attachment; filename="{local_file.name}"'
+            return response
+
+        try:
+            upstream = ROSClient(robot_id).get_slam_map_file_response(filename)
+            content_type = upstream.headers.get("Content-Type", "application/octet-stream")
+            response = HttpResponse(upstream.content, content_type=content_type)
+            response["Cache-Control"] = "no-store"
+            response["Content-Disposition"] = f'attachment; filename="{filename}"'
+            upstream.close()
+            return response
+        except Exception as e:
+            upstream_status = getattr(getattr(e, "response", None), "status_code", None)
+            return Response(
+                {
+                    "success": False,
+                    "robot_id": robot_id,
+                    "error": str(e),
+                },
+                status=(
+                    status.HTTP_404_NOT_FOUND
+                    if upstream_status == 404
+                    else status.HTTP_500_INTERNAL_SERVER_ERROR
+                ),
+            )
+
+
 class QRVideoFeedView(APIView):
     authentication_classes: ClassVar[list[type[Any]]] = []
     permission_classes: ClassVar[list[type[Any]]] = []
@@ -1049,15 +1190,11 @@ class SlamMapView(APIView):
 
     def get(self, request, robot_id):
         try:
-            upstream = ROSClient(robot_id).stream_slam_map_png()
-            content_type = upstream.headers.get("Content-Type", "image/png")
-
             response = HttpResponse(
-                upstream.content,
-                content_type=content_type,
+                ROSClient(robot_id).render_slam_map_png_on_backend(),
+                content_type="image/png",
             )
             response["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-            upstream.close()
             return response
         except Exception as e:
             return Response(

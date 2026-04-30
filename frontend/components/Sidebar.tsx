@@ -16,6 +16,7 @@ import {
   ChevronRight,
   LogIn,
 } from "lucide-react";
+import { AuthAPI, clearAuthSession, getStoredSession, onAuthChanged } from "@/app/lib/auth";
 
 const menu = [
   { href: "/dashboard", label: "Connection", icon: Link2 },
@@ -37,6 +38,38 @@ export default function Sidebar() {
   useEffect(() => setMounted(true), []);
 
   const isDark = mounted && resolvedTheme === "dark";
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function syncAuth() {
+      const session = getStoredSession();
+      setIsLoggedIn(Boolean(session?.access));
+
+      if (!session?.access) return;
+
+      try {
+        const user = await AuthAPI.me();
+        if (cancelled) return;
+        setIsLoggedIn(Boolean(user.authenticated));
+        if (!user.authenticated) {
+          clearAuthSession();
+        }
+      } catch {
+        if (!cancelled) {
+          clearAuthSession();
+          setIsLoggedIn(false);
+        }
+      }
+    }
+
+    syncAuth();
+    const unsubscribe = onAuthChanged(syncAuth);
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -68,10 +101,7 @@ export default function Sidebar() {
   }, []);
 
   function logout() {
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("access_token");
-      localStorage.removeItem("username");
-    }
+    clearAuthSession();
     setIsLoggedIn(false);
     router.push("/login");
   }
