@@ -472,6 +472,8 @@ class RobotStatusView(APIView):
             "yaw_current": s.get("yaw_current"),
             "battery": s.get("battery"),
             "voltage": s.get("voltage"),
+            "remaining_minutes": s.get("remaining_minutes"),
+            "speed":            s.get("speed"),
             "fw": s.get("fw"),
             "fps": s.get("fps"),
             "system": s.get("system"),

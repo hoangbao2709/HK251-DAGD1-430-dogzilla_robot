@@ -174,15 +174,6 @@ function normalizeRobotStatus(raw: any): RobotStatus {
     ...raw,
     ...telemetry,
     system,
-    // Mock values for the tactical UI
-    remaining_minutes: 42,
-    speed: 0.18,
-    mission_success_rate: 87,
-    avg_delivery_time: 43,
-    missions_total: 13,
-    missions_attempted: 15,
-    missions_failed: 2,
-    qr_scan_success_rate: 94,
   };
 }
 
@@ -332,7 +323,15 @@ function MiniMetric({
   );
 }
 
-function StatusHistoryChart({ data }: { data: StatusPoint[] }) {
+function StatusHistoryChart({
+  data,
+  missions
+}: {
+  data: StatusPoint[];
+  missions: PatrolMission[];
+}) {
+  const FIXED_POINTS = 12;
+
   const safeData =
     data.length > 2
       ? data
@@ -348,15 +347,35 @@ function StatusHistoryChart({ data }: { data: StatusPoint[] }) {
   const innerWidth = width - pad.left - pad.right;
   const innerHeight = height - pad.top - pad.bottom;
 
-  const toX = (index: number) => pad.left + (index / (safeData.length - 1)) * innerWidth;
+  // Dùng FIXED_POINTS để scale cố định, tránh đường gấp khúc khi thêm điểm
+  const toX = (index: number) =>
+    pad.left + (index / (FIXED_POINTS - 1)) * innerWidth;
   const toY = (v: number) => pad.top + (1 - v / 100) * innerHeight;
 
   const pathD = safeData
     .map((p, i) => `${i === 0 ? "M" : "L"} ${toX(i)} ${toY(p.battery)}`)
     .join(" ");
 
-  // Mock mission event markers (vertical items)
-  const markers = [0.3, 0.6, 0.9].map((ratio) => Math.floor(ratio * (safeData.length - 1)));
+  // Chuyển unix timestamp → index trong safeData theo time string
+  const timeToIndex = (unixTs: number): number => {
+    const timeStr = new Date(unixTs * 1000).toLocaleTimeString("vi-VN", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+    const idx = safeData.findIndex(p => p.time >= timeStr);
+    return idx >= 0 ? idx : safeData.length - 1;
+  };
+
+  // Tính vùng tô cho từng mission: startIdx → endIdx
+  const missionBands = missions
+    .filter(m => m.started_at != null && m.finished_at != null)
+    .map(m => {
+      const startIdx = timeToIndex(Number(m.started_at));
+      const endIdx = timeToIndex(Number(m.finished_at));
+      const isDone = m.status === "DONE";
+      return { startIdx, endIdx, isDone };
+    });
 
   return (
     <div className="relative w-full h-[140px] bg-[#1a1a1a] rounded-lg border border-[#2d2d2d] p-4">
@@ -368,25 +387,49 @@ function StatusHistoryChart({ data }: { data: StatusPoint[] }) {
             <span className="text-[10px] text-gray-400 font-medium">battery %</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <div className="w-2 h-2 rounded-full bg-[#60a5fa]" />
-            <span className="text-[10px] text-gray-400 font-medium">mission events</span>
+            {/* Hình chữ nhật nhỏ thay vì dot để thể hiện vùng tô */}
+            <div className="w-3 h-2 rounded-sm bg-[#60a5fa] opacity-50" />
+            <span className="text-[10px] text-gray-400 font-medium">mission running</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-2 rounded-sm bg-[#f87171] opacity-50" />
+            <span className="text-[10px] text-gray-400 font-medium">mission failed</span>
           </div>
         </div>
       </div>
       <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-[80px]" preserveAspectRatio="none">
-        {markers.map((idx, i) => (
+        {/* Vùng tô: từ started_at đến finished_at của mỗi mission */}
+        {missionBands.map((band, i) => {
+          const x1 = toX(band.startIdx);
+          const x2 = toX(band.endIdx);
+          const bandWidth = Math.max(x2 - x1, 4); // tối thiểu 4px để thấy
+          return (
+            <rect
+              key={i}
+              x={x1}
+              y={pad.top}
+              width={bandWidth}
+              height={innerHeight}
+              fill={band.isDone ? "#60a5fa" : "#f87171"}
+              opacity={0.15}
+            />
+          );
+        })}
+
+        {/* Vạch đứng tại finished_at */}
+        {missionBands.map((band, i) => (
           <line
-            key={i}
-            x1={toX(idx)}
-            y1={0}
-            x2={toX(idx)}
-            y2={height}
-            stroke="#60a5fa"
+            key={`end-${i}`}
+            x1={toX(band.endIdx)} y1={pad.top}
+            x2={toX(band.endIdx)} y2={pad.top + innerHeight}
+            stroke={band.isDone ? "#60a5fa" : "#f87171"}
             strokeWidth="1.5"
             strokeDasharray="4 4"
-            opacity="0.6"
+            opacity="0.8"
           />
         ))}
+
+        {/* Đường battery */}
         <path d={pathD} fill="none" stroke="#4ade80" strokeWidth="2.5" />
       </svg>
     </div>
@@ -587,8 +630,10 @@ export default function AnalyticsPage() {
         setPatrolMissions(missions);
 
         const attempted = missions.length;
-        const completed = missions.filter(m => m.status === "completed").length;
-        const failed = missions.filter(m => m.status === "failed").length;
+        const completed = missions.filter(m => m.status === "DONE").length;
+        const failed = missions.filter(
+          m => m.status === "FAILED" || m.status === "STOPPED"
+        ).length;
         const successRate = attempted > 0
           ? Math.round(completed / attempted * 100) : 0;
 
@@ -754,14 +799,14 @@ export default function AnalyticsPage() {
               label="Robot state"
               value={status?.gait_type || "Navigating"}
               mainColor="text-[#60a5fa]"
-              sub={`${status?.speed || 0.18} m/s • heading ${status?.yaw_current ?? "N/A"}°`}
+              sub={`${status?.speed != null ? status.speed.toFixed(2) : "N/A"} m/s • heading ${status?.yaw_current ?? "N/A"}°`}
             />
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8 px-2 max-w-2xl">
             <MiniMetric label="CPU" value={`${cpuPercent}%`} />
-            <MiniMetric label="RAM" value={status?.system?.ram || "1.2 GB"} />
-            <MiniMetric label="Disk" value={status?.system?.disk || "61%"} />
-            <MiniMetric label="Firmware" value={status?.fw || "v2.3.1"} />
+            <MiniMetric label="RAM" value={status?.system?.ram ?? "N/A"} />
+            <MiniMetric label="Disk" value={status?.system?.disk ?? "N/A"} />
+            <MiniMetric label="Firmware" value={status?.fw ?? "N/A"} />
           </div>
         </section>
 
@@ -827,7 +872,7 @@ export default function AnalyticsPage() {
               </div>
 
               <div className="text-[#888888] text-xs mt-2">
-                Hôm nay • Attempt: {qrMetrics.attempts} • Success: {qrMetrics.successes}
+                Today • Attempt: {qrMetrics.attempts} • Success: {qrMetrics.successes}
               </div>
             </div>
             <div className="bg-[#1a1a1a] border border-[#2d2d2d] rounded-lg p-4">
@@ -844,7 +889,7 @@ export default function AnalyticsPage() {
             Zone 3 — Time-series charts
           </h2>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <StatusHistoryChart data={statusHistory} />
+            <StatusHistoryChart data={statusHistory} missions={patrolMissions} />
             <DeliveryBarChart missions={patrolMissions} />
           </div>
           <EfficiencyChart data={effHistory} />
