@@ -64,6 +64,8 @@ def _parse_raw_map_headers(headers: Mapping[str, str]) -> dict[str, Any]:
     side = max(width, height)
     extra = max(4, int(0.03 * side))
     side2 = side + 2 * extra
+    pad_left = (side2 - width) // 2
+    pad_bottom = (side2 - height) // 2
 
     return {
         "width": width,
@@ -74,13 +76,13 @@ def _parse_raw_map_headers(headers: Mapping[str, str]) -> dict[str, Any]:
         "frame_id": frame_id,
         "map_version": _header(headers, "X-Map-Version", "0"),
         "render_info": {
-            "width_cells": width,
-            "height_cells": height,
+            "width_cells": side2,
+            "height_cells": side2,
             "resolution": resolution,
-            "origin_x": origin_x,
-            "origin_y": origin_y,
-            "pad_left_cells": (side2 - width) // 2,
-            "pad_bottom_cells": (side2 - height) // 2,
+            "origin_x": origin_x - pad_left * resolution,
+            "origin_y": origin_y - pad_bottom * resolution,
+            "pad_left_cells": pad_left,
+            "pad_bottom_cells": pad_bottom,
         },
     }
 

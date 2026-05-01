@@ -12,6 +12,8 @@ type CanvasPoint = {
   y: number;
 };
 
+const MAP_IMAGE_REFRESH_MIN_INTERVAL_MS = 2500;
+
 function containedRect(width: number, height: number, naturalWidth: number, naturalHeight: number) {
   if (!width || !height || !naturalWidth || !naturalHeight) return null;
 
@@ -58,6 +60,26 @@ function worldToCanvasPoint(
   };
 }
 
+function drawLineSegment(
+  ctx: CanvasRenderingContext2D,
+  from: CanvasPoint,
+  to: CanvasPoint,
+  color: string,
+  width: number
+) {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  if (dx * dx + dy * dy < 1) return;
+
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(from.x, from.y);
+  ctx.lineTo(to.x, to.y);
+  ctx.stroke();
+}
+
 function rotatedClientToWorldPoint(
   clientX: number,
   clientY: number,
@@ -101,25 +123,45 @@ function rotatedClientToWorldPoint(
   };
 }
 
-function drawRobot(ctx: CanvasRenderingContext2D, center: CanvasPoint, yaw: number) {
-  ctx.save();
-  ctx.translate(center.x, center.y);
-  ctx.rotate(-yaw);
-  ctx.fillStyle = "#00e5a8";
-  ctx.strokeStyle = "#001f16";
+function drawRobot(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  yaw: number,
+  renderInfo: SlamRenderInfo,
+  image: HTMLImageElement
+) {
+  const center = worldToCanvasPoint(x, y, renderInfo, image);
+  const forward = worldToCanvasPoint(
+    x + 0.14 * Math.cos(yaw),
+    y + 0.14 * Math.sin(yaw),
+    renderInfo,
+    image
+  );
+  const lateral = worldToCanvasPoint(
+    x + 0.14 * Math.cos(yaw + Math.PI / 2),
+    y + 0.14 * Math.sin(yaw + Math.PI / 2),
+    renderInfo,
+    image
+  );
+  if (!center) return;
+
+  ctx.strokeStyle = "rgba(0,255,255,0.9)";
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.moveTo(14, 0);
-  ctx.lineTo(-9, -8);
-  ctx.lineTo(-5, 0);
-  ctx.lineTo(-9, 8);
-  ctx.closePath();
-  ctx.fill();
+  ctx.arc(center.x, center.y, 3.5, 0, Math.PI * 2);
   ctx.stroke();
-  ctx.restore();
+
+  if (forward) {
+    drawLineSegment(ctx, center, forward, "rgba(255,50,50,0.95)", 1.8);
+  }
+  if (lateral) {
+    drawLineSegment(ctx, center, lateral, "rgba(50,255,80,0.95)", 1.8);
+  }
 }
 
 export default function RobotMapPage() {
+  const [mounted, setMounted] = useState(false);
   const [slamState, setSlamState] = useState<SlamStateData | null>(null);
   const [savedPoints, setSavedPoints] = useState<PointsResponse>({});
   const [error, setError] = useState("");
@@ -138,6 +180,10 @@ export default function RobotMapPage() {
   const mapImgRef = useRef<HTMLImageElement | null>(null);
   const overlayRef = useRef<HTMLCanvasElement | null>(null);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
+  const lastMapRefreshAtRef = useRef(0);
+  const lastAppliedMapVersionRef = useRef<number | null>(null);
+  const lastRenderSignatureRef = useRef("");
+  const pendingPlacementPreviewRef = useRef<{ x: number; y: number } | null>(null);
 
   const mapSrc = useMemo(() => RobotAPI.slamMapUrl(mapReloadKey), [mapReloadKey]);
 
@@ -147,8 +193,38 @@ export default function RobotMapPage() {
       const data = json?.data ?? json ?? null;
       setSlamState(data);
       setError("");
+
       if (typeof data?.map_version === "number") {
-        setMapReloadKey((current) => (current === data.map_version ? current : data.map_version));
+        const renderInfo = data?.render_info;
+        const renderSignature = renderInfo
+          ? [
+              renderInfo.origin_x,
+              renderInfo.origin_y,
+              renderInfo.width_cells,
+              renderInfo.height_cells,
+              renderInfo.resolution,
+            ].join(":")
+          : "";
+        const geometryChanged =
+          renderSignature !== "" && renderSignature !== lastRenderSignatureRef.current;
+        const versionChanged = data.map_version !== lastAppliedMapVersionRef.current;
+        const now = Date.now();
+
+        if (
+          geometryChanged ||
+          versionChanged ||
+          lastAppliedMapVersionRef.current === null
+        ) {
+          const cooldownPassed =
+            now - lastMapRefreshAtRef.current >= MAP_IMAGE_REFRESH_MIN_INTERVAL_MS;
+
+          if (geometryChanged || cooldownPassed || lastAppliedMapVersionRef.current === null) {
+            lastAppliedMapVersionRef.current = data.map_version;
+            lastRenderSignatureRef.current = renderSignature;
+            lastMapRefreshAtRef.current = now;
+            setMapReloadKey(now);
+          }
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Khong lay duoc SLAM state");
@@ -263,34 +339,100 @@ export default function RobotMapPage() {
     if (slamState?.goal?.x != null && slamState.goal.y != null) {
       const p = worldToCanvasPoint(Number(slamState.goal.x), Number(slamState.goal.y), renderInfo, image);
       if (p) {
-        ctx.strokeStyle = "#38bdf8";
-        ctx.lineWidth = 3;
+        ctx.strokeStyle = "rgba(255,60,60,0.95)";
+        ctx.lineWidth = 2.5;
         ctx.beginPath();
-        ctx.arc(p.x, p.y, 9, 0, Math.PI * 2);
+        ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
         ctx.stroke();
+
+        ctx.strokeStyle = "rgba(255,255,255,0.95)";
+        ctx.lineWidth = 1.7;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.fillStyle = "rgba(255,60,60,1)";
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 1.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (typeof slamState.goal.yaw === "number" && Number.isFinite(slamState.goal.yaw)) {
+          const heading = worldToCanvasPoint(
+            Number(slamState.goal.x) + 0.15 * Math.cos(slamState.goal.yaw),
+            Number(slamState.goal.y) + 0.15 * Math.sin(slamState.goal.yaw),
+            renderInfo,
+            image
+          );
+          if (heading) {
+            drawLineSegment(ctx, p, heading, "rgba(255,60,60,0.95)", 2.1);
+          }
+        }
       }
     }
 
     if (pendingPlacement) {
       const p = worldToCanvasPoint(pendingPlacement.x, pendingPlacement.y, renderInfo, image);
       if (p) {
-        ctx.strokeStyle = navPlacementMode === "goal" ? "#10b981" : "#f59e0b";
-        ctx.lineWidth = 2;
-        ctx.setLineDash([5, 5]);
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, 11, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.setLineDash([]);
+        if (navPlacementMode === "goal") {
+          ctx.strokeStyle = "rgba(0,255,255,0.85)";
+          ctx.lineWidth = 1.7;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+          ctx.stroke();
+        } else {
+          ctx.strokeStyle = "rgba(255,165,0,0.95)";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+          ctx.stroke();
+
+          ctx.fillStyle = "rgba(255,165,0,0.9)";
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        const preview = pendingPlacementPreviewRef.current;
+        if (preview) {
+          const previewPoint = worldToCanvasPoint(
+            preview.x,
+            preview.y,
+            renderInfo,
+            image
+          );
+          if (previewPoint) {
+            drawLineSegment(
+              ctx,
+              p,
+              previewPoint,
+              navPlacementMode === "goal"
+                ? "rgba(255,213,79,0.9)"
+                : "rgba(255,200,80,0.95)",
+              navPlacementMode === "goal" ? 2.0 : 2.2
+            );
+          }
+        }
       }
     }
 
     if (showRobot && slamState?.pose?.ok) {
-      const p = worldToCanvasPoint(slamState.pose.x, slamState.pose.y, renderInfo, image);
-      if (p) drawRobot(ctx, p, slamState.pose.theta || 0);
+      drawRobot(
+        ctx,
+        slamState.pose.x,
+        slamState.pose.y,
+        slamState.pose.theta || 0,
+        renderInfo,
+        image
+      );
     }
   }, [navPlacementMode, pendingPlacement, savedPoints, showGrid, showPath, showRobot, showScan, slamState]);
 
   useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
     fetchSlamState();
     fetchPoints();
     const timers = [
@@ -298,7 +440,7 @@ export default function RobotMapPage() {
       window.setInterval(fetchPoints, 5000),
     ];
     return () => timers.forEach(window.clearInterval);
-  }, [fetchPoints, fetchSlamState]);
+  }, [fetchPoints, fetchSlamState, mounted]);
 
   useEffect(() => {
     const id = window.requestAnimationFrame(drawOverlay);
@@ -323,6 +465,7 @@ export default function RobotMapPage() {
     if (!point) return;
 
     if (!pendingPlacement) {
+      pendingPlacementPreviewRef.current = point;
       setPendingPlacement(point);
       return;
     }
@@ -336,7 +479,7 @@ export default function RobotMapPage() {
           x: pendingPlacement.x,
           y: pendingPlacement.y,
           yaw,
-          route_name: "robot_map_goal",
+          route_name: "map_selected_goal",
         });
       } else {
         await RobotAPI.setInitialPose({
@@ -345,6 +488,7 @@ export default function RobotMapPage() {
           yaw,
         });
       }
+      pendingPlacementPreviewRef.current = null;
       setPendingPlacement(null);
       await fetchSlamState();
     } finally {
@@ -352,11 +496,45 @@ export default function RobotMapPage() {
     }
   };
 
+  const requestOverlayRedraw = useCallback(() => {
+    window.requestAnimationFrame(drawOverlay);
+  }, [drawOverlay]);
+
+  const handleMapPointerMove = useCallback((event: MouseEvent<HTMLImageElement>) => {
+    if (mapMode !== "navigate" || !pendingPlacement) return;
+    const renderInfo = slamState?.render_info;
+    const image = mapImgRef.current;
+    const stage = stageRef.current;
+    if (!renderInfo || !image || !stage) return;
+
+    pendingPlacementPreviewRef.current = rotatedClientToWorldPoint(
+      event.clientX,
+      event.clientY,
+      stage,
+      image,
+      renderInfo,
+      rotationDeg
+    );
+    requestOverlayRedraw();
+  }, [mapMode, pendingPlacement, requestOverlayRedraw, rotationDeg, slamState]);
+
+  const handleMapPointerLeave = useCallback(() => {
+    if (pendingPlacementPreviewRef.current === null) return;
+    pendingPlacementPreviewRef.current = null;
+    requestOverlayRedraw();
+  }, [requestOverlayRedraw]);
+
+  const cancelPlacement = useCallback(() => {
+    pendingPlacementPreviewRef.current = null;
+    setPendingPlacement(null);
+  }, []);
+
   const stopAndClear = async () => {
     setBusyMessage("Stopping navigation...");
     try {
       await RobotAPI.patrolStop().catch(() => {});
       await RobotAPI.clearNavigation();
+      pendingPlacementPreviewRef.current = null;
       setPendingPlacement(null);
       await fetchSlamState();
     } finally {
@@ -423,9 +601,30 @@ export default function RobotMapPage() {
           ? "INIT: choose heading"
           : "INIT: choose pose";
 
+  if (!mounted) {
+    return (
+      <RequireAuth>
+        <main
+          suppressHydrationWarning
+          className="fixed inset-0 overflow-hidden bg-[#1f2222] text-[#eef3f2]"
+        >
+          <div
+            suppressHydrationWarning
+            className="absolute inset-0 flex items-center justify-center text-sm text-white/70"
+          >
+            Loading robot map...
+          </div>
+        </main>
+      </RequireAuth>
+    );
+  }
+
   return (
     <RequireAuth>
-      <main className="fixed inset-0 overflow-hidden bg-[#1f2222] text-[#eef3f2]">
+      <main
+        suppressHydrationWarning
+        className="fixed inset-0 overflow-hidden bg-[#1f2222] text-[#eef3f2]"
+      >
       <div
         ref={stageRef}
         className={`absolute inset-0 overflow-hidden ${mapMode === "navigate" ? "cursor-crosshair" : "cursor-default"}`}
@@ -442,6 +641,8 @@ export default function RobotMapPage() {
             draggable={false}
             onLoad={drawOverlay}
             onClick={handleMapClick}
+            onMouseMove={handleMapPointerMove}
+            onMouseLeave={handleMapPointerLeave}
           />
           <canvas ref={overlayRef} className="pointer-events-none absolute inset-0 h-full w-full" />
         </div>
@@ -487,7 +688,7 @@ export default function RobotMapPage() {
                 <button
                   onClick={() => {
                     setNavPlacementMode("goal");
-                    setPendingPlacement(null);
+                    cancelPlacement();
                   }}
                   className={`rounded-lg px-3 py-2 text-xs font-bold ${
                     navPlacementMode === "goal" ? "bg-emerald-500 text-black" : "bg-white/10 text-white"
@@ -498,7 +699,7 @@ export default function RobotMapPage() {
                 <button
                   onClick={() => {
                     setNavPlacementMode("initialPose");
-                    setPendingPlacement(null);
+                    cancelPlacement();
                   }}
                   className={`rounded-lg px-3 py-2 text-xs font-bold ${
                     navPlacementMode === "initialPose" ? "bg-amber-400 text-black" : "bg-white/10 text-white"
@@ -604,7 +805,7 @@ export default function RobotMapPage() {
 
       {pendingPlacement ? (
         <button
-          onClick={() => setPendingPlacement(null)}
+          onClick={cancelPlacement}
           className="absolute bottom-5 right-5 z-20 inline-flex items-center gap-2 rounded-full bg-red-500 px-4 py-3 text-xs font-bold text-white shadow-xl"
         >
           <Square size={14} />

@@ -42,6 +42,11 @@ function getLidarUrl(server: string) {
   }
 }
 
+type CanvasPoint = {
+  x: number;
+  y: number;
+};
+
 function getContainedImageRect(image: HTMLImageElement) {
   const boxW = image.clientWidth;
   const boxH = image.clientHeight;
@@ -139,6 +144,154 @@ function clientToWorldPoint(
   };
 }
 
+function drawLineSegment(
+  ctx: CanvasRenderingContext2D,
+  from: CanvasPoint,
+  to: CanvasPoint,
+  color: string,
+  width: number
+) {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  if (dx * dx + dy * dy < 1) return;
+
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(from.x, from.y);
+  ctx.lineTo(to.x, to.y);
+  ctx.stroke();
+}
+
+function drawRobotPose(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  yaw: number,
+  renderInfo: SlamRenderInfo,
+  image: HTMLImageElement
+) {
+  const center = worldToCanvasPoint(x, y, renderInfo, image);
+  const forward = worldToCanvasPoint(
+    x + 0.14 * Math.cos(yaw),
+    y + 0.14 * Math.sin(yaw),
+    renderInfo,
+    image
+  );
+  const lateral = worldToCanvasPoint(
+    x + 0.14 * Math.cos(yaw + Math.PI / 2),
+    y + 0.14 * Math.sin(yaw + Math.PI / 2),
+    renderInfo,
+    image
+  );
+  if (!center) return;
+
+  ctx.strokeStyle = "rgba(0,255,255,0.9)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(center.x, center.y, 3.5, 0, Math.PI * 2);
+  ctx.stroke();
+
+  if (forward) {
+    drawLineSegment(ctx, center, forward, "rgba(255,50,50,0.95)", 1.8);
+  }
+  if (lateral) {
+    drawLineSegment(ctx, center, lateral, "rgba(50,255,80,0.95)", 1.8);
+  }
+}
+
+function drawGoalPose(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  yaw: number | undefined,
+  renderInfo: SlamRenderInfo,
+  image: HTMLImageElement
+) {
+  const center = worldToCanvasPoint(x, y, renderInfo, image);
+  if (!center) return;
+
+  ctx.strokeStyle = "rgba(255,60,60,0.95)";
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.arc(center.x, center.y, 6, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.strokeStyle = "rgba(255,255,255,0.95)";
+  ctx.lineWidth = 1.7;
+  ctx.beginPath();
+  ctx.arc(center.x, center.y, 3, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.fillStyle = "rgba(255,60,60,1)";
+  ctx.beginPath();
+  ctx.arc(center.x, center.y, 1.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  if (typeof yaw === "number" && Number.isFinite(yaw)) {
+    const heading = worldToCanvasPoint(
+      x + 0.15 * Math.cos(yaw),
+      y + 0.15 * Math.sin(yaw),
+      renderInfo,
+      image
+    );
+    if (heading) {
+      drawLineSegment(ctx, center, heading, "rgba(255,60,60,0.95)", 2.1);
+    }
+  }
+}
+
+function drawPendingPlacementPose(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  preview: { x: number; y: number } | null,
+  mode: NavPlacementMode,
+  renderInfo: SlamRenderInfo,
+  image: HTMLImageElement
+) {
+  const center = worldToCanvasPoint(x, y, renderInfo, image);
+  if (!center) return;
+
+  if (mode === "goal") {
+    ctx.strokeStyle = "rgba(0,255,255,0.85)";
+    ctx.lineWidth = 1.7;
+    ctx.beginPath();
+    ctx.arc(center.x, center.y, 3, 0, Math.PI * 2);
+    ctx.stroke();
+  } else {
+    ctx.strokeStyle = "rgba(255,165,0,0.95)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(center.x, center.y, 5, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.fillStyle = "rgba(255,165,0,0.9)";
+    ctx.beginPath();
+    ctx.arc(center.x, center.y, 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  if (!preview) return;
+
+  const previewPoint = worldToCanvasPoint(
+    preview.x,
+    preview.y,
+    renderInfo,
+    image
+  );
+  if (!previewPoint) return;
+
+  drawLineSegment(
+    ctx,
+    center,
+    previewPoint,
+    mode === "goal" ? "rgba(255,213,79,0.9)" : "rgba(255,200,80,0.95)",
+    mode === "goal" ? 2.0 : 2.2
+  );
+}
+
 export default function AutonomousControlPage() {
   const { resolvedTheme } = useTheme();
 
@@ -174,6 +327,7 @@ export default function AutonomousControlPage() {
   const modalMapImgRef = useRef<HTMLImageElement | null>(null);
   const modalOverlayRef = useRef<HTMLCanvasElement | null>(null);
   const mapActionBusyRef = useRef(false);
+  const pendingPlacementPreviewRef = useRef<{ x: number; y: number } | null>(null);
 
   const [robotAddr, setRobotAddr] = useState(
     () => getSelectedRobotAddr() || DEFAULT_DOG_SERVER
@@ -246,6 +400,11 @@ export default function AutonomousControlPage() {
       const data = json?.data ?? json ?? null;
       setSlamState(data);
       setSlamError("");
+      if (typeof data?.map_version === "number") {
+        setMapReloadKey((current) =>
+          current === data.map_version ? current : data.map_version
+        );
+      }
     } catch (error) {
       setSlamState(null);
       setSlamError(error instanceof Error ? error.message : "Khong lay duoc /state");
@@ -328,7 +487,6 @@ export default function AutonomousControlPage() {
       setInterval(fetchControlStatus, 5000),
       setInterval(fetchPoints, 5000),
       setInterval(fetchPatrolStatus, 1500),
-      setInterval(() => setMapReloadKey((value) => value + 1), 3000),
     ];
 
     return () => timers.forEach(clearInterval);
@@ -351,6 +509,7 @@ export default function AutonomousControlPage() {
       await RobotAPI.clearNavigation();
     } catch { }
 
+    pendingPlacementPreviewRef.current = null;
     setPendingPlacement(null);
     setPatrolRunning(false);
     setPatrolMission(null);
@@ -439,7 +598,13 @@ export default function AutonomousControlPage() {
   }, [fetchSlamState]);
 
   const setNavigationPlacementMode = useCallback((mode: NavPlacementMode) => {
+    pendingPlacementPreviewRef.current = null;
     setNavPlacementMode(mode);
+    setPendingPlacement(null);
+  }, []);
+
+  const cancelPlacement = useCallback(() => {
+    pendingPlacementPreviewRef.current = null;
     setPendingPlacement(null);
   }, []);
 
@@ -461,39 +626,8 @@ export default function AutonomousControlPage() {
       );
       if (!point) return;
 
-      if (navPlacementMode === "goal") {
-        const yaw =
-          slamState.pose?.ok &&
-          typeof slamState.pose.x === "number" &&
-          typeof slamState.pose.y === "number"
-            ? Math.atan2(point.y - slamState.pose.y, point.x - slamState.pose.x)
-            : typeof slamState.pose?.theta === "number"
-              ? slamState.pose.theta
-              : 0;
-
-        try {
-          mapActionBusyRef.current = true;
-          setMapActionMessage("Sending goal...");
-          setPendingPlacement(null);
-          await RobotAPI.manualGoal({
-            x: point.x,
-            y: point.y,
-            yaw,
-            addr: dogServer,
-            route_name: "manual_map_goal",
-          });
-          await fetchSlamState();
-          await fetchPatrolStatus();
-        } catch (error) {
-          window.alert(error instanceof Error ? error.message : "Khong gui duoc goal");
-        } finally {
-          mapActionBusyRef.current = false;
-          setMapActionMessage("");
-        }
-        return;
-      }
-
       if (!pendingPlacement) {
+        pendingPlacementPreviewRef.current = point;
         setPendingPlacement({ x: point.x, y: point.y });
         return;
       }
@@ -505,17 +639,37 @@ export default function AutonomousControlPage() {
 
       try {
         mapActionBusyRef.current = true;
-        setMapActionMessage("Setting initial pose...");
-        await RobotAPI.setInitialPose({
-          x: pendingPlacement.x,
-          y: pendingPlacement.y,
-          yaw,
-        });
+        setMapActionMessage(
+          navPlacementMode === "goal" ? "Sending goal..." : "Setting initial pose..."
+        );
+        if (navPlacementMode === "goal") {
+          await RobotAPI.manualGoal({
+            x: pendingPlacement.x,
+            y: pendingPlacement.y,
+            yaw,
+            addr: dogServer,
+            route_name: "map_selected_goal",
+          });
+        } else {
+          await RobotAPI.setInitialPose({
+            x: pendingPlacement.x,
+            y: pendingPlacement.y,
+            yaw,
+          });
+        }
+
+        pendingPlacementPreviewRef.current = null;
         setPendingPlacement(null);
         await fetchSlamState();
         await fetchPatrolStatus();
       } catch (error) {
-        window.alert(error instanceof Error ? error.message : "Khong dat duoc initial pose");
+        window.alert(
+          error instanceof Error
+            ? error.message
+            : navPlacementMode === "goal"
+              ? "Khong gui duoc goal"
+              : "Khong dat duoc initial pose"
+        );
       } finally {
         mapActionBusyRef.current = false;
         setMapActionMessage("");
@@ -659,65 +813,37 @@ export default function AutonomousControlPage() {
         typeof slamState.goal.x === "number" &&
         typeof slamState.goal.y === "number"
       ) {
-        const goalPx = worldToCanvasPoint(
+        drawGoalPose(
+          ctx,
           slamState.goal.x,
           slamState.goal.y,
+          slamState.goal.yaw,
           renderInfo,
           image
         );
-        if (goalPx) {
-          ctx.strokeStyle = "rgba(255,60,60,0.95)";
-          ctx.lineWidth = 3;
-          ctx.beginPath();
-          ctx.arc(goalPx.x, goalPx.y, 8, 0, Math.PI * 2);
-          ctx.stroke();
-        }
       }
 
       if (pendingPlacement) {
-        const pendingPx = worldToCanvasPoint(
+        drawPendingPlacementPose(
+          ctx,
           pendingPlacement.x,
           pendingPlacement.y,
+          pendingPlacementPreviewRef.current,
+          navPlacementMode,
           renderInfo,
           image
         );
-        if (pendingPx) {
-          ctx.strokeStyle =
-            navPlacementMode === "goal"
-              ? "rgba(80,255,120,0.95)"
-              : "rgba(255,180,0,0.95)";
-          ctx.lineWidth = 3;
-          ctx.beginPath();
-          ctx.arc(pendingPx.x, pendingPx.y, 10, 0, Math.PI * 2);
-          ctx.stroke();
-        }
       }
 
       if (showRobot && slamState.pose?.ok) {
-        const robotPx = worldToCanvasPoint(
+        drawRobotPose(
+          ctx,
           slamState.pose.x,
           slamState.pose.y,
+          slamState.pose.theta || 0,
           renderInfo,
           image
         );
-        if (robotPx) {
-          const yaw = slamState.pose.theta || 0;
-          ctx.save();
-          ctx.translate(robotPx.x, robotPx.y);
-          ctx.rotate(-yaw);
-          ctx.fillStyle = "#00e5a8";
-          ctx.strokeStyle = "#001f16";
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          ctx.moveTo(14, 0);
-          ctx.lineTo(-9, -8);
-          ctx.lineTo(-5, 0);
-          ctx.lineTo(-9, 8);
-          ctx.closePath();
-          ctx.fill();
-          ctx.stroke();
-          ctx.restore();
-        }
       }
     };
 
@@ -734,6 +860,37 @@ export default function AutonomousControlPage() {
     showGrid,
     slamDisplayAngle,
   ]);
+
+  const requestOverlayRedraw = useCallback(() => {
+    window.requestAnimationFrame(drawSlamOverlay);
+  }, [drawSlamOverlay]);
+
+  const handleSlamMapPointerMove = useCallback(
+    (event: React.MouseEvent<HTMLImageElement>, isModal = false) => {
+      if (mapMode !== "navigate" || !pendingPlacement || !slamState?.render_info) return;
+
+      const image = isModal ? modalMapImgRef.current : mapImgRef.current;
+      if (!image) return;
+
+      const point = clientToWorldPoint(
+        event.clientX,
+        event.clientY,
+        image,
+        slamState.render_info,
+        slamDisplayAngle
+      );
+
+      pendingPlacementPreviewRef.current = point;
+      requestOverlayRedraw();
+    },
+    [mapMode, pendingPlacement, slamState, slamDisplayAngle, requestOverlayRedraw]
+  );
+
+  const handleSlamMapPointerLeave = useCallback(() => {
+    if (pendingPlacementPreviewRef.current === null) return;
+    pendingPlacementPreviewRef.current = null;
+    requestOverlayRedraw();
+  }, [requestOverlayRedraw]);
 
   useEffect(() => {
     drawSlamOverlay();
@@ -756,7 +913,7 @@ export default function AutonomousControlPage() {
       setPointActionLoading(true);
 
       // Lưu vào ROS
-      await RobotAPI.createPointFromObstacle({ name: pointName, yaw: 0.0 });
+      await RobotAPI.createPointFromObstacle({ name: pointName });
 
       // CASE 3: Lưu ROS thành công → Attempt + Success
       await RobotAPI.logQRAttempt({
@@ -1019,7 +1176,7 @@ export default function AutonomousControlPage() {
             onOpenModal={() => setMapModalOpen(true)}
             onCloseModal={() => setMapModalOpen(false)}
             onSetNavPlacementMode={setNavigationPlacementMode}
-            onCancelPlacement={() => setPendingPlacement(null)}
+            onCancelPlacement={cancelPlacement}
             onClearPath={clearPath}
             onToggleLidar={handleToggleLidar}
             onToggleRobot={() => setShowRobot((v) => !v)}
@@ -1035,6 +1192,10 @@ export default function AutonomousControlPage() {
             onSlamImageClick={(event, isModal) =>
               handleSlamMapClick(event, isModal)
             }
+            onSlamImageMove={(event, isModal) =>
+              handleSlamMapPointerMove(event, isModal)
+            }
+            onSlamImageLeave={handleSlamMapPointerLeave}
             drawSlamOverlay={drawSlamOverlay}
           />
         </div>

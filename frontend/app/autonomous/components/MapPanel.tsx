@@ -65,6 +65,11 @@ type MapPanelProps = {
     event: MouseEvent<HTMLImageElement>,
     isModal: boolean
   ) => void;
+  onSlamImageMove: (
+    event: MouseEvent<HTMLImageElement>,
+    isModal: boolean
+  ) => void;
+  onSlamImageLeave: () => void;
   drawSlamOverlay: () => void;
 };
 
@@ -106,6 +111,8 @@ export function MapPanel({
   onLoadMap,
   onUseLiveMap,
   onSlamImageClick,
+  onSlamImageMove,
+  onSlamImageLeave,
   drawSlamOverlay,
 }: MapPanelProps) {
   const [lidarError, setLidarError] = useState<string | null>(null);
@@ -231,9 +238,13 @@ export function MapPanel({
           className="absolute inset-0 h-full w-full select-none bg-[#1f2222] object-contain [image-rendering:pixelated]"
           draggable={false}
           onLoad={drawSlamOverlay}
-          onMouseDown={(event: MouseEvent<HTMLImageElement>) =>
+          onClick={(event: MouseEvent<HTMLImageElement>) =>
             handleImageClick(event, isModalMap)
           }
+          onMouseMove={(event: MouseEvent<HTMLImageElement>) =>
+            onSlamImageMove(event, isModalMap)
+          }
+          onMouseLeave={onSlamImageLeave}
         />
         <canvas
           ref={canvasRef}

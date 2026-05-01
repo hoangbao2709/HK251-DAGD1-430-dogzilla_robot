@@ -168,6 +168,17 @@ export const RobotAPI = {
       body: JSON.stringify({}),
     }),
 
+  setGoalPose: (payload: {
+    x: number;
+    y: number;
+    yaw?: number;
+    addr?: string;
+  }) =>
+    api<any>(`${CONTROL_PREFIX}/${robotId}/slam/goal/`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
   setInitialPose: (payload: {
     x: number;
     y: number;

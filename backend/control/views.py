@@ -1,3 +1,4 @@
+import math
 from typing import Any, ClassVar
 
 from rest_framework.views import APIView  # type: ignore[import-untyped]
@@ -1022,6 +1023,62 @@ class InitialPoseView(APIView):
             )
 
 
+class GoalPoseView(APIView):
+    def post(self, request, robot_id):
+        body = request.data or {}
+        try:
+            x = float(body.get("x"))
+            y = float(body.get("y"))
+            yaw = float(body.get("yaw", 0.0))
+        except Exception as e:
+            return Response(
+                {
+                    "success": False,
+                    "robot_id": robot_id,
+                    "error": f"invalid payload: {e}",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        addr = str(body.get("addr") or "").strip()
+        if addr:
+            robot = get_or_create_robot(robot_id)
+            if robot.addr != addr:
+                robot.addr = addr
+                robot.save(update_fields=["addr"])
+
+        current_mission = get_current_mission(robot_id)
+        if current_mission and str(getattr(current_mission, "status", "")).upper() == "RUNNING":
+            return Response(
+                {
+                    "success": False,
+                    "robot_id": robot_id,
+                    "error": f"Robot {robot_id} already has a running patrol mission",
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        try:
+            result = ROSClient(robot_id).set_goal_pose(x=x, y=y, yaw=yaw)
+            return Response(
+                {
+                    "success": True,
+                    "robot_id": robot_id,
+                    "result": result,
+                },
+                status=status.HTTP_200_OK,
+            )
+        except Exception as e:
+            return Response(
+                {
+                    "success": False,
+                    "robot_id": robot_id,
+                    "error": str(e),
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+
 class SaveSlamMapView(APIView):
     def post(self, request, robot_id):
         body = request.data or {}
@@ -1257,10 +1314,6 @@ class PointFromObstacleView(APIView):
     def post(self, request, robot_id):
         body = request.data or {}
         name = str(body.get("name", "")).strip()
-        try:
-            yaw = float(body.get("yaw", 0.0))
-        except Exception:
-            yaw = 0.0
 
         if not name:
             return Response(
@@ -1290,6 +1343,20 @@ class PointFromObstacleView(APIView):
 
             x = float(obstacle["x"])
             y = float(obstacle["y"])
+            if body.get("yaw") is not None:
+                try:
+                    yaw = float(body.get("yaw", 0.0))
+                except Exception:
+                    yaw = 0.0
+            else:
+                pose = state.get("pose") or {}
+                if pose.get("ok"):
+                    robot_x = float(pose.get("x", 0.0))
+                    robot_y = float(pose.get("y", 0.0))
+                    yaw = math.atan2(y - robot_y, x - robot_x)
+                else:
+                    yaw = 0.0
+
             result = client.create_point(name=name, x=x, y=y, yaw=yaw)
             log_line = build_log(
                 robot_id,
