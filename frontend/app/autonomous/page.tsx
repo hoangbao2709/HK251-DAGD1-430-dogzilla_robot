@@ -658,7 +658,7 @@ export default function AutonomousControlPage() {
       setPointActionLoading(true);
 
       // Lưu vào ROS
-      await RobotAPI.createPointFromObstacle({ name: pointName, yaw: 0.0 });
+      await RobotAPI.createPointFromObstacle({ name: pointName });
 
       // CASE 3: Lưu ROS thành công → Attempt + Success
       await RobotAPI.logQRAttempt({

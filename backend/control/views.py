@@ -1,3 +1,4 @@
+import math
 from typing import Any, ClassVar
 
 from rest_framework.views import APIView  # type: ignore[import-untyped]
@@ -1118,10 +1119,6 @@ class PointFromObstacleView(APIView):
     def post(self, request, robot_id):
         body = request.data or {}
         name = str(body.get("name", "")).strip()
-        try:
-            yaw = float(body.get("yaw", 0.0))
-        except Exception:
-            yaw = 0.0
 
         if not name:
             return Response(
@@ -1151,6 +1148,20 @@ class PointFromObstacleView(APIView):
 
             x = float(obstacle["x"])
             y = float(obstacle["y"])
+            if body.get("yaw") is not None:
+                try:
+                    yaw = float(body.get("yaw", 0.0))
+                except Exception:
+                    yaw = 0.0
+            else:
+                pose = state.get("pose") or {}
+                if pose.get("ok"):
+                    robot_x = float(pose.get("x", 0.0))
+                    robot_y = float(pose.get("y", 0.0))
+                    yaw = math.atan2(y - robot_y, x - robot_x)
+                else:
+                    yaw = 0.0
+
             result = client.create_point(name=name, x=x, y=y, yaw=yaw)
             log_line = build_log(
                 robot_id,

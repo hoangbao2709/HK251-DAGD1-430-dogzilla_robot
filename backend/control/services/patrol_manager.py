@@ -20,6 +20,8 @@ class PatrolManager:
         self._pause_flags: dict[str, bool] = {}
         self._lock = threading.Lock()
         self.tolerance_m = 0.35
+        self.yaw_tolerance_rad = math.radians(12.0)
+        self.saved_point_standoff_m = 0.35
         self.poll_interval_sec = 1.0
         self.point_timeout_sec = 120.0
 
@@ -127,45 +129,121 @@ class PatrolManager:
     def _is_paused(self, robot_id: str) -> bool:
         return self._pause_flags.get(robot_id, False)
 
-    def _distance_to_point(self, robot_id: str, target_x: float, target_y: float) -> tuple[Optional[float], dict]:
+    @staticmethod
+    def _normalize_angle(angle_rad: float) -> float:
+        return math.atan2(math.sin(angle_rad), math.cos(angle_rad))
+
+    def _distance_to_goal(
+        self,
+        robot_id: str,
+        target_x: float,
+        target_y: float,
+        target_yaw: float | None = None,
+    ) -> tuple[Optional[float], Optional[float], dict]:
         client = ROSClient(robot_id)
         state = client.get_slam_state_light()
         pose = state.get("pose") or {}
 
         if not pose.get("ok"):
-            return None, state
+            return None, None, state
 
         rx = float(pose["x"])
         ry = float(pose["y"])
         dist = math.hypot(target_x - rx, target_y - ry)
-        return dist, state
+        yaw_error = None
 
-    def _wait_until_reached(self, robot_id: str, target_x: float, target_y: float) -> tuple[bool, str, Optional[float]]:
+        if target_yaw is not None:
+            current_yaw_raw = pose.get("theta", pose.get("yaw"))
+            if current_yaw_raw is not None:
+                current_yaw = float(current_yaw_raw)
+                yaw_error = abs(self._normalize_angle(target_yaw - current_yaw))
+
+        return dist, yaw_error, state
+
+    def _wait_until_goal_reached(
+        self,
+        robot_id: str,
+        target_x: float,
+        target_y: float,
+        target_yaw: float | None = None,
+        *,
+        require_heading: bool = False,
+        initial_mission_count: int | None = None,
+        timeout_message: str = "timeout waiting for point",
+    ) -> tuple[bool, str, Optional[float], dict[str, Any] | None]:
         start = time.time()
         last_dist = None
+        client = ROSClient(robot_id)
 
         while True:
             if self._is_stopped(robot_id):
-                return False, "mission stopped", last_dist
+                return False, "mission stopped", last_dist, None
 
             while self._is_paused(robot_id):
                 time.sleep(0.5)
                 if self._is_stopped(robot_id):
-                    return False, "mission stopped", last_dist
+                    return False, "mission stopped", last_dist, None
+
+            terminal_result = None
+            if initial_mission_count is not None:
+                try:
+                    metrics = client.get_navigation_metrics() or {}
+                    terminal_result = self._read_terminal_navigation_result(metrics, initial_mission_count)
+                    if terminal_result:
+                        status_value = str(terminal_result.get("status") or "").lower()
+                        if status_value in {"failed", "aborted"}:
+                            message = str(
+                                terminal_result.get("result")
+                                or terminal_result.get("message")
+                                or status_value
+                            )
+                            return False, message, last_dist, terminal_result
+                except Exception:
+                    pass
 
             try:
-                dist, state = self._distance_to_point(robot_id, target_x, target_y)
+                dist, yaw_error, _ = self._distance_to_goal(
+                    robot_id,
+                    target_x,
+                    target_y,
+                    target_yaw,
+                )
                 if dist is not None:
                     last_dist = dist
-                    if dist <= self.tolerance_m:
-                        return True, "reached", dist
-            except Exception as e:
+                    heading_ok = (not require_heading) or (
+                        yaw_error is not None and yaw_error <= self.yaw_tolerance_rad
+                    )
+                    if dist <= self.tolerance_m and heading_ok:
+                        return True, "reached", dist, terminal_result
+            except Exception:
                 pass
 
+            if terminal_result:
+                status_value = str(terminal_result.get("status") or "").lower()
+                if status_value == "success" and last_dist is None:
+                    message = str(
+                        terminal_result.get("result")
+                        or terminal_result.get("message")
+                        or status_value
+                    )
+                    return True, message, last_dist, terminal_result
+
             if time.time() - start > self.point_timeout_sec:
-                return False, "timeout waiting for point", last_dist
+                return False, timeout_message, last_dist, terminal_result
 
             time.sleep(self.poll_interval_sec)
+
+    def _compute_saved_point_goal(
+        self,
+        point_info: dict[str, Any],
+    ) -> tuple[float, float, float]:
+        point_x = float(point_info["x"])
+        point_y = float(point_info["y"])
+        point_yaw = float(point_info.get("yaw", 0.0))
+
+        target_x = point_x - (self.saved_point_standoff_m * math.cos(point_yaw))
+        target_y = point_y - (self.saved_point_standoff_m * math.sin(point_yaw))
+        return target_x, target_y, point_yaw
 
     def _read_terminal_navigation_result(
         self,
@@ -208,52 +286,27 @@ class PatrolManager:
                 point_result.finished_at = time.time()
                 return
 
-            start = time.time()
-            last_dist = None
-            terminal_result = None
+            ok, message, last_dist, terminal_result = self._wait_until_goal_reached(
+                robot_id,
+                target_x,
+                target_y,
+                yaw,
+                require_heading=True,
+                initial_mission_count=initial_mission_count,
+                timeout_message="timeout waiting for manual goal",
+            )
 
-            while True:
-                if self._is_stopped(robot_id):
-                    mission.status = "STOPPED"
-                    point_result.status = "ABORTED"
-                    point_result.message = "mission stopped"
-                    break
-
-                try:
-                    metrics = client.get_navigation_metrics() or {}
-                    terminal_result = self._read_terminal_navigation_result(metrics, initial_mission_count)
-                    if terminal_result:
-                        status_value = str(terminal_result.get("status") or "").lower()
-                        point_result.message = str(
-                            terminal_result.get("result") or terminal_result.get("message") or status_value
-                        )
-                        if status_value == "success":
-                            mission.status = "DONE"
-                            point_result.status = "SUCCESS"
-                        elif status_value == "aborted":
-                            mission.status = "STOPPED"
-                            point_result.status = "ABORTED"
-                        else:
-                            mission.status = "FAILED"
-                            point_result.status = "FAILED"
-                        break
-                except Exception:
-                    pass
-
-                try:
-                    dist, _ = self._distance_to_point(robot_id, target_x, target_y)
-                    if dist is not None:
-                        last_dist = dist
-                except Exception:
-                    pass
-
-                if time.time() - start > self.point_timeout_sec:
-                    mission.status = "FAILED"
-                    point_result.status = "FAILED"
-                    point_result.message = "timeout waiting for manual goal"
-                    break
-
-                time.sleep(self.poll_interval_sec)
+            point_result.message = message
+            if self._is_stopped(robot_id):
+                mission.status = "STOPPED"
+                point_result.status = "ABORTED"
+                point_result.message = message or "mission stopped"
+            elif ok:
+                mission.status = "DONE"
+                point_result.status = "SUCCESS"
+            else:
+                mission.status = "FAILED"
+                point_result.status = "FAILED"
 
             point_result.finished_at = time.time()
             point_result.reach_time_sec = point_result.finished_at - point_result.started_at
@@ -311,8 +364,7 @@ class PatrolManager:
                     point_result.status = "SKIPPED"
                     continue
 
-                target_x = float(point_info["x"])
-                target_y = float(point_info["y"])
+                target_x, target_y, target_yaw = self._compute_saved_point_goal(point_info)
 
                 success = False
 
@@ -329,15 +381,38 @@ class PatrolManager:
                     point_result.started_at = time.time()
 
                     try:
-                        client.go_to_point(point_name)
+                        try:
+                            before_metrics = client.get_navigation_metrics() or {}
+                            initial_mission_count = len(before_metrics.get("missions") or [])
+                        except Exception:
+                            initial_mission_count = None
+
+                        send_result = client.set_goal_pose(target_x, target_y, target_yaw)
+                        if not send_result.get("success", False):
+                            point_result.message = str(send_result.get("message") or "set_goal_pose failed")
+                            continue
                     except Exception as e:
-                        point_result.message = f"go_to_point failed: {e}"
+                        point_result.message = f"set_goal_pose failed: {e}"
                         continue
 
-                    ok, message, final_dist = self._wait_until_reached(robot_id, target_x, target_y)
+                    ok, message, final_dist, terminal_result = self._wait_until_goal_reached(
+                        robot_id,
+                        target_x,
+                        target_y,
+                        target_yaw,
+                        require_heading=True,
+                        initial_mission_count=initial_mission_count,
+                    )
                     point_result.finished_at = time.time()
                     point_result.distance_on_finish = final_dist
                     point_result.message = message
+
+                    if terminal_result:
+                        try:
+                            if terminal_result.get("final_goal_error_m") is not None:
+                                point_result.distance_on_finish = float(terminal_result["final_goal_error_m"])
+                        except (TypeError, ValueError):
+                            pass
 
                     if self._is_stopped(robot_id):
                         mission.status = "STOPPED"

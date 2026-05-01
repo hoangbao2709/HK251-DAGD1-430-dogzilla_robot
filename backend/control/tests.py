@@ -1,3 +1,5 @@
+import json
+import math
 from datetime import timedelta
 from unittest.mock import patch
 
@@ -117,6 +119,31 @@ class SlamPayloadTests(SimpleTestCase):
         self.assertAlmostEqual(payload["nearest_obstacle_ahead"]["dist"], 1.0)
 
 
+class PointFromObstacleViewTests(TestCase):
+    @patch("control.views.ROSClient")
+    def test_derives_yaw_from_robot_pose_when_not_provided(self, ros_client_cls):
+        ros_client = ros_client_cls.return_value
+        ros_client.get_slam_state_for_ui.return_value = {
+            "pose": {"ok": True, "x": 1.0, "y": 1.0},
+            "nearest_obstacle_ahead": {"x": 1.0, "y": 2.0, "dist": 1.0},
+        }
+        ros_client.create_point.return_value = {"success": True, "message": "OK"}
+
+        response = self.client.post(
+            "/control/api/robots/robot-a/points/from-obstacle/",
+            data=json.dumps({"name": "QR-A"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        ros_client.create_point.assert_called_once()
+        _, kwargs = ros_client.create_point.call_args
+        self.assertEqual(kwargs["name"], "QR-A")
+        self.assertAlmostEqual(kwargs["x"], 1.0)
+        self.assertAlmostEqual(kwargs["y"], 2.0)
+        self.assertAlmostEqual(kwargs["yaw"], math.pi / 2, places=5)
+
+
 class SessionSummaryTests(TestCase):
     def test_counts_only_today_obstacle_events_for_robot(self):
         robot = Robot.objects.create(id="robot-a", name="Robot A")
@@ -193,6 +220,56 @@ class PatrolHistoryTests(TestCase):
 
 
 class PatrolManagerStopTests(TestCase):
+    def test_saved_point_uses_standoff_goal_pose(self):
+        manager = PatrolManager()
+        manager.poll_interval_sec = 0.01
+        manager.point_timeout_sec = 0.2
+
+        mission = PatrolMission(
+            mission_id="patrol_goal_pose_test",
+            robot_id="robot-goal",
+            route_name="point_A",
+            points=["A"],
+            wait_sec_per_point=0,
+            max_retry_per_point=0,
+            skip_on_fail=False,
+            status="RUNNING",
+        )
+
+        class FakeROSClient:
+            def __init__(self, robot_id: str) -> None:
+                self.robot_id = robot_id
+                self.goal_calls: list[tuple[float, float, float]] = []
+
+            def get_points(self):
+                return {"A": {"x": 2.0, "y": 1.0, "yaw": 0.0}}
+
+            def get_navigation_metrics(self):
+                return {"missions": []}
+
+            def set_goal_pose(self, x: float, y: float, yaw: float):
+                self.goal_calls.append((x, y, yaw))
+                return {"success": True, "message": "OK"}
+
+            def get_slam_state_light(self):
+                if self.goal_calls:
+                    x, y, yaw = self.goal_calls[-1]
+                    return {"pose": {"ok": True, "x": x, "y": y, "theta": yaw}}
+                return {"pose": {"ok": True, "x": 0.0, "y": 0.0, "theta": 0.0}}
+
+        fake_client = FakeROSClient(mission.robot_id)
+
+        with patch("control.services.patrol_manager.ROSClient", return_value=fake_client):
+            manager._run_patrol(mission)
+
+        self.assertEqual(len(fake_client.goal_calls), 1)
+        goal_x, goal_y, goal_yaw = fake_client.goal_calls[0]
+        self.assertAlmostEqual(goal_x, 2.0 - manager.saved_point_standoff_m)
+        self.assertAlmostEqual(goal_y, 1.0)
+        self.assertAlmostEqual(goal_yaw, 0.0)
+        self.assertEqual(mission.status, "DONE")
+        self.assertEqual(mission.results[0].status, "SUCCESS")
+
     def test_stop_during_single_point_marks_stopped_without_retry(self):
         manager = PatrolManager()
         manager.poll_interval_sec = 0.01
@@ -213,25 +290,28 @@ class PatrolManagerStopTests(TestCase):
         class FakeROSClient:
             def __init__(self, robot_id: str) -> None:
                 self.robot_id = robot_id
-                self.go_to_calls: list[str] = []
+                self.goal_calls: list[tuple[float, float, float]] = []
 
             def get_points(self):
-                return {"A": {"x": 1.0, "y": 1.0}}
+                return {"A": {"x": 1.0, "y": 1.0, "yaw": 0.0}}
 
-            def go_to_point(self, point_name: str):
-                self.go_to_calls.append(point_name)
+            def get_navigation_metrics(self):
+                return {"missions": []}
+
+            def set_goal_pose(self, x: float, y: float, yaw: float):
+                self.goal_calls.append((x, y, yaw))
                 manager._stop_flags[mission.robot_id] = True
                 return {"success": True}
 
             def get_slam_state_light(self):
-                return {"pose": {"ok": True, "x": 0.0, "y": 0.0}}
+                return {"pose": {"ok": True, "x": 0.0, "y": 0.0, "theta": 0.0}}
 
         fake_client = FakeROSClient(mission.robot_id)
 
         with patch("control.services.patrol_manager.ROSClient", return_value=fake_client):
             manager._run_patrol(mission)
 
-        self.assertEqual(fake_client.go_to_calls, ["A"])
+        self.assertEqual(len(fake_client.goal_calls), 1)
         self.assertEqual(mission.status, "STOPPED")
         self.assertEqual(mission.results[0].status, "ABORTED")
         self.assertEqual(mission.results[0].message, "mission stopped")
