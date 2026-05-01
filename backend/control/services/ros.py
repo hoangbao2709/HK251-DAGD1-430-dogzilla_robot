@@ -597,7 +597,10 @@ class ROSClient:
         max_scan_points: int = 120,
         max_path_points: int = 240,
     ) -> Dict[str, Any]:
-        state = self.get_slam_state_light()
+        # `/state_light` omits scan data in the current nav service, so any UI
+        # flow that needs obstacle-ahead or scan overlays must read the full
+        # `/state` payload instead of reconstructing from the light snapshot.
+        state = self.get_slam_state() if include_scan_points else self.get_slam_state_light()
         return build_slam_ui_state(
             state,
             include_scan_points=include_scan_points,

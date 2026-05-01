@@ -11,6 +11,7 @@ from .services.evaluation_metrics import build_evaluation_metrics_payload
 from .services.patrol_manager import PatrolManager
 from .services.patrol_store import append_history, get_history
 from .services.patrol_types import PatrolMission, PatrolPointResult
+from .services.ros import ROSClient
 from .services.slam_payload import build_slam_ui_state
 
 
@@ -117,6 +118,50 @@ class SlamPayloadTests(SimpleTestCase):
         self.assertEqual(payload["paths"]["a_star"][1]["x"], 1.0)
         self.assertAlmostEqual(payload["nearest_obstacle_ahead"]["x"], 1.0)
         self.assertAlmostEqual(payload["nearest_obstacle_ahead"]["dist"], 1.0)
+
+
+class ROSClientStateSelectionTests(SimpleTestCase):
+    @patch("control.services.ros.build_slam_ui_state", return_value={"ok": True})
+    @patch.object(ROSClient, "get_slam_state")
+    @patch.object(ROSClient, "get_slam_state_light")
+    def test_uses_full_state_when_scan_points_requested(
+        self,
+        get_slam_state_light,
+        get_slam_state,
+        build_state,
+    ):
+        get_slam_state.return_value = {"scan": {"ok": True, "points": [{"x": 1.0, "y": 0.0}]}}
+        client = ROSClient("robot-a")
+
+        payload = client.get_slam_state_for_ui(include_scan_points=True)
+
+        self.assertEqual(payload, {"ok": True})
+        get_slam_state.assert_called_once_with()
+        get_slam_state_light.assert_not_called()
+        build_state.assert_called_once()
+        self.assertIs(build_state.call_args.args[0], get_slam_state.return_value)
+        self.assertTrue(build_state.call_args.kwargs["include_scan_points"])
+
+    @patch("control.services.ros.build_slam_ui_state", return_value={"ok": True})
+    @patch.object(ROSClient, "get_slam_state")
+    @patch.object(ROSClient, "get_slam_state_light")
+    def test_uses_light_state_when_scan_points_not_requested(
+        self,
+        get_slam_state_light,
+        get_slam_state,
+        build_state,
+    ):
+        get_slam_state_light.return_value = {"status": {"slam_ok": True}}
+        client = ROSClient("robot-a")
+
+        payload = client.get_slam_state_for_ui(include_scan_points=False)
+
+        self.assertEqual(payload, {"ok": True})
+        get_slam_state_light.assert_called_once_with()
+        get_slam_state.assert_not_called()
+        build_state.assert_called_once()
+        self.assertIs(build_state.call_args.args[0], get_slam_state_light.return_value)
+        self.assertFalse(build_state.call_args.kwargs["include_scan_points"])
 
 
 class PointFromObstacleViewTests(TestCase):
