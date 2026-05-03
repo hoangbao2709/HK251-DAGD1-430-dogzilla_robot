@@ -94,6 +94,7 @@ export type QrItem = {
 export type QrStateData = {
     ok?: boolean;
     items?: QrItem[];
+    timestamp?: number;
 };
 
 export type QrPositionData = {

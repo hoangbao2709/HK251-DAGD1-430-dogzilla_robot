@@ -6,6 +6,7 @@ import { SectionLabel } from "./Shared";
 type CameraPanelProps = {
     cameraReady: boolean;
     cameraError: boolean;
+    cameraTelemetryLive?: boolean;
     robotFps?: number;
     videoSrc: string;
     onLoad: () => void;
@@ -15,16 +16,19 @@ type CameraPanelProps = {
 export function CameraPanel({
     cameraReady,
     cameraError,
+    cameraTelemetryLive = false,
     robotFps,
     videoSrc,
     onLoad,
     onError,
 }: CameraPanelProps) {
+    const showWaitingOverlay = !cameraReady && !cameraTelemetryLive;
+
     return (
         <div className="flex h-full flex-col">
             <SectionLabel>Camera QR scan</SectionLabel>
             <div className="relative flex-1 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)] min-h-[360px] xl:min-h-[560px]">
-                {!cameraReady ? (
+                {showWaitingOverlay ? (
                     <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[linear-gradient(180deg,var(--surface),var(--surface-2))] px-4 text-center">
                         <div className="flex h-16 w-16 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface-elev)] shadow-sm">
                             <Bot size={28} className="text-[var(--accent)]" />
@@ -47,7 +51,7 @@ export function CameraPanel({
                     src={videoSrc}
                     alt="QR video feed"
                     className={`block h-full w-full bg-[var(--surface-elev)] object-cover transition-opacity duration-300 ${
-                        cameraReady ? "opacity-100" : "opacity-0"
+                        showWaitingOverlay ? "opacity-0" : "opacity-100"
                     }`}
                     onLoad={onLoad}
                     onError={onError}
@@ -58,7 +62,7 @@ export function CameraPanel({
                 </span>
             </div>
 
-            {cameraError ? (
+            {cameraError && !cameraTelemetryLive ? (
                 <p className="mt-2 text-xs text-red-300/80">
                     Không tải được camera QR stream
                 </p>

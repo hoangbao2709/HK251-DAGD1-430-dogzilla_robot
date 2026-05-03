@@ -1,4 +1,51 @@
+from pathlib import Path
+
 import cv2
+import numpy as np
+from PIL import Image, ImageDraw, ImageFont
+
+
+FONT_CANDIDATES = [
+    Path("C:/Windows/Fonts/arial.ttf"),
+    Path("C:/Windows/Fonts/arialuni.ttf"),
+    Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+    Path("/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf"),
+    Path("/usr/share/fonts/opentype/noto/NotoSans-Regular.ttf"),
+]
+
+
+def _load_unicode_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    for path in FONT_CANDIDATES:
+        if path.exists():
+            try:
+                return ImageFont.truetype(str(path), size=size)
+            except OSError:
+                continue
+    return ImageFont.load_default()
+
+
+def _draw_unicode_text(
+    image: np.ndarray,
+    text: str,
+    origin: tuple[int, int],
+    *,
+    font_size: int = 20,
+    fill: tuple[int, int, int] = (255, 255, 255),
+    stroke_fill: tuple[int, int, int] = (0, 0, 0),
+    stroke_width: int = 2,
+) -> np.ndarray:
+    pil_image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+    draw = ImageDraw.Draw(pil_image)
+    font = _load_unicode_font(font_size)
+    draw.text(
+        origin,
+        text,
+        font=font,
+        fill=fill,
+        stroke_width=stroke_width,
+        stroke_fill=stroke_fill,
+    )
+    return cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
 
 
 def draw_overlay(frame, detection_result):
@@ -28,15 +75,7 @@ def draw_overlay(frame, detection_result):
 
         yy = y - 55
         for line in lines:
-            cv2.putText(
-                out,
-                line,
-                (x + 10, yy),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.55,
-                (255, 255, 255),
-                2
-            )
-            yy += 20
+            out = _draw_unicode_text(out, line, (x + 10, yy), font_size=22)
+            yy += 26
 
     return out

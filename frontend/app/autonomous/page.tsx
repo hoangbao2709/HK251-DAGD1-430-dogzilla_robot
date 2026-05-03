@@ -124,6 +124,10 @@ function clientToWorldPoint(
   };
 }
 
+function normalizePointName(name: string) {
+  return name.trim().toLowerCase();
+}
+
 export default function AutonomousControlPage() {
   const { resolvedTheme } = useTheme();
 
@@ -432,6 +436,40 @@ export default function AutonomousControlPage() {
     [mapMode, slamState, pendingPlacement, navPlacementMode, dogServer, fetchSlamState, fetchPatrolStatus]
   );
 
+  const qrPreviewPoint = useMemo(() => {
+    const pose = slamState?.pose;
+    const qrText = qrPosition?.qr?.text?.trim();
+    const qrForward = qrPosition?.position?.forward_z_m;
+    const qrLateral = qrPosition?.position?.lateral_x_m;
+
+    if (
+      !pose?.ok ||
+      !qrPosition?.detected ||
+      !qrText ||
+      typeof qrForward !== "number" ||
+      typeof qrLateral !== "number"
+    ) {
+      return null;
+    }
+
+    const alreadySaved = Object.keys(savedPoints || {}).some(
+      (name) => normalizePointName(name) === normalizePointName(qrText)
+    );
+    if (alreadySaved) return null;
+
+    const yaw = pose.theta || 0;
+    const worldX =
+      pose.x + Math.cos(yaw) * qrForward + Math.sin(yaw) * qrLateral;
+    const worldY =
+      pose.y + Math.sin(yaw) * qrForward - Math.cos(yaw) * qrLateral;
+
+    return {
+      name: qrText,
+      x: worldX,
+      y: worldY,
+    };
+  }, [qrPosition, savedPoints, slamState?.pose]);
+
   const drawSlamOverlay = useCallback(() => {
     const drawGridLines = (
       ctx: CanvasRenderingContext2D,
@@ -482,6 +520,25 @@ export default function AutonomousControlPage() {
       canvas: HTMLCanvasElement | null,
       image: HTMLImageElement | null
     ) => {
+      const drawLabel = (
+        ctx: CanvasRenderingContext2D,
+        text: string,
+        x: number,
+        y: number
+      ) => {
+        ctx.save();
+        ctx.font = "bold 13px Arial";
+        ctx.textBaseline = "middle";
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.95)";
+        ctx.strokeText(text, x, y);
+        ctx.fillStyle = "#0f172a";
+        ctx.shadowColor = "rgba(255, 255, 255, 0.85)";
+        ctx.shadowBlur = 4;
+        ctx.fillText(text, x, y);
+        ctx.restore();
+      };
+
       if (!canvas || !image) return;
 
       const width = image.clientWidth;
@@ -549,9 +606,41 @@ export default function AutonomousControlPage() {
         ctx.arc(px.x, px.y, 4, 0, Math.PI * 2);
         ctx.fill();
 
-        ctx.fillStyle = "#ffffff";
-        ctx.font = "bold 13px Arial";
-        ctx.fillText(name, px.x + 8, px.y - 8);
+        drawLabel(ctx, name, px.x + 12, px.y - 16);
+      }
+
+      if (qrPreviewPoint) {
+        const px = worldToCanvasPoint(
+          qrPreviewPoint.x,
+          qrPreviewPoint.y,
+          renderInfo,
+          image
+        );
+        if (px) {
+          ctx.strokeStyle = "#f59e0b";
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.arc(px.x, px.y, 10, 0, Math.PI * 2);
+          ctx.stroke();
+
+          ctx.fillStyle = "#f97316";
+          ctx.beginPath();
+          ctx.arc(px.x, px.y, 4, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.strokeStyle = "rgba(245, 158, 11, 0.9)";
+          ctx.lineWidth = 2;
+          ctx.setLineDash([6, 4]);
+          ctx.beginPath();
+          ctx.moveTo(px.x - 12, px.y);
+          ctx.lineTo(px.x + 12, px.y);
+          ctx.moveTo(px.x, px.y - 12);
+          ctx.lineTo(px.x, px.y + 12);
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          drawLabel(ctx, qrPreviewPoint.name, px.x + 12, px.y - 16);
+        }
       }
 
       if (
@@ -630,6 +719,7 @@ export default function AutonomousControlPage() {
   }, [
     slamState,
     savedPoints,
+    qrPreviewPoint,
     pendingPlacement,
     navPlacementMode,
     showRobot,
@@ -840,6 +930,11 @@ export default function AutonomousControlPage() {
   );
   const robotFps = robotStatus?.telemetry?.fps;
   const pointNames = Object.keys(savedPoints || {}).sort();
+  const cameraTelemetryLive = Boolean(
+    qrPosition?.timestamp ||
+    qrState?.timestamp ||
+    (qrState?.ok && qrState.items)
+  );
   const activePatrolPointName =
     patrolMission?.points?.[patrolMission.current_index] ??
     patrolMission?.points?.[0] ??
@@ -885,6 +980,7 @@ export default function AutonomousControlPage() {
           <CameraPanel
             cameraReady={cameraReady}
             cameraError={cameraError}
+            cameraTelemetryLive={cameraTelemetryLive}
             robotFps={robotFps}
             videoSrc={RobotAPI.qrVideoFeedUrl()}
             onLoad={() => {
