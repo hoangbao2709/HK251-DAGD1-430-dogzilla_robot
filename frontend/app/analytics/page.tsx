@@ -578,8 +578,13 @@ export default function AnalyticsPage() {
         setPatrolMissions(missions);
 
         const attempted = missions.length;
-        const completed = missions.filter(m => m.status === "completed").length;
-        const failed = missions.filter(m => m.status === "failed").length;
+        const normalize = (s: string) => s.toLowerCase()
+        const completed = missions.filter(m =>
+          ["completed", "done"].includes(normalize(m.status))
+        ).length
+        const failed = missions.filter(m =>
+          ["failed", "stopped"].includes(normalize(m.status))
+        ).length;
         const successRate = attempted > 0
           ? Math.round(completed / attempted * 100) : 0;
 
