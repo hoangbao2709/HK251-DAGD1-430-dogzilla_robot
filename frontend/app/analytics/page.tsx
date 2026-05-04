@@ -174,15 +174,6 @@ function normalizeRobotStatus(raw: any): RobotStatus {
     ...raw,
     ...telemetry,
     system,
-    // Mock values for the tactical UI
-    remaining_minutes: 42,
-    speed: 0.18,
-    mission_success_rate: 87,
-    avg_delivery_time: 43,
-    missions_total: 13,
-    missions_attempted: 15,
-    missions_failed: 2,
-    qr_scan_success_rate: 94,
   };
 }
 
@@ -759,9 +750,9 @@ export default function AnalyticsPage() {
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8 px-2 max-w-2xl">
             <MiniMetric label="CPU" value={`${cpuPercent}%`} />
-            <MiniMetric label="RAM" value={status?.system?.ram || "1.2 GB"} />
-            <MiniMetric label="Disk" value={status?.system?.disk || "61%"} />
-            <MiniMetric label="Firmware" value={status?.fw || "v2.3.1"} />
+            <MiniMetric label="RAM" value={status?.system?.ram ?? "N/A"} />
+            <MiniMetric label="Disk" value={status?.system?.disk ?? "N/A"} />
+            <MiniMetric label="Firmware" value={status?.fw ?? "N/A"} />
           </div>
         </section>
 
@@ -795,7 +786,7 @@ export default function AnalyticsPage() {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-[#1a1a1a] border border-[#2d2d2d] rounded-lg p-4">
-              <span className="text-[#888888] text-[10px] font-bold uppercase tracking-wider">Missions hôm nay</span>
+              <span className="text-[#888888] text-[10px] font-bold uppercase tracking-wider">Missions today</span>
               <div className="flex items-baseline gap-2 mt-1">
                 <span className="text-2xl font-bold">{missionStats.completed}</span>
                 <span className="text-[#888888] text-sm">/ {missionStats.attempted} attempted</span>
@@ -827,7 +818,7 @@ export default function AnalyticsPage() {
               </div>
 
               <div className="text-[#888888] text-xs mt-2">
-                Hôm nay • Attempt: {qrMetrics.attempts} • Success: {qrMetrics.successes}
+                Today • Attempt: {qrMetrics.attempts} • Success: {qrMetrics.successes}
               </div>
             </div>
             <div className="bg-[#1a1a1a] border border-[#2d2d2d] rounded-lg p-4">
