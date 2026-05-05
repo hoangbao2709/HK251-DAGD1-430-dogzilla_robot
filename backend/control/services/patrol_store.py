@@ -46,6 +46,7 @@ def mission_to_payload(mission: PatrolMission) -> dict:
         "current_index": mission.current_index,
         "started_at": mission.started_at,
         "finished_at": mission.finished_at,
+        "total_distance": mission.total_distance,
         "results": [_point_result_to_dict(result) for result in mission.results],
     }
 
@@ -63,6 +64,7 @@ def payload_to_mission(payload: dict) -> PatrolMission:
         current_index=int(payload.get("current_index") or 0),
         started_at=float(payload.get("started_at") or 0.0),
         finished_at=payload.get("finished_at"),
+        total_distance=payload.get("total_distance"),
     )
     mission.results = [
         PatrolPointResult(
@@ -95,6 +97,7 @@ def append_history(robot_id: str, mission: PatrolMission) -> None:
             "robot": robot,
             "route_name": mission.route_name,
             "status": mission.status,
+            "total_distance": mission.total_distance,
             "started_at": mission.started_at,
             "finished_at": mission.finished_at,
             "payload": payload,

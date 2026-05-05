@@ -327,6 +327,12 @@ class PatrolManager:
             point_result.message = str(e)
             point_result.finished_at = time.time()
         finally:
+            try:
+                dist_metrics = ROSClient(mission.robot_id).get_distance_metrics()
+                mission.total_distance = float(dist_metrics.get("total_m", 0.0) or 0.0)
+            except Exception as e:
+                print(f"Error fetching distance for manual goal: {e}")
+                mission.total_distance = 0.0
             mission.finished_at = time.time()
             append_history(robot_id, mission)
             set_current_mission(robot_id, None)
@@ -458,6 +464,12 @@ class PatrolManager:
         except Exception as e:
             mission.status = "FAILED"
         finally:
+            try:
+                dist_metrics = ROSClient(mission.robot_id).get_distance_metrics()
+                mission.total_distance = float(dist_metrics.get("total_m", 0.0) or 0.0)
+            except Exception as e:
+                print(f"Error fetching distance for patrol: {e}")
+                mission.total_distance = 0.0
             mission.finished_at = time.time()
             append_history(robot_id, mission)
             set_current_mission(robot_id, None)

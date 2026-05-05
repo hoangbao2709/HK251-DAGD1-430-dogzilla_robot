@@ -84,6 +84,7 @@ class PatrolHistory(models.Model):
     finished_at = models.FloatField(null=True, blank=True, db_index=True)
     payload = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    total_distance = models.FloatField(null=True, blank=True, help_text="Tổng quãng đường di chuyển (m)")
 
     class Meta:
         ordering = ["-finished_at", "-started_at"]
