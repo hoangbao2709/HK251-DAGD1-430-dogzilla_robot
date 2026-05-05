@@ -153,6 +153,7 @@ export default function AutonomousControlPage() {
   const [mapReloadKey, setMapReloadKey] = useState(0);
   const [mapModalOpen, setMapModalOpen] = useState(false);
 
+  const [selectedMapName, setSelectedMapName] = useState("warehouse_01");
   const [savedPoints, setSavedPoints] = useState<PointsResponse>({});
   const [pointActionLoading, setPointActionLoading] = useState(false);
   const [patrolRunning, setPatrolRunning] = useState(false);
@@ -372,6 +373,69 @@ export default function AutonomousControlPage() {
       fetchControlStatus();
     }
   }, [controlStatus, fetchControlStatus, lidarBusy]);
+
+  const handleStartStatic = useCallback(async () => {
+    if (lidarBusy) return;
+    try {
+      setLidarBusy(true);
+      setLidarError(null);
+      // @ts-ignore
+      await RobotAPI.lidar("start", { mode: "navigation" });
+      
+      setControlStatus((previous) => ({
+        ...(previous || {}),
+        lidar_running: true,
+        lidar: { ...(previous?.lidar || {}), running: true },
+      }));
+    } catch (error) {
+      setLidarError(error instanceof Error ? error.message : "Lỗi khi bật Static Navigation");
+    } finally {
+      setLidarBusy(false);
+      fetchControlStatus();
+    }
+  }, [lidarBusy, fetchControlStatus]);
+
+  const handleStartNavigation = useCallback(async (mapName: string) => {
+    if (lidarBusy) return;
+    try {
+      setLidarBusy(true);
+      setLidarError(null);
+      // Yêu cầu RobotAPI bật LiDAR với mode navigation và tên bản đồ tương ứng
+      // @ts-ignore
+      await RobotAPI.lidar("start", { mode: "navigation", map_name: mapName });
+      
+      setControlStatus((previous) => ({
+        ...(previous || {}),
+        lidar_running: true,
+        lidar: { ...(previous?.lidar || {}), running: true },
+      }));
+    } catch (error) {
+      setLidarError(error instanceof Error ? error.message : "Lỗi khi bật Navigation");
+    } finally {
+      setLidarBusy(false);
+      fetchControlStatus();
+    }
+  }, [lidarBusy, fetchControlStatus]);
+
+  const handleResetLidar = useCallback(async () => {
+    if (lidarBusy) return;
+    try {
+      setLidarBusy(true);
+      setLidarError(null);
+      // Gọi hàm resetLidar (Cần khai báo bổ sung bên trong file robotApi.ts)
+      // @ts-ignore
+      if (RobotAPI.resetLidar) {
+            await (RobotAPI as any).resetLidar(2.0, "live_map");
+      } else {
+        window.alert("Chức năng Reset Lidar chưa được khai báo ở frontend API client");
+      }
+    } catch (error) {
+      setLidarError(error instanceof Error ? error.message : "Lỗi Reset LiDAR");
+    } finally {
+      setLidarBusy(false);
+      fetchControlStatus();
+    }
+  }, [lidarBusy, fetchControlStatus]);
 
   const resetSlamView = useCallback(() => {
     setSlamDisplayAngle(0);
@@ -1018,6 +1082,7 @@ export default function AutonomousControlPage() {
             onCancelPlacement={() => setPendingPlacement(null)}
             onClearPath={clearPath}
             onToggleLidar={handleToggleLidar}
+            onStartStatic={handleStartStatic}
             onToggleRobot={() => setShowRobot((v) => !v)}
             onTogglePath={() => setShowPath((v) => !v)}
             onToggleGrid={() => setShowGrid((v) => !v)}
@@ -1031,6 +1096,7 @@ export default function AutonomousControlPage() {
           />
         </div>
 
+        
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           <SavedPointsPanel
             isDark={isDark}

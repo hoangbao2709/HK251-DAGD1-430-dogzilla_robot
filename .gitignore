@@ -136,3 +136,4 @@ __pycache__/
 *.pyd
 
 /docker-robot/
+dogzilla_server/

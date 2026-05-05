@@ -149,6 +149,7 @@ def build_slam_ui_state(
         "render_info": state.get("render_info"),
         "pose": pose,
         "goal": state.get("goal") or {},
+        "point_navigation": state.get("point_navigation") or {},
         "paths": {
             "a_star": path_points,
         },

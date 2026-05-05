@@ -380,11 +380,20 @@ export default function RemoteView({
     }
   }, [stabilizing, appendLog]);
   useEffect(() => {
-    const timer = setInterval(() => {
+    let isRequesting = false;
+    const timer = setInterval(async () => {
       const { vx, vy, active } = joyRef.current;
       if (!active) return;
+      if (isRequesting) return;
 
-      RobotAPI.move({ vx, vy, vz: 0, rx: 0, ry: 0, rz: 0 }).catch(() => {});
+      isRequesting = true;
+      try {
+        await RobotAPI.move({ vx, vy, vz: 0, rx: 0, ry: 0, rz: 0 });
+      } catch {
+        // Bỏ qua lỗi kết nối
+      } finally {
+        isRequesting = false;
+      }
     }, 80);
 
     return () => clearInterval(timer);
@@ -987,4 +996,3 @@ export default function RemoteView({
     </section>
   );
 }
-
