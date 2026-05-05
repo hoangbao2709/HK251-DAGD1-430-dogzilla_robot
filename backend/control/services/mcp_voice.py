@@ -343,7 +343,7 @@ def _resolve_navigation_matches(text: str, normalized: str) -> List[Dict[str, An
             matches.append(
                 _build_match(
                     source="navigation_pattern",
-                    tool="goto_point",
+                    tool="go_to_point",
                     arguments={"name": points[0]},
                     matched_phrase=points[0],
                     score=(4, len(points[0])),

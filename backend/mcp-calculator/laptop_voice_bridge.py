@@ -95,7 +95,7 @@ def parse_navigation_command(text: str) -> dict[str, Any] | None:
     if m:
         point = m.group(3).upper()
         return {
-            "tool": "goto_point",
+            "tool": "go_to_point",
             "arguments": {"name": point},
             "matched": f"point_{point}",
             "normalized_text": normalized,

@@ -100,46 +100,22 @@ function HalfCircleJoystick({
   }, [onChange, onRelease]);
   const handlePointerDown = (e: React.PointerEvent) => {
     if (disabled) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
     dragging.current = true;
     setIsPressed(true);
     setFromClient(e.clientX, e.clientY);
   };
 
-  const handlePointerMove = (e: PointerEvent) => {
+  const handlePointerMove = (e: React.PointerEvent) => {
     if (!dragging.current || disabled) return;
     setFromClient(e.clientX, e.clientY);
   };
-  const handleTouchStart = (e: React.TouchEvent) => {
-    if (disabled) return;
-    dragging.current = true;
-    setIsPressed(true);
-    const t = e.touches[0];
-    if (!t) return;
-    setFromClient(t.clientX, t.clientY);
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (!dragging.current || disabled) return;
-    const t = e.touches[0];
-    if (!t) return;
-    setFromClient(t.clientX, t.clientY);
-  };
-
-  const handleTouchEnd = () => {
+  const handlePointerUp = (e: React.PointerEvent) => {
+    if (dragging.current) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
     endDrag();
   };
-
-  useEffect(() => {
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", endDrag);
-    window.addEventListener("pointercancel", endDrag);
-    return () => {
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", endDrag);
-      window.removeEventListener("pointercancel", endDrag);
-    };
-  }, [endDrag]);
-
   const knobPos = knob ?? restPos;
   const fx = (v: number) => Math.round(v) + 0.5;
 
@@ -156,11 +132,9 @@ function HalfCircleJoystick({
         viewBox={`0 0 ${width} ${height}`}
         className="rounded-2xl bg-transparent"
         onPointerDown={handlePointerDown}
-        onPointerUp={() => endDrag()}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        onTouchCancel={handleTouchEnd}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
         role="slider"
         aria-valuemin={-180}
         aria-valuemax={180}
@@ -236,4 +210,3 @@ function HalfCircleJoystick({
 }
 
 export { HalfCircleJoystick };
-

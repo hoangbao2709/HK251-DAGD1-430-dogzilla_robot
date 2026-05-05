@@ -243,7 +243,7 @@ def play_behavior(
 
 
 @mcp.tool()
-def goto_point(name: str) -> dict:
+def go_to_point(name: str) -> dict:
     """Go to a saved point on the robot map by name, for example A, B, or C."""
     if not name or not str(name).strip():
         return {"success": False, "error": "Point name is required"}
