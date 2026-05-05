@@ -166,6 +166,7 @@ export default function AutonomousControlPage() {
   const [robotAddr, setRobotAddr] = useState(
     () => getSelectedRobotAddr() || DEFAULT_DOG_SERVER
   );
+  const [backendSyncError, setBackendSyncError] = useState("");
   const [commandText, setCommandText] = useState("");
   const [isSendingCommand, setIsSendingCommand] = useState(false);
   const [commandResult, setCommandResult] = useState<any | null>(null);
@@ -223,6 +224,26 @@ export default function AutonomousControlPage() {
       setConnected(Boolean(data.telemetry?.robot_connected));
     } catch {
       setConnected(false);
+    }
+  }, []);
+
+  const syncBackendRobotAddr = useCallback(async (addr: string) => {
+    const normalizedAddr = addr.trim();
+    if (!normalizedAddr) {
+      setConnected(false);
+      setBackendSyncError("Thieu robot address.");
+      return;
+    }
+
+    try {
+      const data = await RobotAPI.connect(normalizedAddr);
+      setConnected(Boolean(data.connected ?? data.ok));
+      setBackendSyncError("");
+    } catch (error) {
+      setConnected(false);
+      setBackendSyncError(
+        error instanceof Error ? error.message : "Khong dong bo duoc robot address"
+      );
     }
   }, []);
 
@@ -327,6 +348,12 @@ export default function AutonomousControlPage() {
     fetchPoints,
     fetchPatrolStatus,
   ]);
+
+  useEffect(() => {
+    const normalizedAddr = dogServer.trim();
+    setRobotAddr(normalizedAddr);
+    void syncBackendRobotAddr(normalizedAddr);
+  }, [dogServer, syncBackendRobotAddr]);
 
   const clearPath = useCallback(async () => {
     try {
@@ -907,8 +934,10 @@ export default function AutonomousControlPage() {
       setCommandError("");
       setCommandResult(null);
 
-      const result = await RobotAPI.textCommand(text, robotAddr.trim());
+      const activeRobotAddr = robotAddr.trim() || dogServer.trim();
+      const result = await RobotAPI.textCommand(text, activeRobotAddr);
       setCommandResult(result);
+      setBackendSyncError("");
     } catch (error) {
       setCommandError(error instanceof Error ? error.message : "Gui lenh that bai");
     } finally {
@@ -1068,6 +1097,9 @@ export default function AutonomousControlPage() {
           isDark={isDark}
           planningHeadline={planningHeadline}
           poseText={poseText}
+          robotAddr={dogServer.trim()}
+          backendConnected={connected}
+          backendSyncError={backendSyncError}
           qrPosition={qrPosition}
           qrPositionError={qrPositionError}
           slamError={slamError}

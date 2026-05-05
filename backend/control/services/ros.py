@@ -476,7 +476,8 @@ class ROSClient:
                 failures += 1
             finally:
                 try:
-                    resp.close()
+                    if resp is not None:
+                        resp.close()
                 except Exception:
                     pass
 
@@ -492,7 +493,7 @@ class ROSClient:
 
         packet_loss_pct = round((failures / samples) * 100.0, 2)
 
-        downlink_kbps = None
+        downlink_kbps: float | None = None
         resp = None
         try:
             started = time.perf_counter()
@@ -515,11 +516,12 @@ class ROSClient:
             downlink_kbps = None
         finally:
             try:
-                resp.close()
+                if resp is not None:
+                    resp.close()
             except Exception:
                 pass
 
-        uplink_kbps = None
+        uplink_kbps: float | None = None
         resp = None
         try:
             probe_payload = {
@@ -541,7 +543,8 @@ class ROSClient:
             uplink_kbps = None
         finally:
             try:
-                resp.close()
+                if resp is not None:
+                    resp.close()
             except Exception:
                 pass
 

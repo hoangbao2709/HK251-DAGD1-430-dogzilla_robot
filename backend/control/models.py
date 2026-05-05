@@ -82,6 +82,7 @@ class PatrolHistory(models.Model):
     status = models.CharField(max_length=32, db_index=True)
     started_at = models.FloatField(db_index=True)
     finished_at = models.FloatField(null=True, blank=True, db_index=True)
+    total_distance_m = models.FloatField(null=True, blank=True)
     payload = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 
