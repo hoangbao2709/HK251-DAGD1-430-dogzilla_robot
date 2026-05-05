@@ -845,14 +845,14 @@ export default function RemoteView({
 
             <div
               className={`relative w-full rounded-xl overflow-hidden border border-[var(--border)] bg-[var(--surface-elev)] transition-all duration-300 ${
-                isRunning || lidarError ? "pt-[100%]" : "h-24"
+                isRunning || lidarError ? "aspect-square min-h-[18rem]" : "h-24"
               }`}
             >
               {isRunning ? (
                 <iframe
                   src={lidarUrl}
                   title="LiDAR map"
-                  className={`absolute inset-0 w-full h-full border-0 transition-opacity duration-300 ${
+                  className={`pointer-events-none absolute inset-0 w-full h-full border-0 transition-opacity duration-300 ${
                     lidarFrameLoaded ? "opacity-100" : "opacity-0"
                   }`}
                   onLoad={() => {
