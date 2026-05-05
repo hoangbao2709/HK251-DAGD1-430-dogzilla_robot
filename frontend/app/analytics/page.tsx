@@ -501,6 +501,7 @@ export default function AnalyticsPage() {
   const [lastRefresh, setLastRefresh] = useState("-");
   const [isPaused, setIsPaused] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [filterDate, setFilterDate] = useState<string>("today");
 
   const [missionStats, setMissionStats] = useState({
     attempted: 0,
@@ -520,6 +521,8 @@ export default function AnalyticsPage() {
   const refreshStatus = useCallback(async () => {
     try {
       setErrorText("");
+      let newPathEfficiency: number | null = null;
+      let newObstacleEvents: number | null = null;
 
       const nextStatus = normalizeRobotStatus(await RobotAPI.status());
       setStatus(nextStatus);
@@ -542,11 +545,11 @@ export default function AnalyticsPage() {
       try {
         const evalResp = await RobotAPI.evaluationMetrics();
         const derived = evalResp?.derived_metrics ?? {};
-        const nextPathEfficiency = Number(derived.path_efficiency_pct);
-        const nextTotalDistance = Number(derived.path_length_m);
-
-        setPathEfficiency(Number.isFinite(nextPathEfficiency) ? nextPathEfficiency : null);
-        setTotalDistance(Number.isFinite(nextTotalDistance) ? nextTotalDistance : null);
+        const v = Number(derived.path_efficiency_pct);
+        newPathEfficiency = Number.isFinite(v) ? v : null;  // ← gán local var
+        setPathEfficiency(newPathEfficiency);
+        const d = Number(derived.path_length_m);
+        setTotalDistance(Number.isFinite(d) ? d : null);
       } catch {
         setPathEfficiency(null);
         setTotalDistance(null);
@@ -554,8 +557,9 @@ export default function AnalyticsPage() {
 
       try {
         const sessionSummary = await RobotAPI.sessionSummary();
-        const nextObstacleEvents = Number(sessionSummary?.obstacle_events_today);
-        setObstacleEvents(Number.isFinite(nextObstacleEvents) ? nextObstacleEvents : null);
+        const v = Number(sessionSummary?.obstacle_events_today);
+        newObstacleEvents = Number.isFinite(v) ? v : null;  // ← gán local var
+        setObstacleEvents(newObstacleEvents);
       } catch {
         setObstacleEvents(null);
       }
@@ -573,33 +577,40 @@ export default function AnalyticsPage() {
       }
 
       try {
-        const histResp = await RobotAPI.patrolHistory() as any;
+        const histResp = await RobotAPI.patrolHistory(filterDate) as any;
         const missions: PatrolMission[] = histResp?.history ?? [];
         setPatrolMissions(missions);
 
         const attempted = missions.length;
-        const normalize = (s: string) => s.toLowerCase()
-        const completed = missions.filter(m =>
-          ["completed", "done"].includes(normalize(m.status))
-        ).length
+        const completed = missions.filter(m => m.status === "completed").length;
+
+        // ✅ FIX: tính cả stopped vào failed
         const failed = missions.filter(m =>
-          ["failed", "stopped"].includes(normalize(m.status))
+          m.status === "failed" || m.status === "stopped"
         ).length;
+
         const successRate = attempted > 0
           ? Math.round(completed / attempted * 100) : 0;
 
-        // avg delivery time
+        // ✅ FIX: fallback tính avgDelivery
         const times = missions
           .filter(m => m.status === "completed")
-          .flatMap(m => (m.results ?? [])
-            .map(r => r.reach_time_sec)
-            .filter((t): t is number => t != null && t > 0));
+          .flatMap(m => {
+            const fromResults = (m.results ?? [])
+              .map(r => r.reach_time_sec)
+              .filter((t): t is number => t != null && t > 0);
+            if (fromResults.length > 0) return fromResults;
+            if (m.started_at != null && m.finished_at != null) {
+              const diff = Number(m.finished_at) - Number(m.started_at);
+              if (diff > 0) return [diff];
+            }
+            return [];
+          });
         const avgDelivery = times.length > 0
           ? Math.round(times.reduce((a, b) => a + b, 0) / times.length) : 0;
 
         setMissionStats({ attempted, completed, failed, successRate, avgDelivery });
       } catch (err) {
-        // giữ nguyên state cũ nếu API lỗi
         console.error("Failed to fetch patrol history:", err);
       }
 
@@ -624,15 +635,15 @@ export default function AnalyticsPage() {
       setLastRefresh(timestamp);
       setEffHistory(prev => [...prev, {
         time: timestamp,
-        eff: pathEfficiency ?? 0,
-        obs: obstacleEvents ?? 0,
+        eff: newPathEfficiency ?? 0,
+        obs: newObstacleEvents ?? 0,
       }].slice(-20));
     } catch (err: any) {
       setErrorText(err?.message || "Failed to load robot status");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [filterDate]);
 
   useEffect(() => {
     if (!isPaused) {
@@ -702,6 +713,32 @@ export default function AnalyticsPage() {
               {isPaused ? "Paused" : "Live • auto-refresh 5s"}
             </span>
           </div>
+          <select 
+            value={filterDate === 'today' || filterDate === 'all' ? filterDate : 'custom'}
+            onChange={(e) => {
+              if (e.target.value === 'today' || e.target.value === 'all') {
+                setFilterDate(e.target.value);
+              } else {
+                const tzoffset = (new Date()).getTimezoneOffset() * 60000;
+                const localISOTime = (new Date(Date.now() - tzoffset)).toISOString().slice(0, 10);
+                setFilterDate(localISOTime);
+              }
+            }}
+            className="cursor-pointer bg-[#1a1a1a] border border-[#2d2d2d] rounded-lg px-3 py-2 text-sm font-bold outline-none hover:bg-[#252525] transition-colors text-white appearance-none"
+          >
+            <option value="today">Today</option>
+            <option value="all">All Time</option>
+            <option value="custom">Custom Date</option>
+          </select>
+          {filterDate !== 'today' && filterDate !== 'all' && (
+            <input 
+              type="date"
+              value={filterDate}
+              onChange={(e) => setFilterDate(e.target.value)}
+              className="cursor-pointer bg-[#1a1a1a] border border-[#2d2d2d] rounded-lg px-3 py-[6px] text-sm font-bold outline-none hover:bg-[#252525] transition-colors text-white"
+              style={{ colorScheme: 'dark' }}
+            />
+          )}
           <button onClick={() => setIsPaused(!isPaused)}
             className="cursor-pointer flex items-center gap-2 bg-[#1a1a1a] border border-[#2d2d2d] hover:bg-[#252525] transition-colors rounded-lg px-4 py-2 text-sm font-bold"
           >
@@ -764,7 +801,7 @@ export default function AnalyticsPage() {
         {/* ZONE 2 - MISSION PERFORMANCE */}
         <section>
           <h2 className="text-[#888888] text-[10px] font-bold uppercase tracking-[0.2em] mb-4 border-b border-[#2d2d2d] pb-2">
-            Zone 2 — Mission Performance (Session hiện tại)
+            Zone 2 — Mission Performance ({filterDate === 'today' ? 'Today' : filterDate === 'all' ? 'All Time' : filterDate})
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
             <DataCard
