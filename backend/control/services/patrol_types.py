@@ -29,3 +29,4 @@ class PatrolMission:
     started_at: float = field(default_factory=time.time)
     finished_at: Optional[float] = None
     results: List[PatrolPointResult] = field(default_factory=list)
+    total_distance: Optional[float] = None
