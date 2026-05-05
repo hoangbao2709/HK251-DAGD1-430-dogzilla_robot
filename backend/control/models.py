@@ -2,10 +2,11 @@ import uuid
 
 from django.db import models
 
+
 class Robot(models.Model):
-    id = models.CharField(primary_key=True, max_length=64) 
+    id = models.CharField(primary_key=True, max_length=64)
     name = models.CharField(max_length=128, default="Robot A")
-    addr = models.CharField(max_length=256, blank=True, default="")  
+    addr = models.CharField(max_length=256, blank=True, default="")
 
     location_lat = models.FloatField(null=True, blank=True)
     location_lon = models.FloatField(null=True, blank=True)
@@ -16,7 +17,8 @@ class Robot(models.Model):
     battery = models.IntegerField(default=85)
     fps = models.IntegerField(default=30)
 
-    def __str__(self): return self.name
+    def __str__(self):
+        return self.name
 
 
 class ActionEvent(models.Model):
@@ -82,9 +84,9 @@ class PatrolHistory(models.Model):
     status = models.CharField(max_length=32, db_index=True)
     started_at = models.FloatField(db_index=True)
     finished_at = models.FloatField(null=True, blank=True, db_index=True)
+    total_distance_m = models.FloatField(null=True, blank=True)
     payload = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
-    total_distance = models.FloatField(null=True, blank=True, help_text="Tổng quãng đường di chuyển (m)")
 
     class Meta:
         ordering = ["-finished_at", "-started_at"]

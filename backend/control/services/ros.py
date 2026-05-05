@@ -482,7 +482,7 @@ class ROSClient:
         failures = 0
 
         for _ in range(samples):
-            resp = None
+            resp: requests.Response | None = None
             started = time.perf_counter()
             try:
                 resp = self.session.get(health_url, timeout=self.timeout)
@@ -493,7 +493,8 @@ class ROSClient:
                 failures += 1
             finally:
                 try:
-                    resp.close()
+                    if resp is not None:
+                        resp.close()
                 except Exception:
                     pass
 
@@ -509,8 +510,8 @@ class ROSClient:
 
         packet_loss_pct = round((failures / samples) * 100.0, 2)
 
-        downlink_kbps = None
-        resp = None
+        downlink_kbps: float | None = None
+        resp: requests.Response | None = None
         try:
             started = time.perf_counter()
             resp = self.session.get(
@@ -532,12 +533,13 @@ class ROSClient:
             downlink_kbps = None
         finally:
             try:
-                resp.close()
+                if resp is not None:
+                    resp.close()
             except Exception:
                 pass
 
-        uplink_kbps = None
-        resp = None
+        uplink_kbps: float | None = None
+        resp: requests.Response | None = None
         try:
             probe_payload = {
                 "command": "status",
@@ -558,7 +560,8 @@ class ROSClient:
             uplink_kbps = None
         finally:
             try:
-                resp.close()
+                if resp is not None:
+                    resp.close()
             except Exception:
                 pass
 

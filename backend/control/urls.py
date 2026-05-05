@@ -31,6 +31,8 @@ from .views import (
     ControlStatusView,
     CameraProcessView,
     TextCommandView,
+    XiaozhiBridgeCommandView,
+    XiaozhiBridgeHealthView,
     QRStateView,
     QRPositionView,
     QRVideoFeedView,
@@ -56,6 +58,8 @@ from .views import (
 
 
 urlpatterns = [
+    path("api/xiaozhi/health/", XiaozhiBridgeHealthView.as_view(), name="xiaozhi-bridge-health"),
+    path("api/xiaozhi/command/", XiaozhiBridgeCommandView.as_view(), name="xiaozhi-bridge-command"),
     path("api/robots/<str:robot_id>/qr-metrics/", QRMetricView.as_view(), name="robot-qr-metrics"),
     path("api/robots/", RobotListView.as_view(), name="robots-list"),
     path("api/robots/<str:robot_id>/network/metrics/", NetworkMetricsView.as_view(), name="robot-network-metrics"),
