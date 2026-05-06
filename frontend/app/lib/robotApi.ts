@@ -325,8 +325,8 @@ export const RobotAPI = {
       }>;
     }>(`${CONTROL_PREFIX}/${robotId}/events/?limit=${limit}&offset=${offset}`),
 
-  patrolHistory: () =>
-    api<any>(`${CONTROL_PREFIX}/${robotId}/patrol/history/`),
+  patrolHistory: (date?: string) =>
+    api<any>(`${CONTROL_PREFIX}/${robotId}/patrol/history/${date ? `?date=${date}` : ""}`),
 
   patrolStart: (payload: {
     route_name?: string;

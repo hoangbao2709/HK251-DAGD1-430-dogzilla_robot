@@ -164,6 +164,17 @@ def _build_voice_navigation_result(
 
 
 def mission_to_dict(mission: Any) -> dict[str, Any]:
+    _STATUS_MAP = {
+        "DONE":    "completed",
+        "FAILED":  "failed",
+        "STOPPED": "stopped",
+        "RUNNING": "running",
+        "PAUSED":  "paused",
+    }
+    normalized_status = _STATUS_MAP.get(
+        str(mission.status or "").upper(),
+        str(mission.status or "").lower(),
+    )
     return {
         "mission_id": mission.mission_id,
         "robot_id": mission.robot_id,
@@ -172,7 +183,7 @@ def mission_to_dict(mission: Any) -> dict[str, Any]:
         "wait_sec_per_point": mission.wait_sec_per_point,
         "max_retry_per_point": mission.max_retry_per_point,
         "skip_on_fail": mission.skip_on_fail,
-        "status": mission.status,
+        "status": normalized_status,       # ← "DONE" → "completed"
         "current_index": mission.current_index,
         "started_at": mission.started_at,
         "finished_at": mission.finished_at,
@@ -1699,7 +1710,8 @@ class PatrolStatusView(APIView):
 
 class PatrolHistoryView(APIView):
     def get(self, request, robot_id):
-        history = get_history(robot_id)
+        date_filter = request.query_params.get("date")
+        history = get_history(robot_id, date_filter=date_filter)
         return Response(
             {
                 "success": True,

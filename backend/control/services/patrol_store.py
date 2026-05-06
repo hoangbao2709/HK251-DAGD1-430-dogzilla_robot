@@ -1,4 +1,5 @@
 import threading
+import datetime
 from typing import Dict, List, Optional
 
 from ..models import PatrolHistory, Robot
@@ -106,6 +107,27 @@ def append_history(robot_id: str, mission: PatrolMission) -> None:
     )
 
 
-def get_history(robot_id: str) -> List[PatrolMission]:
-    records = PatrolHistory.objects.filter(robot_id=robot_id).order_by("-finished_at", "-started_at")
+def get_history(robot_id: str, date_filter: str | None = None) -> List[PatrolMission]:
+    records = PatrolHistory.objects.filter(
+        robot_id=robot_id
+    ).order_by("-finished_at", "-started_at")
+
+    if date_filter == "all":
+        today = None
+    elif date_filter == "today" or not date_filter:
+        today = datetime.date.today()
+    else:
+        try:
+            today = datetime.datetime.strptime(date_filter, "%Y-%m-%d").date()
+        except ValueError:
+            today = datetime.date.today()
+
+    if today:
+        start_ts = datetime.datetime.combine(today, datetime.time.min).timestamp()
+        end_ts   = datetime.datetime.combine(today, datetime.time.max).timestamp()
+        records = records.filter(
+            started_at__gte=start_ts,
+            started_at__lte=end_ts,
+        )
+
     return [payload_to_mission(record.payload) for record in records]
