@@ -117,6 +117,9 @@ build/
 # =============================================
 # LOCAL CONFIG
 # =============================================
+.env
+.env.*
+!.env.example
 config.local.py
 local_settings.py
 

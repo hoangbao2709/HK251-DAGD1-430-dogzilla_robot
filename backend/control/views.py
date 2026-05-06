@@ -1,4 +1,5 @@
 import math
+import asyncio
 from typing import Any, ClassVar
 
 from django.conf import settings  # type: ignore[import-untyped]
@@ -20,6 +21,8 @@ from .services.qr_detect import detect_qr_state_once, generate_qr_video_frames, 
 from .services.patrol_manager import patrol_manager
 from .services.patrol_store import get_current_mission, get_history
 from .services.xiaozhi_bridge import build_bridge_response_text
+from .services.llm_voice import map_text_with_openrouter
+from .services.tts_voice import DEFAULT_VOICE, VOICE_GENDER, synthesize_vietnamese_speech
 logger = logging.getLogger(__name__)
 line_tracker = LineTrackingServer()
 
@@ -92,7 +95,7 @@ def _build_xiaozhi_bridge_result(
                 "message": "Mapped command only",
             },
         }
-    elif tool_name in {"goto_point", "goto_waypoints"}:
+    elif tool_name in {"go_to_point", "goto_waypoints"}:
         result = _build_voice_navigation_result(
             robot_id=robot_id,
             robot_addr=robot_addr,
@@ -133,7 +136,7 @@ def _build_voice_navigation_result(
     arguments: dict[str, Any],
     mapping: dict[str, Any],
 ) -> dict[str, Any]:
-    if tool_name == "goto_point":
+    if tool_name == "go_to_point":
         points = [str(arguments.get("name") or "").strip().upper()]
         route_name = f"voice_point_{points[0]}" if points and points[0] else "voice_point"
     else:
@@ -271,6 +274,34 @@ class QRMetricView(APIView):
                 payload={"point_name": name},
             )
         return Response({"ok": True}, status=200)
+
+
+class VoiceTTSView(APIView):
+    authentication_classes: ClassVar[list[type[Any]]] = []
+    permission_classes: ClassVar[list[type[Any]]] = []
+
+    def post(self, request):
+        text = str(request.data.get("text") or "").strip()
+        if not text:
+            return Response(
+                {"success": False, "error": "text is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        text = text[:600]
+        try:
+            audio = asyncio.run(synthesize_vietnamese_speech(text))
+            response = HttpResponse(audio, content_type="audio/mpeg")
+            response["Cache-Control"] = "no-store"
+            response["X-TTS-Voice"] = DEFAULT_VOICE
+            response["X-TTS-Gender"] = VOICE_GENDER
+            return response
+        except Exception as e:
+            logger.exception("VoiceTTSView error")
+            return Response(
+                {"success": False, "error": str(e)},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
 
 class CameraProcessView(APIView):
     def get(self, request, robot_id):
@@ -869,6 +900,7 @@ class TextCommandView(APIView):
         ).strip()
 
         text = (request.data.get("text") or "").strip()
+        dry_run = bool(request.data.get("dry_run", False))
 
         if not robot_addr:
             return Response(
@@ -894,47 +926,151 @@ class TextCommandView(APIView):
             robot.save(update_fields=["addr"])
 
         try:
-            print("[TextCommandView] robot_addr =", robot_addr)
-            print("[TextCommandView] text =", text)
-            tool_name, arguments, mapping = map_text_to_tool(text)
-            if tool_name in {"goto_point", "goto_waypoints"}:
-                result = _build_voice_navigation_result(
-                    robot_id=robot_id,
-                    robot_addr=robot_addr,
-                    tool_name=tool_name,
-                    arguments=arguments,
-                    mapping=mapping,
+            planner_source = "openrouter"
+            llm_error = None
+
+            try:
+                plan = map_text_with_openrouter(text)
+                if not plan.get("actions"):
+                    raise ValueError("LLM không chọn action nào")
+            except Exception as exc:
+                llm_error = str(exc)
+                planner_source = "fallback_keyword"
+
+                tool_name, arguments, mapping = map_text_to_tool(text)
+                plan = {
+                    "actions": [
+                        {
+                            "tool": tool_name,
+                            "arguments": arguments,
+                            "mapping": mapping,
+                        }
+                    ]
+                }
+
+            if dry_run:
+                return Response(
+                    {
+                        "success": True,
+                        "dry_run": True,
+                        "robot_id": robot_id,
+                        "robot_addr": robot_addr,
+                        "input_text": text,
+                        "planner_source": planner_source,
+                        "llm_error": llm_error,
+                        "plan": plan,
+                    },
+                    status=status.HTTP_200_OK,
                 )
-            else:
-                result = process_text_command(robot_addr=robot_addr, text=text)
+
+            results = []
+
+            for action in plan.get("actions", []):
+                tool_name = action["tool"]
+                arguments = action.get("arguments", {})
+                mapping = action.get(
+                    "mapping",
+                    {
+                        "source": planner_source,
+                        "intent": "llm_robot_command",
+                    },
+                )
+
+                if tool_name in {"go_to_point", "goto_waypoints"}:
+                    result = _build_voice_navigation_result(
+                        robot_id=robot_id,
+                        robot_addr=robot_addr,
+                        tool_name=tool_name,
+                        arguments=arguments,
+                        mapping=mapping,
+                    )
+
+                elif tool_name == "set_posture":
+                    ROSClient(robot_id).posture(arguments["name"])
+                    result = {
+                        "ok": True,
+                        "robot_addr": robot_addr,
+                        "tool": tool_name,
+                        "arguments": arguments,
+                        "mapping": mapping,
+                        "content": {"success": True},
+                    }
+
+                elif tool_name == "play_behavior":
+                    ROSClient(robot_id).behavior(arguments["name"])
+                    result = {
+                        "ok": True,
+                        "robot_addr": robot_addr,
+                        "tool": tool_name,
+                        "arguments": arguments,
+                        "mapping": mapping,
+                        "content": {"success": True},
+                    }
+
+                elif tool_name == "reset_robot":
+                    ROSClient(robot_id).reset()
+                    result = {
+                        "ok": True,
+                        "robot_addr": robot_addr,
+                        "tool": tool_name,
+                        "arguments": arguments,
+                        "mapping": mapping,
+                        "content": {"success": True},
+                    }
+
+                elif tool_name == "rotation":
+                    ROSClient(robot_id).raw_control({"command": "rotation"})
+                    result = {
+                        "ok": True,
+                        "robot_addr": robot_addr,
+                        "tool": tool_name,
+                        "arguments": arguments,
+                        "mapping": mapping,
+                        "content": {"success": True},
+                    }
+
+                elif tool_name == "stop_navigation":
+                    patrol_manager.stop(robot_id)
+                    result = {
+                        "ok": True,
+                        "robot_addr": robot_addr,
+                        "tool": tool_name,
+                        "arguments": arguments,
+                        "mapping": mapping,
+                        "content": {"success": True},
+                    }
+
+                else:
+                    raise ValueError(f"Unsupported tool: {tool_name}")
+
+                results.append(result)
+
             log_line = (
                 f'TEXT_COMMAND {json.dumps({"addr": robot_addr, "text": text}, ensure_ascii=False)} → OK'
             )
+            reply_text = " ".join(
+                build_bridge_response_text(result)
+                for result in results
+            ).strip() or "Em \u0111\u00e3 nh\u1eadn l\u1ec7nh."
 
             return Response(
                 {
                     "success": True,
+                    "robot_id": robot_id,
                     "robot_addr": robot_addr,
                     "input_text": text,
-                    "result": result,
+                    "planner_source": planner_source,
+                    "llm_error": llm_error,
+                    "plan": plan,
+                    "result": results[0] if results else None,
+                    "results": results,
+                    "reply_text": reply_text,
                     "log": log_line,
                 },
                 status=status.HTTP_200_OK,
             )
 
         except AmbiguousCommandError as e:
-            logger.warning(
-                "TextCommandView ambiguous command | robot_addr=%s | text=%s | normalized=%s | matches=%s",
-                robot_addr,
-                text,
-                e.normalized_text,
-                e.matches,
-            )
-            log_line = (
-                f'TEXT_COMMAND {json.dumps({"addr": robot_addr, "text": text}, ensure_ascii=False)} '
-                f"-> AMBIGUOUS: {str(e)}"
-            )
-
             return Response(
                 {
                     "success": False,
@@ -944,7 +1080,6 @@ class TextCommandView(APIView):
                     "error_code": "ambiguous_command",
                     "normalized_text": e.normalized_text,
                     "candidate_matches": e.matches,
-                    "log": log_line,
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )

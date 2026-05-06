@@ -381,7 +381,9 @@ class PatrolManager:
                     point_result.status = "SKIPPED"
                     continue
 
-                target_x, target_y, target_yaw = self._compute_saved_point_goal(point_info)
+                target_x = float(point_info["x"])
+                target_y = float(point_info["y"])
+                target_yaw = float(point_info.get("yaw", 0.0))
 
                 success = False
 
@@ -404,12 +406,12 @@ class PatrolManager:
                         except Exception:
                             initial_mission_count = None
 
-                        send_result = client.set_goal_pose(target_x, target_y, target_yaw)
+                        send_result = client.go_to_point(point_name)
                         if not send_result.get("success", False):
-                            point_result.message = str(send_result.get("message") or "set_goal_pose failed")
+                            point_result.message = str(send_result.get("message") or "go_to_point failed")
                             continue
                     except Exception as e:
-                        point_result.message = f"set_goal_pose failed: {e}"
+                        point_result.message = f"go_to_point failed: {e}"
                         continue
 
                     ok, message, final_dist, terminal_result = self._wait_until_goal_reached(
@@ -417,7 +419,7 @@ class PatrolManager:
                         target_x,
                         target_y,
                         target_yaw,
-                        require_heading=True,
+                        require_heading=False,
                         initial_mission_count=initial_mission_count,
                     )
                     point_result.finished_at = time.time()

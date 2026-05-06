@@ -55,11 +55,6 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <Script
-        id="strip-extension-hydration-attrs"
-        strategy="beforeInteractive"
-        dangerouslySetInnerHTML={{ __html: stripExtensionAttributes }}
-      />
       <body
         suppressHydrationWarning
         className={`
@@ -69,6 +64,11 @@ export default function RootLayout({
           antialiased
         `}
       >
+        <Script
+          id="strip-extension-hydration-attrs"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{ __html: stripExtensionAttributes }}
+        />
         <Providers>{children}</Providers>
       </body>
     </html>

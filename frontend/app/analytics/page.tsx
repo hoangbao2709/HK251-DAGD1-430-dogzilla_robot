@@ -722,7 +722,6 @@ export default function AnalyticsPage() {
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-white">Analytics</h1>
-          <p className="text-[#888888] text-sm mt-0.5 font-medium"> Операционный мониторинг — robot dogzilla_s2</p>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 bg-[#1a1a1a] border border-[#2d2d2d] rounded-full px-3 py-1.5">
