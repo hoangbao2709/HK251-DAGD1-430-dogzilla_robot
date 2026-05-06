@@ -11,10 +11,9 @@ import json
 import cv2
 import base64
 import logging
-from .models import Robot, ActionEvent, EvaluationSnapshot
+from .models import Robot, ActionEvent
 from .serializers import RobotSerializer
 from .services.ros import ROSClient
-from .services.evaluation_metrics import build_evaluation_metrics_payload, build_snapshot_key
 from .line_tracking_backend import LineTrackingServer
 from .services.mcp_voice import AmbiguousCommandError, map_text_to_tool, process_text_command
 from .services.qr_detect import detect_qr_state_once, generate_qr_video_frames, get_current_qr_state, save_qr_metric_event
@@ -418,81 +417,27 @@ class NetworkMetricsView(APIView):
                         "jitter_ms": None,
                         "packet_loss_pct": None,
                         "signal_quality": 0,
+                        "network_name": "Unknown network",
+                        "network_type": "unknown",
+                        "network_status": "offline",
+                        "network_status_label": "Mat ket noi",
+                        "network_summary": "Mat ket noi",
+                        "connection": {},
                     },
                 },
                 status=status.HTTP_502_BAD_GATEWAY,
             )
 
 
-class EvaluationMetricsView(APIView):
+class NavigationAnalyticsView(APIView):
     def get(self, request, robot_id):
         try:
-            def _truthy(name: str) -> bool:
-                return str(request.query_params.get(name, "")).strip().lower() in {"1", "true", "yes", "on"}
-
-            robot_full = _truthy("robot_full") or _truthy("debug")
-
-            raw_metrics = ROSClient(robot_id).get_evaluation_metrics(
-                full=robot_full,
-                trajectory=_truthy("trajectory"),
-                pose_traces=_truthy("pose_traces"),
-                reference_trajectory=_truthy("reference_trajectory"),
-            )
-            payload = build_evaluation_metrics_payload(raw_metrics)
-            persistence = payload.get("persistence") or {}
-
-            if persistence.get("eligible"):
-                run_meta = payload.get("run_meta") or {}
-                snapshot_key = build_snapshot_key(robot_id, raw_metrics, payload)
-                snapshot, created = EvaluationSnapshot.objects.update_or_create(
-                    snapshot_key=snapshot_key,
-                    defaults={
-                        "robot": get_or_create_robot(robot_id),
-                        "run_started_at": float(raw_metrics.get("run_started_at")),
-                        "method": str(run_meta.get("method") or ""),
-                        "route_id": str(run_meta.get("route_id") or ""),
-                        "trial_id": str(run_meta.get("trial_id") or ""),
-                        "condition": str(run_meta.get("condition") or ""),
-                        "weighting_mode": str(run_meta.get("weighting_mode") or ""),
-                        "has_exact_localization": bool(
-                            (payload.get("paper_tables") or {})
-                            .get("table_i_localization", {})
-                            .get("exact")
-                        ),
-                        "has_exact_qr_ablation": bool(
-                            (payload.get("paper_tables") or {})
-                            .get("table_ii_qr_ablation", {})
-                            .get("exact")
-                        ),
-                        "has_exact_navigation": bool(
-                            (payload.get("paper_tables") or {})
-                            .get("table_iii_navigation", {})
-                            .get("exact")
-                        ),
-                        "payload_mode": payload.get("payload_mode") or {},
-                        "derived_metrics": payload.get("derived_metrics") or {},
-                        "paper_tables": payload.get("paper_tables") or {},
-                        "raw_metrics": raw_metrics,
-                    },
-                )
-                payload["persistence"] = {
-                    **persistence,
-                    "saved_to_db": True,
-                    "created": created,
-                    "snapshot_id": snapshot.id,
-                    "snapshot_key": snapshot.snapshot_key,
-                }
-            else:
-                payload["persistence"] = {
-                    **persistence,
-                    "saved_to_db": False,
-                }
-
+            data = ROSClient(robot_id).get_navigation_summary_metrics()
             return Response(
                 {
                     "success": True,
                     "robot_id": robot_id,
-                    **payload,
+                    "data": data,
                 },
                 status=status.HTTP_200_OK,
             )
@@ -502,6 +447,11 @@ class EvaluationMetricsView(APIView):
                     "success": False,
                     "robot_id": robot_id,
                     "error": str(e),
+                    "data": {
+                        "path_length_m": None,
+                        "path_efficiency_pct": None,
+                        "distance": {},
+                    },
                 },
                 status=status.HTTP_502_BAD_GATEWAY,
             )

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
@@ -21,6 +22,32 @@ export const metadata: Metadata = {
   },
 };
 
+const stripExtensionAttributes = `
+(() => {
+  const strip = () => {
+    document.querySelectorAll("*").forEach((node) => {
+      for (const attr of Array.from(node.attributes)) {
+        if (
+          attr.name === "bis_skin_checked" ||
+          attr.name === "bis_register" ||
+          attr.name.startsWith("__processed_")
+        ) {
+          node.removeAttribute(attr.name);
+        }
+      }
+    });
+  };
+
+  strip();
+
+  new MutationObserver(strip).observe(document.documentElement, {
+    attributes: true,
+    childList: true,
+    subtree: true,
+  });
+})();
+`;
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -28,7 +55,13 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <Script
+        id="strip-extension-hydration-attrs"
+        strategy="beforeInteractive"
+        dangerouslySetInnerHTML={{ __html: stripExtensionAttributes }}
+      />
       <body
+        suppressHydrationWarning
         className={`
           ${geistSans.variable} ${geistMono.variable}
           min-h-screen

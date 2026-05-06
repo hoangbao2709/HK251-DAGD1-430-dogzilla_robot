@@ -844,8 +844,8 @@ export default function RemoteView({
             </div>
 
             <div
-              className={`relative w-full rounded-xl overflow-hidden border border-[var(--border)] bg-[var(--surface-elev)] transition-all duration-300 ${
-                isRunning || lidarError ? "aspect-square min-h-[18rem]" : "h-24"
+              className={`relative w-full rounded-xl overflow-hidden border border-[var(--border)] bg-[var(--surface-elev)] transition-[height] duration-300 ${
+                isRunning || lidarError ? "h-40 xl:h-48" : "h-24"
               }`}
             >
               {isRunning ? (

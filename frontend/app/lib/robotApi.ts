@@ -259,8 +259,8 @@ export const RobotAPI = {
   networkMetrics: () =>
     api<any>(`${CONTROL_PREFIX}/${robotId}/network/metrics/`),
 
-  evaluationMetrics: () =>
-    api<any>(`${CONTROL_PREFIX}/${robotId}/evaluation/metrics/`),
+  navigationMetrics: () =>
+    api<any>(`${CONTROL_PREFIX}/${robotId}/analytics/navigation/`),
 
   sessionSummary: () =>
     api<any>(`${CONTROL_PREFIX}/${robotId}/session/summary/`),
