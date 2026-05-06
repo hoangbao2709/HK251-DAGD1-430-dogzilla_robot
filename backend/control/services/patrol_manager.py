@@ -264,6 +264,22 @@ class PatrolManager:
 
         return None
 
+    @staticmethod
+    def _attach_total_distance(mission: PatrolMission) -> None:
+        try:
+            distance_metrics = ROSClient(mission.robot_id).get_distance_metrics() or {}
+        except Exception:
+            return
+
+        total_m = distance_metrics.get("total_m")
+        if total_m is None:
+            return
+
+        try:
+            mission.total_distance_m = float(total_m)
+        except (TypeError, ValueError):
+            mission.total_distance_m = None
+
     def _run_manual_goal(self, mission: PatrolMission, target_x: float, target_y: float, yaw: float) -> None:
         robot_id = mission.robot_id
         point_result = PatrolPointResult(point=mission.points[0], status="RUNNING", attempts=1)
@@ -327,13 +343,8 @@ class PatrolManager:
             point_result.message = str(e)
             point_result.finished_at = time.time()
         finally:
-            try:
-                dist_metrics = ROSClient(mission.robot_id).get_distance_metrics()
-                mission.total_distance = float(dist_metrics.get("total_m", 0.0) or 0.0)
-            except Exception as e:
-                print(f"Error fetching distance for manual goal: {e}")
-                mission.total_distance = 0.0
             mission.finished_at = time.time()
+            self._attach_total_distance(mission)
             append_history(robot_id, mission)
             set_current_mission(robot_id, None)
             with self._lock:
@@ -464,13 +475,8 @@ class PatrolManager:
         except Exception as e:
             mission.status = "FAILED"
         finally:
-            try:
-                dist_metrics = ROSClient(mission.robot_id).get_distance_metrics()
-                mission.total_distance = float(dist_metrics.get("total_m", 0.0) or 0.0)
-            except Exception as e:
-                print(f"Error fetching distance for patrol: {e}")
-                mission.total_distance = 0.0
             mission.finished_at = time.time()
+            self._attach_total_distance(mission)
             append_history(robot_id, mission)
             set_current_mission(robot_id, None)
             with self._lock:

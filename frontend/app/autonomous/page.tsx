@@ -167,6 +167,7 @@ export default function AutonomousControlPage() {
   const [robotAddr, setRobotAddr] = useState(
     () => getSelectedRobotAddr() || DEFAULT_DOG_SERVER
   );
+  const [backendSyncError, setBackendSyncError] = useState("");
   const [commandText, setCommandText] = useState("");
   const [isSendingCommand, setIsSendingCommand] = useState(false);
   const [commandResult, setCommandResult] = useState<any | null>(null);
@@ -224,6 +225,26 @@ export default function AutonomousControlPage() {
       setConnected(Boolean(data.telemetry?.robot_connected));
     } catch {
       setConnected(false);
+    }
+  }, []);
+
+  const syncBackendRobotAddr = useCallback(async (addr: string) => {
+    const normalizedAddr = addr.trim();
+    if (!normalizedAddr) {
+      setConnected(false);
+      setBackendSyncError("Thieu robot address.");
+      return;
+    }
+
+    try {
+      const data = await RobotAPI.connect(normalizedAddr);
+      setConnected(Boolean(data.connected ?? data.ok));
+      setBackendSyncError("");
+    } catch (error) {
+      setConnected(false);
+      setBackendSyncError(
+        error instanceof Error ? error.message : "Khong dong bo duoc robot address"
+      );
     }
   }, []);
 
@@ -329,6 +350,12 @@ export default function AutonomousControlPage() {
     fetchPatrolStatus,
   ]);
 
+  useEffect(() => {
+    const normalizedAddr = dogServer.trim();
+    setRobotAddr(normalizedAddr);
+    void syncBackendRobotAddr(normalizedAddr);
+  }, [dogServer, syncBackendRobotAddr]);
+
   const clearPath = useCallback(async () => {
     try {
       await RobotAPI.patrolStop();
@@ -355,7 +382,11 @@ export default function AutonomousControlPage() {
     try {
       setLidarBusy(true);
       setLidarError(null);
-      await RobotAPI.lidar(next ? "start" : "stop");
+      if (next) {
+        await RobotAPI.lidar("start", { mode: "live_map" });
+      } else {
+        await RobotAPI.lidar("stop");
+      }
       setControlStatus((previous) => ({
         ...(previous || {}),
         lidar_running: next,
@@ -379,7 +410,6 @@ export default function AutonomousControlPage() {
     try {
       setLidarBusy(true);
       setLidarError(null);
-      // @ts-ignore
       await RobotAPI.lidar("start", { mode: "navigation" });
       
       setControlStatus((previous) => ({
@@ -400,8 +430,6 @@ export default function AutonomousControlPage() {
     try {
       setLidarBusy(true);
       setLidarError(null);
-      // Yêu cầu RobotAPI bật LiDAR với mode navigation và tên bản đồ tương ứng
-      // @ts-ignore
       await RobotAPI.lidar("start", { mode: "navigation", map_name: mapName });
       
       setControlStatus((previous) => ({
@@ -422,13 +450,7 @@ export default function AutonomousControlPage() {
     try {
       setLidarBusy(true);
       setLidarError(null);
-      // Gọi hàm resetLidar (Cần khai báo bổ sung bên trong file robotApi.ts)
-      // @ts-ignore
-      if (RobotAPI.resetLidar) {
-            await (RobotAPI as any).resetLidar(2.0, "live_map");
-      } else {
-        window.alert("Chức năng Reset Lidar chưa được khai báo ở frontend API client");
-      }
+      await RobotAPI.lidarReset({ wait_seconds: 2.0, mode: "live_map" });
     } catch (error) {
       setLidarError(error instanceof Error ? error.message : "Lỗi Reset LiDAR");
     } finally {
@@ -971,8 +993,10 @@ export default function AutonomousControlPage() {
       setCommandError("");
       setCommandResult(null);
 
-      const result = await RobotAPI.textCommand(text, robotAddr.trim());
+      const activeRobotAddr = robotAddr.trim() || dogServer.trim();
+      const result = await RobotAPI.textCommand(text, activeRobotAddr);
       setCommandResult(result);
+      setBackendSyncError("");
     } catch (error) {
       setCommandError(error instanceof Error ? error.message : "Gui lenh that bai");
     } finally {
@@ -1134,6 +1158,9 @@ export default function AutonomousControlPage() {
           isDark={isDark}
           planningHeadline={planningHeadline}
           poseText={poseText}
+          robotAddr={dogServer.trim()}
+          backendConnected={connected}
+          backendSyncError={backendSyncError}
           qrPosition={qrPosition}
           qrPositionError={qrPositionError}
           slamError={slamError}

@@ -121,7 +121,7 @@ function HalfCircleJoystick({
 
   return (
     <div
-      className={`select-none ${disabled ? "opacity-50" : ""} ${className}`}
+      className={`inline-block shrink-0 select-none ${disabled ? "opacity-50" : ""} ${className}`}
       aria-disabled={disabled}
       style={{ touchAction: "none" }} 
     >
@@ -130,7 +130,7 @@ function HalfCircleJoystick({
         width={width}
         height={height}
         viewBox={`0 0 ${width} ${height}`}
-        className="rounded-2xl bg-transparent"
+        className="block rounded-2xl bg-transparent"
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
@@ -150,6 +150,7 @@ function HalfCircleJoystick({
             <stop offset="100%" stopColor="#22d3ee" />
           </linearGradient>
         </defs>
+        <rect width={width} height={height} fill="transparent" pointerEvents="all" />
         <circle cx={cx} cy={cy} r={R} fill="url(#padGlowCircle)" stroke="none" />
         <circle
           cx={cx}

@@ -45,6 +45,11 @@ type NetworkSummary = {
   jitter: number;
   packetLoss: number;
   signalQuality: number;
+  networkName: string;
+  networkType: string;
+  status: string;
+  statusLabel: string;
+  summary: string;
 };
 
 type EventItem = {
@@ -104,7 +109,6 @@ type RobotStatus = {
   mission_success_rate?: number;
   avg_delivery_time?: number;
   path_efficiency?: number;
-  obstacle_events?: number;
   missions_total?: number;
   missions_attempted?: number;
   missions_failed?: number;
@@ -117,7 +121,7 @@ type SessionEvent = {
   type: string;
 };
 
-type EffPoint = { time: string; eff: number; obs: number };
+type EffPoint = { time: string; eff: number };
 
 type PatrolResult = {
   point: string;
@@ -194,7 +198,26 @@ function getNetworkNumber(source: JsonRecord | null, keys: string[], fallback = 
   return fallback;
 }
 
+function getNetworkString(source: JsonRecord | null, keys: string[], fallback = "") {
+  if (!source) return fallback;
+
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+
+  const nested = source.data || source.result || source.metrics || source.connection;
+  if (nested && nested !== source) {
+    return getNetworkString(nested, keys, fallback);
+  }
+
+  return fallback;
+}
+
 function getNetworkSummary(source: JsonRecord | null): NetworkSummary {
+  const networkName = getNetworkString(source, ["network_name", "name", "ssid", "interface"], "Unknown network");
+  const statusLabel = getNetworkString(source, ["network_status_label", "status_label"], "N/A");
+
   return {
     uplink: Math.max(
       0,
@@ -208,7 +231,21 @@ function getNetworkSummary(source: JsonRecord | null): NetworkSummary {
     jitter: Math.max(0, getNetworkNumber(source, ["jitter_ms", "jitter"])),
     packetLoss: Math.max(0, getNetworkNumber(source, ["packet_loss_pct", "packet_loss", "loss_pct"])),
     signalQuality: clamp(getNetworkNumber(source, ["signal_quality", "quality", "signal"]), 0, 100),
+    networkName,
+    networkType: getNetworkString(source, ["network_type", "type"], "unknown"),
+    status: getNetworkString(source, ["network_status", "status"], "unknown"),
+    statusLabel,
+    summary: getNetworkString(source, ["network_summary", "summary"], `${networkName} - ${statusLabel}`),
   };
+}
+
+function networkStatusColor(statusValue: string) {
+  const status = statusValue.toLowerCase();
+  if (status === "strong") return "text-[#4ade80]";
+  if (status === "medium") return "text-[#facc15]";
+  if (status === "weak") return "text-[#fb923c]";
+  if (status === "offline") return "text-red-400";
+  return "text-white";
 }
 
 function getPercentFromRange(value: number, range?: [number, number]) {
@@ -436,20 +473,15 @@ function EfficiencyChart({ data }: { data: EffPoint[] }) {
   const height = 100;
 
   const safeData = data.length >= 2 ? data : [
-    { time: "", eff: 0, obs: 0 },
-    { time: "", eff: 0, obs: 0 },
+    { time: "", eff: 0 },
+    { time: "", eff: 0 },
   ];
 
-  const maxObs = Math.max(...safeData.map(d => d.obs), 1);
   const toX = (i: number) => (i / (safeData.length - 1)) * width;
   const toYEff = (v: number) => height - (v / 100) * height;
-  const toYObs = (v: number) => height - (v / maxObs) * height;
 
   const d1 = safeData
     .map((p, i) => `${i === 0 ? "M" : "L"} ${toX(i)} ${toYEff(p.eff)}`)
-    .join(" ");
-  const d2 = safeData
-    .map((p, i) => `${i === 0 ? "M" : "L"} ${toX(i)} ${toYObs(p.obs)}`)
     .join(" ");
 
   return (
@@ -457,16 +489,12 @@ function EfficiencyChart({ data }: { data: EffPoint[] }) {
                      border border-[#2d2d2d] p-4 mt-2">
       <div className="flex justify-between items-center mb-2">
         <span className="text-xs font-bold text-gray-400">
-          Path efficiency & obstacle events (trend)
+          Path efficiency trend
         </span>
         <div className="flex gap-4">
           <div className="flex items-center gap-1.5">
             <div className="w-2 h-2 rounded-full bg-[#a78bfa]" />
             <span className="text-[10px] text-gray-400">efficiency %</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <div className="w-2 h-2 rounded-full bg-[#f59e0b]" />
-            <span className="text-[10px] text-gray-400">obstacles/session</span>
           </div>
         </div>
       </div>
@@ -478,8 +506,6 @@ function EfficiencyChart({ data }: { data: EffPoint[] }) {
         <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-[90px]"
           preserveAspectRatio="none">
           <path d={d1} fill="none" stroke="#a78bfa" strokeWidth="2.5" />
-          <path d={d2} fill="none" stroke="#f59e0b" strokeWidth="1.5"
-            strokeDasharray="5 3" />
         </svg>
       )}
     </div>
@@ -493,7 +519,6 @@ export default function AnalyticsPage() {
   const [networkMetrics, setNetworkMetrics] = useState<JsonRecord | null>(null);
   const [pathEfficiency, setPathEfficiency] = useState<number | null>(null);
   const [totalDistance, setTotalDistance] = useState<number | null>(null);
-  const [obstacleEvents, setObstacleEvents] = useState<number | null>(null);
   const [effHistory, setEffHistory] = useState<EffPoint[]>([]);
   const [events, setEvents] = useState<EventItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -543,25 +568,18 @@ export default function AnalyticsPage() {
       }
 
       try {
-        const evalResp = await RobotAPI.evaluationMetrics();
-        const derived = evalResp?.derived_metrics ?? {};
-        const v = Number(derived.path_efficiency_pct);
-        newPathEfficiency = Number.isFinite(v) ? v : null;  // ← gán local var
-        setPathEfficiency(newPathEfficiency);
-        const d = Number(derived.path_length_m);
-        setTotalDistance(Number.isFinite(d) ? d : null);
+
+        const navResp = await RobotAPI.navigationMetrics();
+        const metrics = navResp?.data ?? navResp ?? {};
+        const nextPathEfficiency = Number(metrics.path_efficiency_pct);
+        const nextTotalDistance = Number(metrics.path_length_m);
+
+        setPathEfficiency(Number.isFinite(nextPathEfficiency) ? nextPathEfficiency : null);
+        setTotalDistance(Number.isFinite(nextTotalDistance) ? nextTotalDistance : null);
+
       } catch {
         setPathEfficiency(null);
         setTotalDistance(null);
-      }
-
-      try {
-        const sessionSummary = await RobotAPI.sessionSummary();
-        const v = Number(sessionSummary?.obstacle_events_today);
-        newObstacleEvents = Number.isFinite(v) ? v : null;  // ← gán local var
-        setObstacleEvents(newObstacleEvents);
-      } catch {
-        setObstacleEvents(null);
       }
 
       try {
@@ -635,8 +653,8 @@ export default function AnalyticsPage() {
       setLastRefresh(timestamp);
       setEffHistory(prev => [...prev, {
         time: timestamp,
-        eff: newPathEfficiency ?? 0,
-        obs: newObstacleEvents ?? 0,
+        eff: pathEfficiency ?? 0,
+
       }].slice(-20));
     } catch (err: any) {
       setErrorText(err?.message || "Failed to load robot status");
@@ -803,7 +821,7 @@ export default function AnalyticsPage() {
           <h2 className="text-[#888888] text-[10px] font-bold uppercase tracking-[0.2em] mb-4 border-b border-[#2d2d2d] pb-2">
             Zone 2 — Mission Performance ({filterDate === 'today' ? 'Today' : filterDate === 'all' ? 'All Time' : filterDate})
           </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
             <DataCard
               label="Mission success rate"
               value={missionStats.attempted > 0 ? `${missionStats.successRate}%` : "N/A"}
@@ -819,11 +837,6 @@ export default function AnalyticsPage() {
               label="Path efficiency"
               value={pathEfficiency != null ? `${pathEfficiency}%` : "N/A"}
               sub="actual / optimal path"
-            />
-            <DataCard
-              label="Obstacle events"
-              value={obstacleEvents != null ? obstacleEvents : "N/A"}
-              sub={`nearest: 0.42 m • LiDAR`}
             />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -887,7 +900,7 @@ export default function AnalyticsPage() {
         <section>
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-[#888888] text-[10px] font-bold uppercase tracking-[0.2em]">
-              Zone 4 — Network (Collapsed by default)
+              Zone 4 — Network
             </h2>
             <button onClick={() => setIsExpanded(!isExpanded)}
               className="cursor-pointer flex items-center gap-2 bg-[#1a1a1a] border border-[#2d2d2d] rounded-lg px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider hover:bg-[#252525] transition-colors"
@@ -897,7 +910,33 @@ export default function AnalyticsPage() {
             </button>
           </div>
 
-          <div className={`transition-all duration-300 ease-in-out overflow-hidden ${isExpanded ? "max-h-[200px] opacity-100" : "max-h-0 opacity-0"}`}>
+          <div className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div className="bg-[#1a1a1a] border border-[#2d2d2d] rounded-lg p-4 md:col-span-2">
+              <span className="text-[#888888] text-[10px] font-bold uppercase tracking-wider">
+                Mang dang ket noi
+              </span>
+              <div className="mt-2 text-2xl font-bold text-white">
+                {networkSummary.networkName}
+              </div>
+              <div className="mt-1 text-xs text-[#888888]">
+                {networkSummary.networkType.toUpperCase()} - {networkSummary.summary}
+              </div>
+            </div>
+
+            <div className="bg-[#1a1a1a] border border-[#2d2d2d] rounded-lg p-4">
+              <span className="text-[#888888] text-[10px] font-bold uppercase tracking-wider">
+                Status
+              </span>
+              <div className={`mt-2 text-2xl font-bold ${networkStatusColor(networkSummary.status)}`}>
+                {networkSummary.statusLabel}
+              </div>
+              <div className="mt-1 text-xs text-[#888888]">
+                Signal quality: {hasNetworkData ? `${networkSummary.signalQuality}%` : "N/A"}
+              </div>
+            </div>
+          </div>
+
+          <div className={`transition-all duration-300 ease-in-out overflow-hidden ${isExpanded ? "max-h-[260px] opacity-100" : "max-h-0 opacity-0"}`}>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-8 px-4 py-6 bg-[#1a1a1a] rounded-lg border border-[#2d2d2d]">
               <MiniMetric label="Uplink" value={networkSummary.uplink > 0 ? `${networkSummary.uplink.toFixed(0)} kbps` : "N/A"} color="text-white font-bold" />
               <MiniMetric label="Downlink" value={networkSummary.downlink > 0 ? `${networkSummary.downlink.toFixed(0)} kbps` : "N/A"} color="text-white font-bold" />

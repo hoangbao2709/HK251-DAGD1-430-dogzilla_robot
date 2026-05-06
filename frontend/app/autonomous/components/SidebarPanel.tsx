@@ -8,6 +8,9 @@ type SidebarPanelProps = {
     isDark: boolean;
     planningHeadline: string;
     poseText: string;
+    robotAddr: string;
+    backendConnected: boolean;
+    backendSyncError: string;
     qrPosition: QrPositionData | null;
     qrPositionError: string;
     slamError: string;
@@ -21,6 +24,9 @@ export function SidebarPanel({
     isDark,
     planningHeadline,
     poseText,
+    robotAddr,
+    backendConnected,
+    backendSyncError,
     qrPosition,
     qrPositionError,
     slamError,
@@ -113,6 +119,18 @@ export function SidebarPanel({
                     className={`space-y-2 px-4 py-4 text-xs ${isDark ? "text-white/70" : "text-[#4c3b73]"} ${sidebarCardClass}`}
                 >
                     <div className="flex items-center justify-between">
+                        <span>Robot</span>
+                        <span className={isDark ? "text-white" : "text-[#1f1640]"}>
+                            {backendConnected ? "Connected" : "Pending"}
+                        </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                        <span>Addr</span>
+                        <span className={`max-w-[10rem] truncate text-right ${isDark ? "text-white" : "text-[#1f1640]"}`}>
+                            {robotAddr || "No address"}
+                        </span>
+                    </div>
+                    <div className="flex items-center justify-between">
                         <span>SLAM</span>
                         <span className={isDark ? "text-white" : "text-[#1f1640]"}>
                             {slamConnectionText}
@@ -130,6 +148,11 @@ export function SidebarPanel({
                             {obstacleText}
                         </span>
                     </div>
+                    {backendSyncError ? (
+                        <div className={`${isDark ? "text-amber-300" : "text-amber-700"}`}>
+                            {backendSyncError}
+                        </div>
+                    ) : null}
                 </DarkCard>
             </div>
         </div>

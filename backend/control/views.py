@@ -1,6 +1,7 @@
 import math
 from typing import Any, ClassVar
 
+from django.conf import settings  # type: ignore[import-untyped]
 from rest_framework.views import APIView  # type: ignore[import-untyped]
 from rest_framework.response import Response  # type: ignore[import-untyped]
 from rest_framework import status  # type: ignore[import-untyped]
@@ -10,15 +11,15 @@ import json
 import cv2
 import base64
 import logging
-from .models import Robot, ActionEvent, EvaluationSnapshot
+from .models import Robot, ActionEvent
 from .serializers import RobotSerializer
 from .services.ros import ROSClient
-from .services.evaluation_metrics import build_evaluation_metrics_payload, build_snapshot_key
 from .line_tracking_backend import LineTrackingServer
 from .services.mcp_voice import AmbiguousCommandError, map_text_to_tool, process_text_command
 from .services.qr_detect import detect_qr_state_once, generate_qr_video_frames, get_current_qr_state, save_qr_metric_event
 from .services.patrol_manager import patrol_manager
 from .services.patrol_store import get_current_mission, get_history
+from .services.xiaozhi_bridge import build_bridge_response_text
 logger = logging.getLogger(__name__)
 line_tracker = LineTrackingServer()
 
@@ -50,6 +51,118 @@ def build_log(
         return f"[{ts}] {robot_id} {action} {payload_str} → OK"
     return f"[{ts}] {robot_id} {action} {payload_str} → ERROR: {error}"
 
+def _extract_bearer_token(raw_value: str) -> str:
+    value = (raw_value or "").strip()
+    if value.lower().startswith("bearer "):
+        return value[7:].strip()
+    return value
+
+
+def _get_xiaozhi_bridge_token(request) -> str:
+    return (
+        _extract_bearer_token(request.headers.get("Authorization", ""))
+        or _extract_bearer_token(request.headers.get("X-Xiaozhi-Token", ""))
+        or str(request.data.get("token") or "").strip()
+    )
+
+
+def _build_xiaozhi_bridge_result(
+    *,
+    robot_id: str,
+    robot_addr: str,
+    text: str,
+    dry_run: bool,
+) -> dict[str, Any]:
+    robot = get_or_create_robot(robot_id)
+    if robot.addr != robot_addr:
+        robot.addr = robot_addr
+        robot.save(update_fields=["addr"])
+
+    tool_name, arguments, mapping = map_text_to_tool(text)
+
+    if dry_run:
+        result = {
+            "ok": True,
+            "robot_addr": robot_addr,
+            "tool": tool_name,
+            "arguments": arguments,
+            "mapping": mapping,
+            "content": {
+                "success": True,
+                "message": "Mapped command only",
+            },
+        }
+    elif tool_name in {"goto_point", "goto_waypoints"}:
+        result = _build_voice_navigation_result(
+            robot_id=robot_id,
+            robot_addr=robot_addr,
+            tool_name=tool_name,
+            arguments=arguments,
+            mapping=mapping,
+        )
+    else:
+        result = process_text_command(robot_addr=robot_addr, text=text)
+
+    result["bridge_reply_text"] = build_bridge_response_text(result)
+    return result
+
+
+def _resolve_robot_addr_for_bridge(request, robot_id: str) -> str:
+    direct_addr = str(
+        request.data.get("robot_addr")
+        or request.data.get("addr")
+        or request.data.get("robot_ip")
+        or ""
+    ).strip()
+    if direct_addr:
+        return direct_addr
+
+    robot = get_or_create_robot(robot_id)
+    stored_addr = str(robot.addr or "").strip()
+    if stored_addr:
+        return stored_addr
+
+    return str(settings.XIAOZHI_DEFAULT_ROBOT_ADDR or "").strip()
+
+
+def _build_voice_navigation_result(
+    *,
+    robot_id: str,
+    robot_addr: str,
+    tool_name: str,
+    arguments: dict[str, Any],
+    mapping: dict[str, Any],
+) -> dict[str, Any]:
+    if tool_name == "goto_point":
+        points = [str(arguments.get("name") or "").strip().upper()]
+        route_name = f"voice_point_{points[0]}" if points and points[0] else "voice_point"
+    else:
+        points = [str(point).strip().upper() for point in (arguments.get("points") or []) if str(point).strip()]
+        route_name = "voice_route"
+
+    if not points:
+        raise ValueError("No valid patrol points derived from voice command")
+
+    mission = patrol_manager.start(
+        robot_id=robot_id,
+        route_name=route_name,
+        points=points,
+        wait_sec_per_point=0 if len(points) == 1 else 3,
+    )
+    return {
+        "ok": True,
+        "robot_addr": robot_addr,
+        "tool": tool_name,
+        "arguments": arguments,
+        "mapping": mapping,
+        "content": {
+            "success": True,
+            "message": "Started patrol mission",
+            "mission": mission_to_dict(mission),
+        },
+    }
+
+
 def mission_to_dict(mission: Any) -> dict[str, Any]:
     _STATUS_MAP = {
         "DONE":    "completed",
@@ -74,6 +187,7 @@ def mission_to_dict(mission: Any) -> dict[str, Any]:
         "current_index": mission.current_index,
         "started_at": mission.started_at,
         "finished_at": mission.finished_at,
+        "total_distance_m": getattr(mission, "total_distance_m", None),
         "results": [
             {
                 "point": r.point,
@@ -314,81 +428,27 @@ class NetworkMetricsView(APIView):
                         "jitter_ms": None,
                         "packet_loss_pct": None,
                         "signal_quality": 0,
+                        "network_name": "Unknown network",
+                        "network_type": "unknown",
+                        "network_status": "offline",
+                        "network_status_label": "Mat ket noi",
+                        "network_summary": "Mat ket noi",
+                        "connection": {},
                     },
                 },
                 status=status.HTTP_502_BAD_GATEWAY,
             )
 
 
-class EvaluationMetricsView(APIView):
+class NavigationAnalyticsView(APIView):
     def get(self, request, robot_id):
         try:
-            def _truthy(name: str) -> bool:
-                return str(request.query_params.get(name, "")).strip().lower() in {"1", "true", "yes", "on"}
-
-            robot_full = _truthy("robot_full") or _truthy("debug")
-
-            raw_metrics = ROSClient(robot_id).get_evaluation_metrics(
-                full=robot_full,
-                trajectory=_truthy("trajectory"),
-                pose_traces=_truthy("pose_traces"),
-                reference_trajectory=_truthy("reference_trajectory"),
-            )
-            payload = build_evaluation_metrics_payload(raw_metrics)
-            persistence = payload.get("persistence") or {}
-
-            if persistence.get("eligible"):
-                run_meta = payload.get("run_meta") or {}
-                snapshot_key = build_snapshot_key(robot_id, raw_metrics, payload)
-                snapshot, created = EvaluationSnapshot.objects.update_or_create(
-                    snapshot_key=snapshot_key,
-                    defaults={
-                        "robot": get_or_create_robot(robot_id),
-                        "run_started_at": float(raw_metrics.get("run_started_at")),
-                        "method": str(run_meta.get("method") or ""),
-                        "route_id": str(run_meta.get("route_id") or ""),
-                        "trial_id": str(run_meta.get("trial_id") or ""),
-                        "condition": str(run_meta.get("condition") or ""),
-                        "weighting_mode": str(run_meta.get("weighting_mode") or ""),
-                        "has_exact_localization": bool(
-                            (payload.get("paper_tables") or {})
-                            .get("table_i_localization", {})
-                            .get("exact")
-                        ),
-                        "has_exact_qr_ablation": bool(
-                            (payload.get("paper_tables") or {})
-                            .get("table_ii_qr_ablation", {})
-                            .get("exact")
-                        ),
-                        "has_exact_navigation": bool(
-                            (payload.get("paper_tables") or {})
-                            .get("table_iii_navigation", {})
-                            .get("exact")
-                        ),
-                        "payload_mode": payload.get("payload_mode") or {},
-                        "derived_metrics": payload.get("derived_metrics") or {},
-                        "paper_tables": payload.get("paper_tables") or {},
-                        "raw_metrics": raw_metrics,
-                    },
-                )
-                payload["persistence"] = {
-                    **persistence,
-                    "saved_to_db": True,
-                    "created": created,
-                    "snapshot_id": snapshot.id,
-                    "snapshot_key": snapshot.snapshot_key,
-                }
-            else:
-                payload["persistence"] = {
-                    **persistence,
-                    "saved_to_db": False,
-                }
-
+            data = ROSClient(robot_id).get_navigation_summary_metrics()
             return Response(
                 {
                     "success": True,
                     "robot_id": robot_id,
-                    **payload,
+                    "data": data,
                 },
                 status=status.HTTP_200_OK,
             )
@@ -398,6 +458,11 @@ class EvaluationMetricsView(APIView):
                     "success": False,
                     "robot_id": robot_id,
                     "error": str(e),
+                    "data": {
+                        "path_length_m": None,
+                        "path_efficiency_pct": None,
+                        "distance": {},
+                    },
                 },
                 status=status.HTTP_502_BAD_GATEWAY,
             )
@@ -564,7 +629,15 @@ class BehaviorView(APIView):
 class LidarView(APIView):
     def post(self, request, robot_id):
         action = (request.data.get("action") or "").strip().lower()
+        mode = str(request.data.get("mode") or "").strip() or None
+        map_name = str(request.data.get("map_name") or "").strip() or None
         client = ROSClient(robot_id)
+        log_payload: dict[str, Any] = {"action": action}
+
+        if action == "start" and mode:
+            log_payload["mode"] = mode
+        if action == "start" and map_name:
+            log_payload["map_name"] = map_name
 
         try:
             if action == "start":
@@ -575,7 +648,7 @@ class LidarView(APIView):
                     logger.info("Lidar preflight status unavailable for %s: %s", robot_id, e)
 
                 if slam_status.get("running") is True:
-                    log_line = build_log(robot_id, "LIDAR", {"action": action}, True, None)
+                    log_line = build_log(robot_id, "LIDAR", log_payload, True, None)
                     return Response(
                         {
                             "ok": True,
@@ -585,29 +658,43 @@ class LidarView(APIView):
                         status=status.HTTP_200_OK,
                     )
 
-            client.lidar(action)
+            client.lidar(action, mode=mode, map_name=map_name)
             ok, err = True, None
         except Exception as e:
             ok, err = False, str(e)
 
-        log_line = build_log(robot_id, "LIDAR", {"action": action}, ok, err)
+        log_line = build_log(robot_id, "LIDAR", log_payload, ok, err)
         code = status.HTTP_200_OK if ok else status.HTTP_500_INTERNAL_SERVER_ERROR
         return Response({"ok": ok, "log": log_line}, status=code)
 
 class ResetLidarView(APIView):
     def post(self, request, robot_id):
         wait_seconds = request.data.get("wait_seconds")
+        mode = str(request.data.get("mode") or "").strip() or None
+        map_name = str(request.data.get("map_name") or "").strip() or None
         try:
-            applied_wait = ROSClient(robot_id).reset_lidar(wait_seconds=wait_seconds)
+            applied_wait = ROSClient(robot_id).reset_lidar(
+                wait_seconds=wait_seconds,
+                mode=mode,
+                map_name=map_name,
+            )
             ok, err = True, None
         except Exception as e:
             applied_wait = None
             ok, err = False, str(e)
 
+        log_payload: dict[str, Any] = {
+            "wait_seconds": applied_wait if ok else wait_seconds,
+        }
+        if mode:
+            log_payload["mode"] = mode
+        if map_name:
+            log_payload["map_name"] = map_name
+
         log_line = build_log(
             robot_id,
             "RESET_LIDAR",
-            {"wait_seconds": applied_wait if ok else wait_seconds},
+            log_payload,
             ok,
             err,
         )
@@ -810,25 +897,14 @@ class TextCommandView(APIView):
             print("[TextCommandView] robot_addr =", robot_addr)
             print("[TextCommandView] text =", text)
             tool_name, arguments, mapping = map_text_to_tool(text)
-            if tool_name == "goto_waypoints":
-                points = arguments.get("points") or []
-                mission = patrol_manager.start(
+            if tool_name in {"goto_point", "goto_waypoints"}:
+                result = _build_voice_navigation_result(
                     robot_id=robot_id,
-                    route_name="voice_route",
-                    points=points,
+                    robot_addr=robot_addr,
+                    tool_name=tool_name,
+                    arguments=arguments,
+                    mapping=mapping,
                 )
-                result = {
-                    "ok": True,
-                    "robot_addr": robot_addr,
-                    "tool": tool_name,
-                    "arguments": arguments,
-                    "mapping": mapping,
-                    "content": {
-                        "success": True,
-                        "message": "Started patrol mission",
-                        "mission": mission_to_dict(mission),
-                    },
-                }
             else:
                 result = process_text_command(robot_addr=robot_addr, text=text)
             log_line = (
@@ -914,6 +990,123 @@ class QRStateView(APIView):
                 },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+
+class XiaozhiBridgeHealthView(APIView):
+    authentication_classes: ClassVar[list[type[Any]]] = []
+    permission_classes: ClassVar[list[type[Any]]] = []
+
+    def get(self, request):
+        return Response(
+            {
+                "success": True,
+                "service": "xiaozhi_bridge",
+                "default_robot_id": settings.XIAOZHI_DEFAULT_ROBOT_ID,
+                "default_robot_addr": settings.XIAOZHI_DEFAULT_ROBOT_ADDR,
+                "token_configured": bool(str(settings.XIAOZHI_BRIDGE_TOKEN).strip()),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class XiaozhiBridgeCommandView(APIView):
+    authentication_classes: ClassVar[list[type[Any]]] = []
+    permission_classes: ClassVar[list[type[Any]]] = []
+
+    def post(self, request):
+        expected_token = str(settings.XIAOZHI_BRIDGE_TOKEN or "").strip()
+        provided_token = _get_xiaozhi_bridge_token(request)
+
+        if expected_token and provided_token != expected_token:
+            return Response(
+                {
+                    "success": False,
+                    "error": "invalid bridge token",
+                },
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        robot_id = str(
+            request.data.get("robot_id")
+            or settings.XIAOZHI_DEFAULT_ROBOT_ID
+            or "robot-a"
+        ).strip()
+        robot_addr = _resolve_robot_addr_for_bridge(request, robot_id)
+        text = str(
+            request.data.get("text")
+            or request.data.get("query")
+            or request.data.get("command")
+            or ""
+        ).strip()
+        dry_run = bool(request.data.get("dry_run", False))
+
+        if not robot_addr:
+            return Response(
+                {
+                    "success": False,
+                    "error": "robot addr is required",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not text:
+            return Response(
+                {
+                    "success": False,
+                    "error": "text is required",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            result = _build_xiaozhi_bridge_result(
+                robot_id=robot_id,
+                robot_addr=robot_addr,
+                text=text,
+                dry_run=dry_run,
+            )
+            return Response(
+                {
+                    "success": True,
+                    "source": "xiaozhi_bridge",
+                    "robot_id": robot_id,
+                    "robot_addr": robot_addr,
+                    "input_text": text,
+                    "dry_run": dry_run,
+                    "reply_text": result.get("bridge_reply_text"),
+                    "result": result,
+                },
+                status=status.HTTP_200_OK,
+            )
+        except AmbiguousCommandError as e:
+            return Response(
+                {
+                    "success": False,
+                    "source": "xiaozhi_bridge",
+                    "robot_id": robot_id,
+                    "robot_addr": robot_addr,
+                    "input_text": text,
+                    "error": str(e),
+                    "error_code": "ambiguous_command",
+                    "normalized_text": e.normalized_text,
+                    "candidate_matches": e.matches,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except Exception as e:
+            logger.exception("XiaozhiBridgeCommandView error")
+            return Response(
+                {
+                    "success": False,
+                    "source": "xiaozhi_bridge",
+                    "robot_id": robot_id,
+                    "robot_addr": robot_addr,
+                    "input_text": text,
+                    "error": str(e),
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
 
 class QRPositionView(APIView):
     def get(self, request, robot_id):

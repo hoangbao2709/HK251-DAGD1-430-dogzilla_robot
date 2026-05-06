@@ -22,7 +22,6 @@ const menu = [
   { href: "/control", label: "Manual Control", icon: Gamepad2 },
   { href: "/autonomous", label: "Autonomous Control", icon: Bot },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
-  { href: "/evaluation", label: "Evaluation", icon: BarChart3 },
 ];
 
 export default function Sidebar() {

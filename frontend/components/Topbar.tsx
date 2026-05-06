@@ -52,12 +52,6 @@ export default function Topbar() {
       keywords: ["analytics", "events", "health", "battery", "log"],
     },
     {
-      label: "Evaluation",
-      href: "/evaluation",
-      description: "Paper metrics, run summary, and derived evaluation values",
-      keywords: ["evaluation", "metrics", "paper", "rmse", "drift", "navigation"],
-    },
-    {
       label: "LiDAR view",
       href: "/autonomous",
       description: "Open the LiDAR / SLAM panel",

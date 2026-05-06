@@ -5,7 +5,7 @@ import django.db.models.deletion
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("control", "0003_evaluationsnapshot"),
+        ("control", "0002_actionevent"),
     ]
 
     operations = [

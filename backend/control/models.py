@@ -2,10 +2,11 @@ import uuid
 
 from django.db import models
 
+
 class Robot(models.Model):
-    id = models.CharField(primary_key=True, max_length=64) 
+    id = models.CharField(primary_key=True, max_length=64)
     name = models.CharField(max_length=128, default="Robot A")
-    addr = models.CharField(max_length=256, blank=True, default="")  
+    addr = models.CharField(max_length=256, blank=True, default="")
 
     location_lat = models.FloatField(null=True, blank=True)
     location_lon = models.FloatField(null=True, blank=True)
@@ -16,7 +17,8 @@ class Robot(models.Model):
     battery = models.IntegerField(default=85)
     fps = models.IntegerField(default=30)
 
-    def __str__(self): return self.name
+    def __str__(self):
+        return self.name
 
 
 class ActionEvent(models.Model):
@@ -50,31 +52,6 @@ class ActionEvent(models.Model):
         return f"{self.robot_id} {self.event}"
 
 
-class EvaluationSnapshot(models.Model):
-    snapshot_key = models.CharField(max_length=255, unique=True, db_index=True)
-    robot = models.ForeignKey(Robot, on_delete=models.CASCADE, related_name="evaluation_snapshots")
-    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
-    run_started_at = models.FloatField(db_index=True)
-
-    method = models.CharField(max_length=64, blank=True, default="")
-    route_id = models.CharField(max_length=128, blank=True, default="")
-    trial_id = models.CharField(max_length=128, blank=True, default="")
-    condition = models.CharField(max_length=128, blank=True, default="")
-    weighting_mode = models.CharField(max_length=64, blank=True, default="")
-
-    has_exact_localization = models.BooleanField(default=False)
-    has_exact_qr_ablation = models.BooleanField(default=False)
-    has_exact_navigation = models.BooleanField(default=False)
-
-    payload_mode = models.JSONField(default=dict, blank=True)
-    derived_metrics = models.JSONField(default=dict, blank=True)
-    paper_tables = models.JSONField(default=dict, blank=True)
-    raw_metrics = models.JSONField(default=dict, blank=True)
-
-    def __str__(self) -> str:
-        return f"{self.robot_id} @ {self.run_started_at}"
-
-
 class PatrolHistory(models.Model):
     mission_id = models.CharField(max_length=64, unique=True, db_index=True)
     robot = models.ForeignKey(Robot, on_delete=models.CASCADE, related_name="patrol_history")
@@ -82,9 +59,9 @@ class PatrolHistory(models.Model):
     status = models.CharField(max_length=32, db_index=True)
     started_at = models.FloatField(db_index=True)
     finished_at = models.FloatField(null=True, blank=True, db_index=True)
+    total_distance_m = models.FloatField(null=True, blank=True)
     payload = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
-    total_distance = models.FloatField(null=True, blank=True, help_text="Tổng quãng đường di chuyển (m)")
 
     class Meta:
         ordering = ["-finished_at", "-started_at"]

@@ -62,6 +62,11 @@ type MoveCommandPayload = {
   mode?: "slow" | "normal" | "high";
 };
 
+type LidarOptions = {
+  mode?: "live_map" | "navigation";
+  map_name?: string;
+};
+
 export const RobotAPI = {
   connect: (addr: string) =>
     api<{ ok?: boolean; connected?: boolean; error?: string; log?: string }>(
@@ -92,16 +97,19 @@ export const RobotAPI = {
       body: JSON.stringify(payload),
     }),
 
-  lidar: (action: "start" | "stop") =>
+  lidar: (action: "start" | "stop", options?: LidarOptions) =>
     api<any>(`${CONTROL_PREFIX}/${robotId}/command/lidar/`, {
       method: "POST",
-      body: JSON.stringify({ action }),
+      body: JSON.stringify({
+        action,
+        ...(options || {}),
+      }),
     }),
 
-  lidarReset: () =>
+  lidarReset: (options?: LidarOptions & { wait_seconds?: number }) =>
     api<any>(`${CONTROL_PREFIX}/${robotId}/command/lidar/reset/`, {
       method: "POST",
-      body: JSON.stringify({}),
+      body: JSON.stringify(options || {}),
     }),
 
   posture: (name: string) =>
@@ -251,8 +259,8 @@ export const RobotAPI = {
   networkMetrics: () =>
     api<any>(`${CONTROL_PREFIX}/${robotId}/network/metrics/`),
 
-  evaluationMetrics: () =>
-    api<any>(`${CONTROL_PREFIX}/${robotId}/evaluation/metrics/`),
+  navigationMetrics: () =>
+    api<any>(`${CONTROL_PREFIX}/${robotId}/analytics/navigation/`),
 
   sessionSummary: () =>
     api<any>(`${CONTROL_PREFIX}/${robotId}/session/summary/`),

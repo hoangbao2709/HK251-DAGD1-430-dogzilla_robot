@@ -482,7 +482,7 @@ class ROSClient:
         failures = 0
 
         for _ in range(samples):
-            resp = None
+            resp: requests.Response | None = None
             started = time.perf_counter()
             try:
                 resp = self.session.get(health_url, timeout=self.timeout)
@@ -493,7 +493,8 @@ class ROSClient:
                 failures += 1
             finally:
                 try:
-                    resp.close()
+                    if resp is not None:
+                        resp.close()
                 except Exception:
                     pass
 
@@ -509,8 +510,8 @@ class ROSClient:
 
         packet_loss_pct = round((failures / samples) * 100.0, 2)
 
-        downlink_kbps = None
-        resp = None
+        downlink_kbps: float | None = None
+        resp: requests.Response | None = None
         try:
             started = time.perf_counter()
             resp = self.session.get(
@@ -532,12 +533,13 @@ class ROSClient:
             downlink_kbps = None
         finally:
             try:
-                resp.close()
+                if resp is not None:
+                    resp.close()
             except Exception:
                 pass
 
-        uplink_kbps = None
-        resp = None
+        uplink_kbps: float | None = None
+        resp: requests.Response | None = None
         try:
             probe_payload = {
                 "command": "status",
@@ -558,7 +560,8 @@ class ROSClient:
             uplink_kbps = None
         finally:
             try:
-                resp.close()
+                if resp is not None:
+                    resp.close()
             except Exception:
                 pass
 
@@ -577,6 +580,37 @@ class ROSClient:
         )
         signal_quality = max(0, min(100, signal_quality))
 
+        try:
+            robot_network = self._get_json("/network") or {}
+        except Exception:
+            robot_network = {}
+
+        status_value = str(robot_network.get("status") or "").strip()
+        status_label = str(robot_network.get("status_label") or "").strip()
+        if not status_value:
+            if signal_quality >= 75:
+                status_value, status_label = "strong", "Manh"
+            elif signal_quality >= 45:
+                status_value, status_label = "medium", "Trung binh"
+            elif signal_quality > 0:
+                status_value, status_label = "weak", "Yeu"
+            else:
+                status_value, status_label = "offline", "Mat ket noi"
+        elif not status_label:
+            status_label = {
+                "strong": "Manh",
+                "medium": "Trung binh",
+                "weak": "Yeu",
+                "offline": "Mat ket noi",
+            }.get(status_value, status_value)
+
+        network_name = (
+            robot_network.get("name")
+            or robot_network.get("ssid")
+            or robot_network.get("interface")
+            or "Unknown network"
+        )
+
         return {
             "uplink_kbps": uplink_kbps,
             "downlink_kbps": downlink_kbps,
@@ -584,6 +618,12 @@ class ROSClient:
             "jitter_ms": jitter_ms,
             "packet_loss_pct": packet_loss_pct,
             "signal_quality": signal_quality,
+            "network_name": network_name,
+            "network_type": robot_network.get("type") or "unknown",
+            "network_status": status_value,
+            "network_status_label": status_label,
+            "network_summary": robot_network.get("summary") or f"{network_name} - {status_label}",
+            "connection": robot_network,
         }
 
     # ------------------------------------------------------------------
@@ -637,49 +677,43 @@ class ROSClient:
         url = f"{self._build_slam_base_url()}/distance"
         return self._get_json_by_url(url)
 
-    def get_evaluation_metrics(
-        self,
-        *,
-        full: bool = False,
-        trajectory: bool = False,
-        pose_traces: bool = False,
-        reference_trajectory: bool = False,
-    ) -> Dict[str, Any]:
-        url = f"{self._build_slam_base_url()}/metrics"
-        params: Dict[str, Any] = {}
-        if full:
-            params["full"] = 1
-        else:
-            if trajectory:
-                params["trajectory"] = 1
-            if pose_traces:
-                params["pose_traces"] = 1
-            if reference_trajectory:
-                params["reference_trajectory"] = 1
+    def get_navigation_summary_metrics(self) -> Dict[str, Any]:
+        distance_metrics = self.get_distance_metrics()
+        path_length_m = distance_metrics.get("total_m")
 
-        resp = self.session.get(url, params=params or None, timeout=self.timeout)
-        resp.raise_for_status()
-        data = resp.json()
-
+        path_efficiency_pct = None
         try:
-            state = self.get_slam_state_light()
-            data["state"] = {
-                "status": state.get("status") or {},
-                "goal": state.get("goal") or {},
-                "pose": state.get("pose") or {},
-            }
-        except Exception as exc:
-            data["state_error"] = str(exc)
+            metrics = self.get_navigation_metrics() or {}
+            missions = metrics.get("missions") or []
+            current_mission = metrics.get("current_mission")
+            candidates = []
+            if current_mission:
+                candidates.append(current_mission)
+            candidates.extend(reversed(missions))
 
-        try:
-            distance_metrics = self.get_distance_metrics()
-            data["distance_metrics"] = distance_metrics
-            if distance_metrics.get("total_m") is not None:
-                data["path_length_m"] = distance_metrics.get("total_m")
-        except Exception as exc:
-            data["distance_metrics_error"] = str(exc)
+            for mission in candidates:
+                planned = mission.get("path_length_planned_m")
+                executed = mission.get("path_length_executed_m")
+                if planned is None or executed is None:
+                    continue
+                planned_value = float(planned)
+                executed_value = float(executed)
+                if planned_value > 0 and executed_value > 0:
+                    path_efficiency_pct = min(100.0, round((planned_value / executed_value) * 100.0, 1))
+                    break
+        except Exception:
+            path_efficiency_pct = None
 
-        return data
+        return {
+            "path_length_m": path_length_m,
+            "path_efficiency_pct": path_efficiency_pct,
+            "distance": {
+                "sample_count": distance_metrics.get("sample_count"),
+                "duration_sec": distance_metrics.get("duration_sec"),
+                "ignored_jump_count": distance_metrics.get("ignored_jump_count"),
+                "last_update": distance_metrics.get("last_update"),
+            },
+        }
 
     def get_robot_pose(self) -> Dict[str, Any]:
         state = self.get_slam_state() or {}
