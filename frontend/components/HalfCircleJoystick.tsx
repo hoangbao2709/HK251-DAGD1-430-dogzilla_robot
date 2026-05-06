@@ -150,6 +150,7 @@ function HalfCircleJoystick({
             <stop offset="100%" stopColor="#22d3ee" />
           </linearGradient>
         </defs>
+        <rect width={width} height={height} fill="transparent" pointerEvents="all" />
         <circle cx={cx} cy={cy} r={R} fill="url(#padGlowCircle)" stroke="none" />
         <circle
           cx={cx}

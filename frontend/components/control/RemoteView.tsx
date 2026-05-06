@@ -131,6 +131,10 @@ export default function RemoteView({
     vy: 0,
     active: false,
   });
+  const joyLogRef = useRef<{ direction: string; timestamp: number }>({
+    direction: "",
+    timestamp: 0,
+  });
 
   const maxV = 0.25;
   const maxSideV = 0.25;
@@ -388,16 +392,40 @@ export default function RemoteView({
 
       isRequesting = true;
       try {
-        await RobotAPI.move({ vx, vy, vz: 0, rx: 0, ry: 0, rz: 0 });
-      } catch {
-        // Bỏ qua lỗi kết nối
+        const direction =
+          Math.abs(vx) >= Math.abs(vy)
+            ? vx >= 0
+              ? "forward"
+              : "back"
+            : vy >= 0
+            ? "right"
+            : "left";
+        const now = Date.now();
+        const shouldLog =
+          joyLogRef.current.direction !== direction ||
+          now - joyLogRef.current.timestamp >= 1000;
+        const res: any = await RobotAPI.move({ vx, vy, vz: 0, rx: 0, ry: 0, rz: 0 });
+
+        if (shouldLog) {
+          appendLog(
+            res?.log ||
+              `[MOVE] joystick ${direction} vx=${vx.toFixed(2)}, vy=${vy.toFixed(2)}`
+          );
+          joyLogRef.current = { direction, timestamp: now };
+        }
+      } catch (e: any) {
+        const now = Date.now();
+        if (now - joyLogRef.current.timestamp >= 1000) {
+          appendLog(`[MOVE ERROR] joystick: ${e?.message || String(e)}`);
+          joyLogRef.current = { direction: "error", timestamp: now };
+        }
       } finally {
         isRequesting = false;
       }
     }, 80);
 
     return () => clearInterval(timer);
-  }, []);
+  }, [appendLog]);
 
   const onJoyChange = useCallback(
     ({ angleDeg, power }: { angleDeg: number; power: number }) => {
@@ -415,8 +443,9 @@ export default function RemoteView({
 
   const onJoyRelease = useCallback(async () => {
     joyRef.current = { vx: 0, vy: 0, active: false };
+    joyLogRef.current = { direction: "", timestamp: 0 };
     try {
-      await RobotAPI.move({
+      const res: any = await RobotAPI.move({
         vx: 0,
         vy: 0,
         vz: 0,
@@ -424,9 +453,11 @@ export default function RemoteView({
         ry: 0,
         rz: 0,
       });
-    } catch {
+      appendLog(res?.log || "[MOVE] joystick stop");
+    } catch (e: any) {
+      appendLog(`[MOVE ERROR] joystick stop: ${e?.message || String(e)}`);
     }
-  }, []);
+  }, [appendLog]);
   const stopMove = useCallback(() => {
     RobotAPI.move({ vx: 0, vy: 0, vz: 0, rx: 0, ry: 0, rz: 0 })
       .then((res: any) => {
@@ -820,8 +851,68 @@ export default function RemoteView({
           </div>
         </div>
 
-        <div className="space-y-6">
-          <div className="rounded-2xl bg-[var(--surface)] border border-[var(--border)] p-4">
+        <div className="flex flex-col gap-4 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:pr-1">
+          <div className="order-1">
+            <Panel title="Move" tone="cyan">
+              <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-4 items-start">
+                <div className="justify-self-center sm:justify-self-start cursor-pointer">
+                  <HalfCircleJoystick
+                    width={220}
+                    height={140}
+                    rest="center"
+                    onChange={onJoyChange}
+                    onRelease={onJoyRelease}
+                  />
+                </div>
+
+                <div className="flex flex-col gap-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    <Btn label="Turn left" variant={lefting ? "success" : "default"} tone="cyan" onClick={turnLeft} />
+                    <Btn label="Turn right" variant={righting ? "success" : "default"} tone="cyan" onClick={turnRight} />
+                    <Btn variant="danger" label="Stop" onClick={stopMove} />
+                    <Btn
+                      variant={isRunning ? "success" : "danger"}
+                      label={lidarButtonLabel}
+                      onClick={handleToggleLidar}
+                    />
+                    <Btn
+                      variant={stabilizing ? "success" : "default"}
+                      label={stabilizing ? "Stabilizing ON" : "Stabilizing OFF"}
+                      tone="violet"
+                      onClick={handleToggleStabilizing}
+                    />
+                    <MouseLookToggle
+                      variant={mouseLook ? "success" : "default"}
+                      on={mouseLook}
+                      onToggle={() => setMouseLook((prev) => !prev)}
+                    />
+                  </div>
+                </div>
+              </div>
+            </Panel>
+          </div>
+
+          <div className="order-2">
+            <Panel title="Speed" tone="violet">
+              <div className="flex gap-3">
+                {(["slow", "normal", "high"] as const).map((s) => (
+                  <Chip
+                    key={s}
+                    label={
+                      speedBusy && speed === s
+                        ? `${s.charAt(0).toUpperCase() + s.slice(1)}...`
+                        : s.charAt(0).toUpperCase() + s.slice(1)
+                    }
+                    active={speed === s}
+                    disabled={speedBusy || !connected}
+                    onClick={() => changeSpeed(s)}
+                  />
+                ))}
+              </div>
+            </Panel>
+          </div>
+
+          <div className="order-3 rounded-2xl bg-[var(--surface)] border border-[var(--border)] p-4">
             <div className="mb-2 flex items-center justify-between gap-3">
               <div className="text-sm text-[var(--foreground)]/80">Lidar map</div>
               <div
@@ -845,14 +936,14 @@ export default function RemoteView({
 
             <div
               className={`relative w-full rounded-xl overflow-hidden border border-[var(--border)] bg-[var(--surface-elev)] transition-[height] duration-300 ${
-                isRunning || lidarError ? "h-40 xl:h-48" : "h-24"
+                isRunning || lidarError ? "h-80 xl:h-96" : "h-28"
               }`}
             >
               {isRunning ? (
                 <iframe
                   src={lidarUrl}
                   title="LiDAR map"
-                  className={`pointer-events-none absolute inset-0 w-full h-full border-0 transition-opacity duration-300 ${
+                  className={`absolute inset-0 w-full h-full border-0 transition-opacity duration-300 ${
                     lidarFrameLoaded ? "opacity-100" : "opacity-0"
                   }`}
                   onLoad={() => {
@@ -882,115 +973,61 @@ export default function RemoteView({
             </div>
           </div>
 
-          <Panel title="Speed" tone="violet">
-            <div className="flex gap-3">
-              {(["slow", "normal", "high"] as const).map((s) => (
-                <Chip
-                  key={s}
-                  label={
-                    speedBusy && speed === s
-                      ? `${s.charAt(0).toUpperCase() + s.slice(1)}...`
-                      : s.charAt(0).toUpperCase() + s.slice(1)
-                  }
-                  active={speed === s}
-                  disabled={speedBusy || !connected}
-                  onClick={() => changeSpeed(s)}
-                />
-              ))}
-            </div>
-          </Panel>
+          <div className="order-4">
+            <Panel title="Body Adjustment" tone="pink">
+              <SliderRow
+                label="Translation_X"
+                value={sliders.tx}
+                onChange={(v) => updateBody({ tx: v })}
+              />
+              <SliderRow
+                label="Translation_Y"
+                value={sliders.ty}
+                onChange={(v) => updateBody({ ty: v })}
+              />
+              <SliderRow
+                label="Translation_Z"
+                value={sliders.tz}
+                onChange={(v) => updateBody({ tz: v })}
+              />
+              <SliderRow
+                label="Rotation_X"
+                value={sliders.rx}
+                onChange={(v) => updateBody({ rx: v })}
+              />
+              <SliderRow
+                label="Rotation_Y"
+                value={sliders.ry}
+                onChange={(v) => updateBody({ ry: v })}
+              />
+              <SliderRow
+                label="Rotation_Z"
+                value={sliders.rz}
+                onChange={(v) => updateBody({ rz: v })}
+              />
 
-          <Panel title="Move" tone="cyan">
-            <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-4 items-start">
-              <div className="justify-self-center sm:justify-self-start cursor-pointer">
-                <HalfCircleJoystick
-                  width={260}
-                  height={160}
-                  rest="center"
-                  onChange={onJoyChange}
-                  onRelease={onJoyRelease}
-                />
+              <div className="mt-3 flex justify-end">
+                    <button
+                      onClick={resetBody}
+                      className="
+                    px-3 py-1.5 text-xs rounded-lg cursor-pointer font-semibold
+                    border border-fuchsia-400/70
+                    bg-fuchsia-500/10 text-fuchsia-700
+                    shadow-sm shadow-black/10
+                    transition-all duration-200
+                    hover:bg-fuchsia-500
+                    hover:text-[#0c0520]
+                    hover:border-fuchsia-200
+                    hover:shadow-xl hover:shadow-fuchsia-500/60
+                    hover:-translate-y-0.5 hover:scale-105
+                    active:scale-95 active:translate-y-0
+                  "
+                    >
+                      Reset body to center
+                    </button>
               </div>
-
-              <div className="flex flex-col gap-3">
-                <div className="grid grid-cols-2 gap-2">
-                  <Btn label="Turn left" variant={lefting ? "success" : "default"} tone="cyan" onClick={turnLeft} />
-                  <Btn label="Turn right" variant={righting ? "success" : "default"} tone="cyan" onClick={turnRight} />
-                  <Btn variant="danger" label="Stop" onClick={stopMove} />
-                  <Btn
-                    variant={isRunning ? "success" : "danger"}
-                    label={lidarButtonLabel}
-                    onClick={handleToggleLidar}
-                  />
-                  <Btn
-                    variant={stabilizing ? "success" : "default"}
-                    label={stabilizing ? "Stabilizing ON" : "Stabilizing OFF"}
-                    tone="violet"
-                    onClick={handleToggleStabilizing}
-                  />
-                  <MouseLookToggle
-                    variant={mouseLook ? "success" : "default"}
-                    on={mouseLook}
-                    onToggle={() => setMouseLook((prev) => !prev)}
-                  />
-                </div>
-              </div>
-            </div>
-          </Panel>
-
-          <Panel title="Body Adjustment" tone="pink">
-            <SliderRow
-              label="Translation_X"
-              value={sliders.tx}
-              onChange={(v) => updateBody({ tx: v })}
-            />
-            <SliderRow
-              label="Translation_Y"
-              value={sliders.ty}
-              onChange={(v) => updateBody({ ty: v })}
-            />
-            <SliderRow
-              label="Translation_Z"
-              value={sliders.tz}
-              onChange={(v) => updateBody({ tz: v })}
-            />
-            <SliderRow
-              label="Rotation_X"
-              value={sliders.rx}
-              onChange={(v) => updateBody({ rx: v })}
-            />
-            <SliderRow
-              label="Rotation_Y"
-              value={sliders.ry}
-              onChange={(v) => updateBody({ ry: v })}
-            />
-            <SliderRow
-              label="Rotation_Z"
-              value={sliders.rz}
-              onChange={(v) => updateBody({ rz: v })}
-            />
-
-            <div className="mt-3 flex justify-end">
-                  <button
-                    onClick={resetBody}
-                    className="
-                  px-3 py-1.5 text-xs rounded-lg cursor-pointer font-semibold
-                  border border-fuchsia-400/70
-                  bg-fuchsia-500/10 text-fuchsia-700
-                  shadow-sm shadow-black/10
-                  transition-all duration-200
-                  hover:bg-fuchsia-500
-                  hover:text-[#0c0520]
-                  hover:border-fuchsia-200
-                  hover:shadow-xl hover:shadow-fuchsia-500/60
-                  hover:-translate-y-0.5 hover:scale-105
-                  active:scale-95 active:translate-y-0
-                "
-                  >
-                    Reset body to center
-                  </button>
-            </div>
-          </Panel>
+            </Panel>
+          </div>
         </div>
       </div>
     </section>
