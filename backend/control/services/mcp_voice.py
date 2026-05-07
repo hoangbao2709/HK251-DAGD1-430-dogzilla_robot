@@ -213,8 +213,8 @@ COMMAND_SPECS: list[dict[str, Any]] = [
 ]
 
 NAVIGATION_PATTERNS = [
-    r"^(?:hay\s+cho\s+robot\s+)?(?:di\s+den|di\s+toi|den|toi|go\s+to|move\s+to)\s+(?:diem\s+|point\s+)?(.+)$",
-    r"^(?:hay\s+cho\s+robot\s+)?di\s+qua\s+(.+)$",
+    r"^(?:(?:hay|hãy)\s+)?(?:cho\s+robot\s+)?(?:di\s+den|di\s+toi|den|toi|go\s+to|move\s+to)\s+(?:diem\s+|point\s+)?(.+)$",
+    r"^(?:(?:hay|hãy)\s+)?(?:cho\s+robot\s+)?di\s+qua\s+(.+)$",
 ]
 
 WAYPOINT_SEPARATORS = re.compile(r"\s*(?:,|va|and)\s*")

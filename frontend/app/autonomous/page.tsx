@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "next-themes";
@@ -173,10 +173,11 @@ export default function AutonomousControlPage() {
   const [commandResult, setCommandResult] = useState<any | null>(null);
   const [commandError, setCommandError] = useState("");
   const [isListening, setIsListening] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [dogServer, setDogServer] = useState(
     () => getSelectedRobotAddr() || DEFAULT_DOG_SERVER
   );
+  const pendingTranscriptRef = useRef("");
 
   const [mapMode, setMapMode] = useState<MapMode>("view");
   const [navPlacementMode, setNavPlacementMode] =
@@ -405,12 +406,16 @@ export default function AutonomousControlPage() {
     }
   }, [controlStatus, fetchControlStatus, lidarBusy]);
 
-  const handleStartStatic = useCallback(async () => {
+  const handleStartStatic = useCallback(async (mapArg?: string) => {
     if (lidarBusy) return;
     try {
       setLidarBusy(true);
       setLidarError(null);
-      await RobotAPI.lidar("start", { mode: "navigation" });
+      const cleanedMapArg = String(mapArg || "").trim();
+      await RobotAPI.lidar("start", {
+        mode: "navigation",
+        ...(cleanedMapArg ? { map_arg: cleanedMapArg } : {}),
+      });
       
       setControlStatus((previous) => ({
         ...(previous || {}),
@@ -418,7 +423,7 @@ export default function AutonomousControlPage() {
         lidar: { ...(previous?.lidar || {}), running: true },
       }));
     } catch (error) {
-      setLidarError(error instanceof Error ? error.message : "Lỗi khi bật Static Navigation");
+      setLidarError(error instanceof Error ? error.message : "Lá»—i khi báº­t Static Navigation");
     } finally {
       setLidarBusy(false);
       fetchControlStatus();
@@ -438,7 +443,7 @@ export default function AutonomousControlPage() {
         lidar: { ...(previous?.lidar || {}), running: true },
       }));
     } catch (error) {
-      setLidarError(error instanceof Error ? error.message : "Lỗi khi bật Navigation");
+      setLidarError(error instanceof Error ? error.message : "Lá»—i khi báº­t Navigation");
     } finally {
       setLidarBusy(false);
       fetchControlStatus();
@@ -452,7 +457,7 @@ export default function AutonomousControlPage() {
       setLidarError(null);
       await RobotAPI.lidarReset({ wait_seconds: 2.0, mode: "live_map" });
     } catch (error) {
-      setLidarError(error instanceof Error ? error.message : "Lỗi Reset LiDAR");
+      setLidarError(error instanceof Error ? error.message : "Lá»—i Reset LiDAR");
     } finally {
       setLidarBusy(false);
       fetchControlStatus();
@@ -823,8 +828,8 @@ export default function AutonomousControlPage() {
       : null);
     const pointName = (qrText || "POINT").trim() || "POINT";
 
-    // CASE 1: Không có obstacle → Attempt thất bại
-    // CASE 2: Point đã tồn tại → không tính Attempt
+    // CASE 1: KhĂ´ng cĂ³ obstacle â†’ Attempt tháº¥t báº¡i
+    // CASE 2: Point Ä‘Ă£ tá»“n táº¡i â†’ khĂ´ng tĂ­nh Attempt
     if (savedPoints[pointName]) {
       window.alert(`Diem ${pointName} da ton tai.`);
       return;
@@ -833,10 +838,10 @@ export default function AutonomousControlPage() {
     try {
       setPointActionLoading(true);
 
-      // Lưu vào ROS
+      // LÆ°u vĂ o ROS
       await RobotAPI.createPointFromObstacle({ name: pointName });
 
-      // CASE 3: Lưu ROS thành công → Attempt + Success
+      // CASE 3: LÆ°u ROS thĂ nh cĂ´ng â†’ Attempt + Success
       await RobotAPI.logQRAttempt({
         name: pointName,
         success: true,
@@ -850,7 +855,7 @@ export default function AutonomousControlPage() {
       if (reason === "no_obstacle") {
         window.alert("Chua co obstacle phia truoc de luu.");
       }
-      // CASE 4: Lưu ROS thất bại → Attempt không thành công
+      // CASE 4: LÆ°u ROS tháº¥t báº¡i â†’ Attempt khĂ´ng thĂ nh cĂ´ng
       await RobotAPI.logQRAttempt({
         name: pointName,
         success: false,
@@ -922,7 +927,139 @@ export default function AutonomousControlPage() {
     }
   };
 
-  const startListening = () => {
+  const pickVietnameseFemaleVoice = useCallback((voices: SpeechSynthesisVoice[]) => {
+    const vietnameseVoices = voices.filter((voice) =>
+      voice.lang.toLowerCase().startsWith("vi") ||
+      voice.name.toLowerCase().includes("vietnam") ||
+      voice.name.toLowerCase().includes("tiếng việt") ||
+      voice.name.toLowerCase().includes("tieng viet")
+    );
+    const preferredNames = [
+      "hoaimy",
+      "hoai my",
+      "linh",
+      "mai",
+      "thao",
+      "female",
+      "woman",
+      "natural",
+      "online",
+    ];
+
+    return (
+      vietnameseVoices.find((voice) => {
+        const name = voice.name.toLowerCase();
+        return preferredNames.some((keyword) => name.includes(keyword));
+      }) ||
+      vietnameseVoices[0] ||
+      null
+    );
+  }, []);
+
+  const playNeuralVietnameseTts = useCallback(async (text: string) => {
+    const blob = await RobotAPI.voiceTts(text);
+    const url = URL.createObjectURL(blob);
+    try {
+      const audio = new Audio(url);
+      audio.preload = "auto";
+      await new Promise<void>((resolve, reject) => {
+        audio.onended = () => resolve();
+        audio.onerror = () => reject(new Error("Neural TTS audio failed"));
+        const playPromise = audio.play();
+        if (playPromise) {
+          playPromise.catch(reject);
+        }
+      });
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }, []);
+
+  const speakWithSystemVietnamese = useCallback((text: string) => {
+    const synth = window.speechSynthesis;
+    if (!synth) return;
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    const voice = pickVietnameseFemaleVoice(synth.getVoices());
+    if (voice) {
+      utterance.voice = voice;
+      utterance.lang = voice.lang || "vi-VN";
+    } else {
+      utterance.lang = "vi-VN";
+    }
+    utterance.rate = 0.92;
+    utterance.pitch = voice ? 1.18 : 1;
+    utterance.volume = 1;
+
+    synth.cancel();
+    synth.resume();
+    synth.speak(utterance);
+  }, [pickVietnameseFemaleVoice]);
+
+  const speakReply = useCallback((text: string) => {
+    if (typeof window === "undefined" || !text.trim()) return;
+
+    void playNeuralVietnameseTts(text)
+      .catch((error) => {
+        console.warn("Neural Vietnamese TTS failed:", error);
+        const synth = window.speechSynthesis;
+        if (!synth) return;
+        const voice = pickVietnameseFemaleVoice(synth.getVoices());
+        if (voice) {
+          speakWithSystemVietnamese(text);
+        } else {
+          setCommandError("Khong tim thay giong nu tieng Viet. Hay khoi dong lai backend de dung vi-VN-HoaiMyNeural.");
+        }
+      });
+
+  }, [
+    pickVietnameseFemaleVoice,
+    playNeuralVietnameseTts,
+    speakWithSystemVietnamese,
+  ]);
+
+  const sendVoiceCommand = useCallback(
+    async (spokenText?: string) => {
+      const text = (spokenText ?? commandText).trim();
+
+      if (!text) {
+        setCommandError("Khong nhan duoc noi dung lenh.");
+        return;
+      }
+
+      const activeRobotAddr = robotAddr.trim() || dogServer.trim();
+      if (!activeRobotAddr) {
+        setCommandError("Thieu robot address.");
+        speakReply("Em ch\u01b0a th\u1ea5y \u0111\u1ecba ch\u1ec9 robot. Anh vui l\u00f2ng k\u1ebft n\u1ed1i robot tr\u01b0\u1edbc r\u1ed3i n\u00f3i l\u1ea1i l\u1ec7nh gi\u00fap em.");
+        return;
+      }
+
+      try {
+        setIsSendingCommand(true);
+        setCommandError("");
+        setCommandResult(null);
+
+        const result = await RobotAPI.textCommand(text, activeRobotAddr);
+        setCommandResult(result);
+        setBackendSyncError("");
+        speakReply(
+          result?.reply_text ||
+          result?.result?.bridge_reply_text ||
+          "Em \u0111\u00e3 nh\u1eadn l\u1ec7nh v\u00e0 g\u1eedi sang robot."
+        );
+        await Promise.allSettled([fetchPatrolStatus(), fetchSlamState()]);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Gui lenh that bai";
+        setCommandError(message);
+        speakReply(`Em ch\u01b0a th\u1ef1c hi\u1ec7n \u0111\u01b0\u1ee3c l\u1ec7nh n\u00e0y. L\u00fd do l\u00e0: ${message}`);
+      } finally {
+        setIsSendingCommand(false);
+      }
+    },
+    [commandText, dogServer, fetchPatrolStatus, fetchSlamState, robotAddr, speakReply]
+  );
+
+  const startListening = async () => {
     const SpeechRecognition =
       typeof window !== "undefined"
         ? (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
@@ -934,12 +1071,29 @@ export default function AutonomousControlPage() {
     }
 
     try {
+      if (
+        typeof window !== "undefined" &&
+        !window.isSecureContext &&
+        window.location.hostname !== "localhost" &&
+        window.location.hostname !== "127.0.0.1"
+      ) {
+        throw new Error("Microphone chi hoat dong tren localhost hoac HTTPS.");
+      }
+
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error("Trinh duyet khong ho tro truy cap microphone.");
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((track) => track.stop());
+
       const recognition = new SpeechRecognition();
       recognition.lang = "vi-VN";
       recognition.interimResults = false;
       recognition.maxAlternatives = 1;
 
       recognition.onstart = () => {
+        pendingTranscriptRef.current = "";
         setIsListening(true);
         setCommandError("");
       };
@@ -947,24 +1101,50 @@ export default function AutonomousControlPage() {
       recognition.onresult = (event: any) => {
         const transcript = event?.results?.[0]?.[0]?.transcript || "";
         setCommandText(transcript);
+        pendingTranscriptRef.current = transcript;
       };
 
       recognition.onerror = (event: any) => {
-        setCommandError(event?.error || "Khong the nhan giong noi");
+        const errorCode = event?.error || "";
+        const errorMessage =
+          errorCode === "audio-capture"
+            ? "Khong lay duoc microphone. Hay kiem tra mic, quyen truy cap mic cua browser, va thu mo frontend bang localhost hoac HTTPS."
+            : errorCode === "not-allowed"
+              ? "Browser dang chan microphone. Hay cap quyen Microphone cho trang nay."
+              : errorCode === "no-speech"
+                ? "Khong nghe thay giong noi. Hay thu noi lai gan microphone hon."
+                : errorCode || "Khong the nhan giong noi";
+        setCommandError(errorMessage);
         setIsListening(false);
       };
 
       recognition.onend = () => {
         setIsListening(false);
+        const transcript = pendingTranscriptRef.current.trim();
+        pendingTranscriptRef.current = "";
+        if (transcript) {
+          window.setTimeout(() => {
+            void sendVoiceCommand(transcript);
+          }, 250);
+        }
       };
 
       recognitionRef.current = recognition;
       recognition.start();
     } catch (error) {
       setIsListening(false);
-      setCommandError(
-        error instanceof Error ? error.message : "Khong the bat microphone"
-      );
+      const name = error instanceof DOMException ? error.name : "";
+      const message =
+        name === "NotAllowedError" || name === "SecurityError"
+          ? "Browser dang chan microphone. Hay cap quyen Microphone cho trang nay."
+          : name === "NotFoundError" || name === "DevicesNotFoundError"
+            ? "Khong tim thay microphone tren may nay."
+            : name === "NotReadableError" || name === "TrackStartError"
+              ? "Microphone dang bi ung dung khac su dung hoac thiet bi khong san sang."
+              : error instanceof Error
+                ? error.message
+                : "Khong the bat microphone";
+      setCommandError(message);
     }
   };
 
@@ -973,35 +1153,6 @@ export default function AutonomousControlPage() {
       recognitionRef.current?.stop?.();
     } catch { }
     setIsListening(false);
-  };
-
-  const sendVoiceCommand = async () => {
-    const text = commandText.trim();
-
-    if (!text) {
-      setCommandError("Vui long nhap hoac doc lenh.");
-      return;
-    }
-
-    if (!robotAddr.trim()) {
-      setCommandError("Thieu robot address.");
-      return;
-    }
-
-    try {
-      setIsSendingCommand(true);
-      setCommandError("");
-      setCommandResult(null);
-
-      const activeRobotAddr = robotAddr.trim() || dogServer.trim();
-      const result = await RobotAPI.textCommand(text, activeRobotAddr);
-      setCommandResult(result);
-      setBackendSyncError("");
-    } catch (error) {
-      setCommandError(error instanceof Error ? error.message : "Gui lenh that bai");
-    } finally {
-      setIsSendingCommand(false);
-    }
   };
 
   useEffect(() => {
@@ -1145,10 +1296,8 @@ export default function AutonomousControlPage() {
             commandResult={commandResult}
             commandError={commandError}
             isListening={isListening}
-            onCommandTextChange={setCommandText}
             onStartListening={startListening}
             onStopListening={stopListening}
-            onSendVoiceCommand={sendVoiceCommand}
           />
         </div>
       </div>

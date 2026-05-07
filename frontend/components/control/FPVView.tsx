@@ -9,9 +9,11 @@ import { getSelectedRobotAddr } from "@/app/lib/selectedRobot";
 export default function FPVView({
   fps = 30,
   onEmergencyStop,
+  onCommandLog,
 }: {
   fps?: number;
   onEmergencyStop?: () => void;
+  onCommandLog?: (line: string) => void;
 }) {
   const [dogServer, setDogServer] = useState(
     () => getSelectedRobotAddr() || DEFAULT_DOG_SERVER
@@ -34,6 +36,19 @@ export default function FPVView({
   const [connectError, setConnectError] = useState<string | null>(null);
 
   const hasResetBody = useRef(false);
+
+  const formatError = useCallback((error: unknown) => {
+    if (error instanceof Error) return error.message;
+    return String(error || "Unknown error");
+  }, []);
+
+  const appendLog = useCallback(
+    (line: string | undefined) => {
+      if (!line) return;
+      onCommandLog?.(line);
+    },
+    [onCommandLog]
+  );
 
   useEffect(() => {
     setDogServer(getSelectedRobotAddr() || DEFAULT_DOG_SERVER);
@@ -64,7 +79,13 @@ export default function FPVView({
 
       if (bodyTimer.current) clearTimeout(bodyTimer.current);
       bodyTimer.current = setTimeout(() => {
-        RobotAPI.body(next).catch(() => {});
+        RobotAPI.body(next)
+          .then((res) =>
+            appendLog(res?.log || `[BODY_ADJUST] ${JSON.stringify(next)} -> OK`)
+          )
+          .catch((error) =>
+            appendLog(`[BODY_ADJUST ERROR] ${formatError(error)}`)
+          );
       }, 150);
 
       return next;
@@ -83,8 +104,10 @@ export default function FPVView({
 
     if (bodyTimer.current) clearTimeout(bodyTimer.current);
     setSliders(zero);
-    RobotAPI.body(zero).catch(() => {});
-  }, []);
+    RobotAPI.body(zero)
+      .then((res) => appendLog(res?.log || "[BODY_ADJUST] reset to center -> OK"))
+      .catch((error) => appendLog(`[BODY_ADJUST ERROR] ${formatError(error)}`));
+  }, [appendLog, formatError]);
 
   useEffect(
     () => () => {
@@ -103,6 +126,7 @@ export default function FPVView({
         if (res?.connected) {
           setConnected(true);
           setConnectError(null);
+          appendLog(`[CONNECT] ${dogServer} -> OK`);
           if (!hasResetBody.current) {
             resetBody();
             hasResetBody.current = true;
@@ -112,16 +136,21 @@ export default function FPVView({
             if (!stop) setStreamUrl(f?.stream_url || null);
           } catch (e) {
             console.error("FPV error:", e);
+            appendLog(`[FPV ERROR] ${formatError(e)}`);
             if (!stop) setConnectError("Không lấy được stream_url từ backend");
           }
         } else {
           setConnected(false);
+          appendLog(
+            `[CONNECT ERROR] ${res?.error || "Cannot connect to Dogzilla server"}`
+          );
           setConnectError(
             res?.error || "Không kết nối được tới Dogzilla server"
           );
         }
       } catch (e: any) {
         console.error("Connect error:", e);
+        appendLog(`[CONNECT ERROR] ${formatError(e)}`);
         if (!stop) {
           setConnected(false);
           setConnectError(e?.message || "Lỗi kết nối");
@@ -139,25 +168,36 @@ export default function FPVView({
       clearInterval(iv);
       onEmergencyStop?.();
     };
-  }, [dogServer, onEmergencyStop, resetBody]);
+  }, [appendLog, dogServer, formatError, onEmergencyStop, resetBody]);
   const toggleLidar = useCallback(() => {
     setLidarRunning((prev) => {
       const next = !prev;
-      RobotAPI.lidar(next ? "start" : "stop").catch(() => {});
+      RobotAPI.lidar(next ? "start" : "stop")
+        .then((res) =>
+          appendLog(res?.log || `[LIDAR] ${next ? "start" : "stop"} -> OK`)
+        )
+        .catch((error) => appendLog(`[LIDAR ERROR] ${formatError(error)}`));
       return next;
     });
-  }, []);
+  }, [appendLog, formatError]);
 
   const toggleStabilizing = useCallback(() => {
     setStabilizingOn((prev) => {
       const next = !prev;
-      RobotAPI.stabilizingMode("toggle").catch(() => {});
+      RobotAPI.stabilizingMode("toggle")
+        .then((res) =>
+          appendLog(res?.log || `[STABILIZING] ${next ? "on" : "off"} -> OK`)
+        )
+        .catch((error) =>
+          appendLog(`[STABILIZING ERROR] ${formatError(error)}`)
+        );
       return next;
     });
-  }, []);
+  }, [appendLog, formatError]);
   useGamepadMove({
     onToggleLidar: toggleLidar,
     onToggleStabilizing: toggleStabilizing,
+    onLog: appendLog,
   });
   return (
     <div className="space-y-6">
@@ -232,7 +272,11 @@ export default function FPVView({
                 <Btn
                   key={b}
                   label={b.replaceAll("_", " ")}
-                  onClick={() => RobotAPI.posture(b)}
+                  onClick={() =>
+                    RobotAPI.posture(b)
+                      .then((res) => appendLog(res?.log || `[POSTURE] ${b} -> OK`))
+                      .catch((error) => appendLog(`[POSTURE ERROR] ${formatError(error)}`))
+                  }
                   tone="pink"
                   className="w-full"
                 />
@@ -246,7 +290,11 @@ export default function FPVView({
                 <Btn
                   key={b}
                   label={b.replaceAll("_", " ")}
-                  onClick={() => RobotAPI.behavior(b)}
+                  onClick={() =>
+                    RobotAPI.behavior(b)
+                      .then((res) => appendLog(res?.log || `[BEHAVIOR] ${b} -> OK`))
+                      .catch((error) => appendLog(`[BEHAVIOR ERROR] ${formatError(error)}`))
+                  }
                   tone="cyan"
                   className="w-full"
                 />
@@ -260,7 +308,11 @@ export default function FPVView({
                 <Btn
                   key={`${b}-${i}`}
                   label={b.replaceAll("_", " ")}
-                  onClick={() => RobotAPI.behavior(b)}
+                  onClick={() =>
+                    RobotAPI.behavior(b)
+                      .then((res) => appendLog(res?.log || `[BEHAVIOR] ${b} -> OK`))
+                      .catch((error) => appendLog(`[BEHAVIOR ERROR] ${formatError(error)}`))
+                  }
                   tone="emerald"
                   className="w-full whitespace-nowrap"
                 />

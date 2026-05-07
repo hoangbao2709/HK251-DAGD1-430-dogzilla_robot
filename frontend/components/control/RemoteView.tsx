@@ -11,7 +11,10 @@ import { HalfCircleJoystick } from "@/components/HalfCircleJoystick";
 import HeaderControl from "@/components/header_control";
 import MouselookPad from "@/components/MouselookPad";
 import { useGamepadMove } from "@/app/lib/useGamepadMove";
-import { getSelectedRobotAddr } from "@/app/lib/selectedRobot";
+import {
+  getSelectedRobotAddr,
+  SELECTED_ROBOT_ADDR_EVENT,
+} from "@/app/lib/selectedRobot";
 import {
   RobotAPI,
   DEFAULT_DOG_SERVER,
@@ -49,9 +52,26 @@ export default function RemoteView({
   );
 
   const isCheckingRef = useRef(false);
+  const lidarRunningRef = useRef(false);
 
   useEffect(() => {
-    setDogServer(getSelectedRobotAddr() || DEFAULT_DOG_SERVER);
+    const syncSelectedRobot = () => {
+      const nextAddr = getSelectedRobotAddr() || DEFAULT_DOG_SERVER;
+      setDogServer((current) => (current === nextAddr ? current : nextAddr));
+    };
+
+    syncSelectedRobot();
+    window.addEventListener(SELECTED_ROBOT_ADDR_EVENT, syncSelectedRobot);
+    window.addEventListener("focus", syncSelectedRobot);
+    window.addEventListener("pageshow", syncSelectedRobot);
+    document.addEventListener("visibilitychange", syncSelectedRobot);
+
+    return () => {
+      window.removeEventListener(SELECTED_ROBOT_ADDR_EVENT, syncSelectedRobot);
+      window.removeEventListener("focus", syncSelectedRobot);
+      window.removeEventListener("pageshow", syncSelectedRobot);
+      document.removeEventListener("visibilitychange", syncSelectedRobot);
+    };
   }, []);
 
   const lidarUrl = useMemo(() => {
@@ -76,7 +96,7 @@ export default function RemoteView({
   const [lidarBusy, setLidarBusy] = useState(false);
   const [lidarError, setLidarError] = useState<string | null>(null);
   const [lidarFrameLoaded, setLidarFrameLoaded] = useState(false);
-  const [lidarMapNonce, setLidarMapNonce] = useState(0);
+  const [lidarFrameKey, setLidarFrameKey] = useState(0);
   const [speed, setSpeed] = useState<"slow" | "normal" | "high">("normal");
   const [speedBusy, setSpeedBusy] = useState(false);
   const [fps, setFps] = useState(30);
@@ -135,6 +155,7 @@ export default function RemoteView({
     direction: "",
     timestamp: 0,
   });
+  const joyStoppedRef = useRef(true);
 
   const maxV = 0.25;
   const maxSideV = 0.25;
@@ -170,9 +191,15 @@ export default function RemoteView({
         if (stop) return;
         const data = res?.data ?? res ?? {};
         const running = Boolean(data?.lidar_running ?? data?.lidar?.running ?? false);
+        const wasRunning = lidarRunningRef.current;
+        lidarRunningRef.current = running;
         setIsRunning(running);
         if (running) {
           setLidarError(null);
+          if (!wasRunning) {
+            setLidarFrameLoaded(false);
+            setLidarFrameKey((value) => value + 1);
+          }
         } else {
           setLidarFrameLoaded(false);
         }
@@ -193,14 +220,9 @@ export default function RemoteView({
     };
   }, [connected]);
   useEffect(() => {
-    if (!isRunning) return;
-
-    const id = setInterval(() => {
-      setLidarMapNonce((value) => value + 1);
-    }, 1000);
-
-    return () => clearInterval(id);
-  }, [isRunning]);
+    setLidarFrameLoaded(false);
+    setLidarFrameKey((value) => value + 1);
+  }, [lidarUrl]);
   useEffect(() => {
     let stop = false;
     let iv: ReturnType<typeof setInterval> | null = null;
@@ -354,8 +376,12 @@ export default function RemoteView({
         res?.log || `[LIDAR] ${next ? "start" : "stop"} (frontend toggle)`
       );
       setIsRunning(next);
+      lidarRunningRef.current = next;
       if (next) {
-        setLidarMapNonce((value) => value + 1);
+        setLidarFrameLoaded(false);
+        window.setTimeout(() => {
+          setLidarFrameKey((value) => value + 1);
+        }, 700);
       }
       if (!next) {
         setLidarFrameLoaded(false);
@@ -436,13 +462,31 @@ export default function RemoteView({
       const vx = forward * maxV;
       const vy = strafe * maxSideV;
 
-      joyRef.current = { vx, vy, active: power > 0.01 };
+      const active = power > 0.01;
+      joyRef.current = { vx, vy, active };
+
+      if (active) {
+        joyStoppedRef.current = false;
+        return;
+      }
+
+      if (!joyStoppedRef.current) {
+        joyStoppedRef.current = true;
+        RobotAPI.move({ vx: 0, vy: 0, vz: 0, rx: 0, ry: 0, rz: 0 })
+          .then((res: any) => {
+            appendLog(res?.log || "[MOVE] joystick center stop");
+          })
+          .catch((e: any) => {
+            appendLog(`[MOVE ERROR] joystick center stop: ${e?.message || String(e)}`);
+          });
+      }
     },
-    []
+    [appendLog]
   );
 
   const onJoyRelease = useCallback(async () => {
     joyRef.current = { vx: 0, vy: 0, active: false };
+    joyStoppedRef.current = true;
     joyLogRef.current = { direction: "", timestamp: 0 };
     try {
       const res: any = await RobotAPI.move({
@@ -573,7 +617,9 @@ export default function RemoteView({
     : isRunning
     ? "Stop Lidar"
     : "Start Lidar";
-  const lidarMapSrc = RobotAPI.slamMapUrl(lidarMapNonce);
+  const lidarFrameSrc = lidarUrl
+    ? `${lidarUrl}${lidarUrl.includes("?") ? "&" : "?"}t=${lidarFrameKey}`
+    : "";
   if (isMobile) {
     return (
       <section className="h-screen w-full bg-[var(--background)] text-[var(--foreground)] relative">
@@ -939,9 +985,10 @@ export default function RemoteView({
                 isRunning || lidarError ? "h-80 xl:h-96" : "h-28"
               }`}
             >
-              {isRunning ? (
+              {isRunning && lidarFrameSrc ? (
                 <iframe
-                  src={lidarUrl}
+                  key={lidarFrameSrc}
+                  src={lidarFrameSrc}
                   title="LiDAR map"
                   className={`absolute inset-0 w-full h-full border-0 transition-opacity duration-300 ${
                     lidarFrameLoaded ? "opacity-100" : "opacity-0"
@@ -949,6 +996,10 @@ export default function RemoteView({
                   onLoad={() => {
                     setLidarFrameLoaded(true);
                     setLidarError(null);
+                  }}
+                  onError={() => {
+                    setLidarFrameLoaded(false);
+                    setLidarError(`Cannot load ${lidarUrl}`);
                   }}
                 />
               ) : null}

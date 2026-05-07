@@ -2,6 +2,7 @@
 
 const SELECTED_ROBOT_ADDR_KEY = "dogzilla_selected_robot_addr";
 const SELECTED_ROBOT_ADDR_COOKIE = "dogzilla_selected_robot_addr";
+export const SELECTED_ROBOT_ADDR_EVENT = "dogzilla:selected-robot-addr";
 
 function readCookie(name: string) {
   if (typeof document === "undefined") return null;
@@ -36,6 +37,7 @@ export function setSelectedRobotAddr(addr: string) {
   document.cookie = `${SELECTED_ROBOT_ADDR_COOKIE}=${encodeURIComponent(
     addr
   )}; path=/`;
+  window.dispatchEvent(new CustomEvent(SELECTED_ROBOT_ADDR_EVENT, { detail: addr }));
 }
 
 export function clearSelectedRobotAddr() {

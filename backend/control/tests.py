@@ -206,7 +206,7 @@ class PatrolHistoryTests(TestCase):
 
 
 class PatrolManagerStopTests(TestCase):
-    def test_saved_point_uses_standoff_goal_pose(self):
+    def test_saved_point_uses_go_to_point_api(self):
         manager = PatrolManager()
         manager.poll_interval_sec = 0.01
         manager.point_timeout_sec = 0.2
@@ -225,7 +225,7 @@ class PatrolManagerStopTests(TestCase):
         class FakeROSClient:
             def __init__(self, robot_id: str) -> None:
                 self.robot_id = robot_id
-                self.goal_calls: list[tuple[float, float, float]] = []
+                self.go_to_point_calls: list[str] = []
 
             def get_points(self):
                 return {"A": {"x": 2.0, "y": 1.0, "yaw": 0.0}}
@@ -233,14 +233,13 @@ class PatrolManagerStopTests(TestCase):
             def get_navigation_metrics(self):
                 return {"missions": []}
 
-            def set_goal_pose(self, x: float, y: float, yaw: float):
-                self.goal_calls.append((x, y, yaw))
+            def go_to_point(self, name: str):
+                self.go_to_point_calls.append(name)
                 return {"success": True, "message": "OK"}
 
             def get_slam_state_light(self):
-                if self.goal_calls:
-                    x, y, yaw = self.goal_calls[-1]
-                    return {"pose": {"ok": True, "x": x, "y": y, "theta": yaw}}
+                if self.go_to_point_calls:
+                    return {"pose": {"ok": True, "x": 2.0, "y": 1.0, "theta": 0.0}}
                 return {"pose": {"ok": True, "x": 0.0, "y": 0.0, "theta": 0.0}}
 
         fake_client = FakeROSClient(mission.robot_id)
@@ -248,11 +247,7 @@ class PatrolManagerStopTests(TestCase):
         with patch("control.services.patrol_manager.ROSClient", return_value=fake_client):
             manager._run_patrol(mission)
 
-        self.assertEqual(len(fake_client.goal_calls), 1)
-        goal_x, goal_y, goal_yaw = fake_client.goal_calls[0]
-        self.assertAlmostEqual(goal_x, 2.0 - manager.saved_point_standoff_m)
-        self.assertAlmostEqual(goal_y, 1.0)
-        self.assertAlmostEqual(goal_yaw, 0.0)
+        self.assertEqual(fake_client.go_to_point_calls, ["A"])
         self.assertEqual(mission.status, "DONE")
         self.assertEqual(mission.results[0].status, "SUCCESS")
 
@@ -276,7 +271,7 @@ class PatrolManagerStopTests(TestCase):
         class FakeROSClient:
             def __init__(self, robot_id: str) -> None:
                 self.robot_id = robot_id
-                self.goal_calls: list[tuple[float, float, float]] = []
+                self.go_to_point_calls: list[str] = []
 
             def get_points(self):
                 return {"A": {"x": 1.0, "y": 1.0, "yaw": 0.0}}
@@ -284,8 +279,8 @@ class PatrolManagerStopTests(TestCase):
             def get_navigation_metrics(self):
                 return {"missions": []}
 
-            def set_goal_pose(self, x: float, y: float, yaw: float):
-                self.goal_calls.append((x, y, yaw))
+            def go_to_point(self, name: str):
+                self.go_to_point_calls.append(name)
                 manager._stop_flags[mission.robot_id] = True
                 return {"success": True}
 
@@ -297,7 +292,7 @@ class PatrolManagerStopTests(TestCase):
         with patch("control.services.patrol_manager.ROSClient", return_value=fake_client):
             manager._run_patrol(mission)
 
-        self.assertEqual(len(fake_client.goal_calls), 1)
+        self.assertEqual(fake_client.go_to_point_calls, ["A"])
         self.assertEqual(mission.status, "STOPPED")
         self.assertEqual(mission.results[0].status, "ABORTED")
         self.assertEqual(mission.results[0].message, "mission stopped")
@@ -397,7 +392,10 @@ class XiaozhiBridgeViewTests(TestCase):
         self.assertTrue(response.data["success"])
         self.assertEqual(response.data["robot_id"], "robot-default")
         self.assertEqual(response.data["robot_addr"], "http://127.0.0.1:9000")
-        self.assertEqual(response.data["reply_text"], "Da gui lenh chay dong tac Handshake.")
+        self.assertEqual(
+            response.data["reply_text"],
+            "Em đã nhận lệnh. Robot đang thực hiện động tác Handshake.",
+        )
         process_text_command_mock.assert_called_once_with(
             robot_addr="http://127.0.0.1:9000",
             text="bat tay",
@@ -419,7 +417,7 @@ class XiaozhiBridgeViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.data["success"])
         self.assertTrue(response.data["dry_run"])
-        self.assertEqual(response.data["result"]["tool"], "goto_point")
+        self.assertEqual(response.data["result"]["tool"], "go_to_point")
         self.assertEqual(response.data["result"]["arguments"]["name"], "A")
 
     @override_settings(
@@ -450,7 +448,7 @@ class XiaozhiBridgeViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.data["success"])
-        self.assertEqual(response.data["result"]["tool"], "goto_point")
+        self.assertEqual(response.data["result"]["tool"], "go_to_point")
         patrol_start_mock.assert_called_once_with(
             robot_id="robot-default",
             route_name="voice_point_A",

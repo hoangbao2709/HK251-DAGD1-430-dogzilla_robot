@@ -2,8 +2,9 @@
 
 import RobotCamera from "@/components/RobotCamera"; 
 import { useSearchParams } from "next/navigation";
+import { Suspense } from "react";
 
-export default function TestLinePage() {
+function TestLineContent() {
   const searchParams = useSearchParams();
   const ip = searchParams.get("ip"); 
   const robotId = "robot-a"; 
@@ -15,5 +16,13 @@ export default function TestLinePage() {
       <h1>Test Line Tracking</h1>
       <RobotCamera robotId={robotId} interval={200} />
     </div>
+  );
+}
+
+export default function TestLinePage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <TestLineContent />
+    </Suspense>
   );
 }

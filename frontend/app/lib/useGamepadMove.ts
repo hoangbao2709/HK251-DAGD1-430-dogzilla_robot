@@ -20,7 +20,13 @@ type Options = {
   onToggleLidar?: () => void;
   /** callback khi B2 (X) được nhấn – dùng để toggle stabilizing */
   onToggleStabilizing?: () => void;
+  onLog?: (line: string) => void;
 };
+
+function errorText(error: unknown) {
+  if (error instanceof Error) return error.message;
+  return String(error || "Unknown error");
+}
 
 /**
  * Đọc tay cầm và gửi lệnh move cho robot.
@@ -29,7 +35,7 @@ type Options = {
  * - Nếu truyền callback: B0 toggle LiDAR, B2 toggle stabilizing
  */
 export function useGamepadMove(opts: Options = {}) {
-  const { onToggleLidar, onToggleStabilizing } = opts;
+  const { onToggleLidar, onToggleStabilizing, onLog } = opts;
 
   const padRef = useRef<GamepadSnapshot>({
     connected: false,
@@ -152,7 +158,9 @@ export function useGamepadMove(opts: Options = {}) {
         Math.abs(rz - last.rz) > 0.01
       ) {
         lastMoveRef.current = { vx, vy, rz };
-        RobotAPI.move({ vx, vy, vz: 0, rx: 0, ry: 0, rz }).catch(() => {});
+        RobotAPI.move({ vx, vy, vz: 0, rx: 0, ry: 0, rz }).catch((error) => {
+          onLog?.(`[GAMEPAD MOVE ERROR] ${errorText(error)}`);
+        });
       }
 
       // ===== B0: toggle LiDAR (nếu có callback) =====
@@ -182,7 +190,9 @@ export function useGamepadMove(opts: Options = {}) {
         rx: 0,
         ry: 0,
         rz: 0,
-      }).catch(() => {});
+      }).catch((error) => {
+        onLog?.(`[GAMEPAD STOP ERROR] ${errorText(error)}`);
+      });
     };
-  }, [onToggleLidar, onToggleStabilizing]);
+  }, [onToggleLidar, onToggleStabilizing, onLog]);
 }

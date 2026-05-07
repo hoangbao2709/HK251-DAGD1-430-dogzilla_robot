@@ -84,8 +84,9 @@ export default function Sidebar() {
           ? "bg-[#12071d]"
           : "bg-[#fcfbff]"
         }
-        border-r border-[var(--border)] flex flex-col justify-between
-        transition-all duration-300 z-50 h-screen
+        sticky top-0 self-start min-h-dvh h-dvh overflow-hidden
+        border-r border-[var(--border)] flex flex-col
+        transition-all duration-300 z-50 shrink-0
         shadow-[8px_0_30px_rgba(124,77,255,0.04)]
         ${collapsed ? "w-16" : "w-64"}
       `}
@@ -141,7 +142,7 @@ export default function Sidebar() {
         </div>
       </div>
 
-      <nav className={`flex-1 w-full mt-1 space-y-1 px-2 sm:px-3 ${isDark ? "" : "bg-transparent"}`}>
+      <nav className={`min-h-0 flex-1 w-full mt-1 space-y-1 overflow-y-auto px-2 sm:px-3 pb-3 ${isDark ? "" : "bg-transparent"}`}>
         {menu.map((item) => {
           const Icon = item.icon;
           const active = path.startsWith(item.href);
@@ -171,8 +172,8 @@ export default function Sidebar() {
 
       <div
         className={`
-          p-2 sm:p-3 border-t border-[var(--border)] space-y-2
-          ${isDark ? "bg-transparent" : "bg-[#f6f2ff]/95"}
+          mt-auto shrink-0 p-2 sm:p-3 border-t border-[var(--border)] space-y-2
+          ${isDark ? "bg-[#12071d]" : "bg-[#f6f2ff]/95"}
         `}
       >
         <div className="flex items-center justify-between gap-2 px-2">

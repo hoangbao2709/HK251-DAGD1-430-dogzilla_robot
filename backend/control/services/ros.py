@@ -362,6 +362,7 @@ class ROSClient:
         action: str,
         mode: str | None = None,
         map_name: str | None = None,
+        map_arg: str | None = None,
     ) -> Dict[str, Any]:
         assert action in ("start", "stop")
         payload: Dict[str, Any] = {"command": "lidar", "action": action}
@@ -370,6 +371,8 @@ class ROSClient:
             payload["mode"] = mode if mode else "live_map"
             if payload["mode"] == "navigation" and map_name:
                 payload["map_name"] = map_name
+            if payload["mode"] == "navigation" and map_arg:
+                payload["map_arg"] = map_arg
                 
         return self._post_control_with_response(payload)
 
@@ -378,6 +381,7 @@ class ROSClient:
         wait_seconds: float | None = None,
         mode: str | None = None,
         map_name: str | None = None,
+        map_arg: str | None = None,
     ) -> float:
         delay = wait_seconds
         if delay is None:
@@ -386,7 +390,7 @@ class ROSClient:
 
         self.lidar("stop")
         time.sleep(delay)
-        self.lidar("start", mode=mode, map_name=map_name)
+        self.lidar("start", mode=mode, map_name=map_name, map_arg=map_arg)
         return delay
 
     def body_adjust(self, sliders: Dict[str, float]) -> None:

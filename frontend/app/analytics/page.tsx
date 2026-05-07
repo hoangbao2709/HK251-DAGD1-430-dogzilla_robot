@@ -7,7 +7,6 @@ import {
   ChevronUp,
   Cpu,
   Download,
-  Expand,
   Gauge,
   HeartPulse,
   Loader2,
@@ -526,7 +525,6 @@ export default function AnalyticsPage() {
   const [errorText, setErrorText] = useState("");
   const [lastRefresh, setLastRefresh] = useState("-");
   const [isPaused, setIsPaused] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(false);
   const [filterDate, setFilterDate] = useState<string>("today");
 
   const [missionStats, setMissionStats] = useState({
@@ -720,7 +718,6 @@ export default function AnalyticsPage() {
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-white">Analytics</h1>
-          <p className="text-[#888888] text-sm mt-0.5 font-medium"> Операционный мониторинг — robot dogzilla_s2</p>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 bg-[#1a1a1a] border border-[#2d2d2d] rounded-full px-3 py-1.5">
@@ -896,16 +893,10 @@ export default function AnalyticsPage() {
 
         {/* ZONE 4 - NETWORK */}
         <section>
-          <div className="flex justify-between items-center mb-4">
+          <div className="mb-4">
             <h2 className="text-[#888888] text-[10px] font-bold uppercase tracking-[0.2em]">
               Zone 4 — Network
             </h2>
-            <button onClick={() => setIsExpanded(!isExpanded)}
-              className="cursor-pointer flex items-center gap-2 bg-[#1a1a1a] border border-[#2d2d2d] rounded-lg px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider hover:bg-[#252525] transition-colors"
-            >
-              <Expand size={12} />
-              {isExpanded ? "Collapse" : "Expand"}
-            </button>
           </div>
 
           <div className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -934,13 +925,11 @@ export default function AnalyticsPage() {
             </div>
           </div>
 
-          <div className={`transition-all duration-300 ease-in-out overflow-hidden ${isExpanded ? "max-h-[260px] opacity-100" : "max-h-0 opacity-0"}`}>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-8 px-4 py-6 bg-[#1a1a1a] rounded-lg border border-[#2d2d2d]">
-              <MiniMetric label="Uplink" value={networkSummary.uplink > 0 ? `${networkSummary.uplink.toFixed(0)} kbps` : "N/A"} color="text-white font-bold" />
-              <MiniMetric label="Downlink" value={networkSummary.downlink > 0 ? `${networkSummary.downlink.toFixed(0)} kbps` : "N/A"} color="text-white font-bold" />
-              <MiniMetric label="Latency" value={networkSummary.latency > 0 ? `${networkSummary.latency.toFixed(0)} ms` : "N/A"} color="text-white font-bold" />
-              <MiniMetric label="Packet loss" value={networkSummary.packetLoss >= 0 && hasNetworkData ? `${networkSummary.packetLoss.toFixed(1)}%` : "N/A"} color={networkSummary.packetLoss > 1 ? "text-red-400" : "text-[#4ade80] font-bold"} />
-            </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-8 px-4 py-6 bg-[#1a1a1a] rounded-lg border border-[#2d2d2d]">
+            <MiniMetric label="Uplink" value={networkSummary.uplink > 0 ? `${networkSummary.uplink.toFixed(0)} kbps` : "N/A"} color="text-white font-bold" />
+            <MiniMetric label="Downlink" value={networkSummary.downlink > 0 ? `${networkSummary.downlink.toFixed(0)} kbps` : "N/A"} color="text-white font-bold" />
+            <MiniMetric label="Latency" value={networkSummary.latency > 0 ? `${networkSummary.latency.toFixed(0)} ms` : "N/A"} color="text-white font-bold" />
+            <MiniMetric label="Packet loss" value={networkSummary.packetLoss >= 0 && hasNetworkData ? `${networkSummary.packetLoss.toFixed(1)}%` : "N/A"} color={networkSummary.packetLoss > 1 ? "text-red-400" : "text-[#4ade80] font-bold"} />
           </div>
         </section>
       </div>

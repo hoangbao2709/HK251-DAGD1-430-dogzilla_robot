@@ -37,6 +37,32 @@ async function api<T = any>(path: string, init?: RequestInitWithBody): Promise<T
   return json as T;
 }
 
+async function apiBlob(path: string, init?: RequestInitWithBody): Promise<Blob> {
+  if (!API_BASE) {
+    throw new Error("API_BASE is not configured");
+  }
+
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...init,
+    headers: {
+      ...(init?.body ? { "Content-Type": "application/json" } : {}),
+      ...(init?.headers || {}),
+    },
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    const json = await res.json().catch(() => ({}));
+    const msg = (json as any)?.error || (json as any)?.message || `HTTP ${res.status}`;
+    const err: any = new Error(msg);
+    err.status = res.status;
+    err.body = json;
+    throw err;
+  }
+
+  return res.blob();
+}
+
 const CONTROL_PREFIX = "/control/api/robots";
 
 type MoveVectorPayload = {
@@ -65,6 +91,7 @@ type MoveCommandPayload = {
 type LidarOptions = {
   mode?: "live_map" | "navigation";
   map_name?: string;
+  map_arg?: string;
 };
 
 export const RobotAPI = {
@@ -150,6 +177,12 @@ export const RobotAPI = {
         text,
         ...(addr ? { addr } : {}),
       }),
+    }),
+
+  voiceTts: (text: string) =>
+    apiBlob("/control/api/voice/tts/", {
+      method: "POST",
+      body: JSON.stringify({ text }),
     }),
 
   qrState: () =>
@@ -250,12 +283,6 @@ export const RobotAPI = {
   slamMapUrl: (ts?: number) =>
     `${API_BASE}${CONTROL_PREFIX}/${robotId}/slam/map.png${ts ? `?t=${ts}` : ""}`,
 
-  server: () =>
-    api<any>(`${CONTROL_PREFIX}/${robotId}/server/`),
-
-  health: () =>
-    api<any>(`${CONTROL_PREFIX}/${robotId}/health/`),
-
   networkMetrics: () =>
     api<any>(`${CONTROL_PREFIX}/${robotId}/network/metrics/`),
 
@@ -265,20 +292,8 @@ export const RobotAPI = {
   sessionSummary: () =>
     api<any>(`${CONTROL_PREFIX}/${robotId}/session/summary/`),
 
-  frameUrl: (ts?: number) =>
-    `${API_BASE}${CONTROL_PREFIX}/${robotId}/frame/${ts ? `?t=${ts}` : ""}`,
-
-  test: () =>
-    api<any>(`${CONTROL_PREFIX}/${robotId}/test/`),
-
   controlStatus: () =>
     api<any>(`${CONTROL_PREFIX}/${robotId}/control-status/`),
-
-  pace: (mode: "slow" | "normal" | "high") =>
-    api<any>(`${CONTROL_PREFIX}/${robotId}/command/pace/`, {
-      method: "POST",
-      body: JSON.stringify({ mode }),
-    }),
 
   gait: (mode: "trot" | "walk" | "high_walk") =>
     api<any>(`${CONTROL_PREFIX}/${robotId}/command/gait/`, {

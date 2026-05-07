@@ -23,7 +23,12 @@ export default function ManualControlPage() {
   const [mode, setMode] = useState<"remote" | "fpv">("remote");
   const [fpv, setFpv] = useState<{ stream_url?: string; fps?: number }>({});
   const [isMobile, setIsMobile] = useState(false);
+  const [fpvCommandLog, setFpvCommandLog] = useState<string[]>([]);
   const router = useRouter();
+
+  const appendFpvLog = useCallback((line: string) => {
+    setFpvCommandLog((prev) => [line, ...prev].slice(0, 50));
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -87,8 +92,9 @@ export default function ManualControlPage() {
                 mode={mode}
                 onToggle={toggleMode}
                 connected={true}
+                commandLog={fpvCommandLog}
               />
-              <FPVView fps={fpv.fps ?? 30} />
+              <FPVView fps={fpv.fps ?? 30} onCommandLog={appendFpvLog} />
             </div>
           </section>
         )}
@@ -114,8 +120,9 @@ export default function ManualControlPage() {
                     mode={mode}
                     onToggle={toggleMode}
                     connected={true}
+                    commandLog={fpvCommandLog}
                   />
-                  <FPVView fps={fpv.fps ?? 30} />
+                  <FPVView fps={fpv.fps ?? 30} onCommandLog={appendFpvLog} />
                 </div>
               )}
             </div>
