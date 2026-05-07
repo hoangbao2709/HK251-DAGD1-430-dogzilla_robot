@@ -12,7 +12,7 @@ import json
 import cv2
 import base64
 import logging
-from .models import Robot, ActionEvent
+from .models import Robot, ActionEvent, MetricSystem
 from .serializers import RobotSerializer
 from .services.ros import ROSClient
 from .line_tracking_backend import LineTrackingServer
@@ -191,6 +191,10 @@ def mission_to_dict(mission: Any) -> dict[str, Any]:
         "started_at": mission.started_at,
         "finished_at": mission.finished_at,
         "total_distance_m": getattr(mission, "total_distance_m", None),
+        "cpu_samples": getattr(mission, "cpu_samples", []),
+        "battery_samples": getattr(mission, "battery_samples", []),
+        "temperature_samples": getattr(mission, "temperature_samples", []),
+        "ram_samples": getattr(mission, "ram_samples", []),
         "results": [
             {
                 "point": r.point,
@@ -471,6 +475,40 @@ class NetworkMetricsView(APIView):
             )
 
 
+class SystemMetricHistoryView(APIView):
+    def get(self, request, robot_id):
+        try:
+            limit = max(1, min(int(request.query_params.get("limit", 120)), 500))
+        except (TypeError, ValueError):
+            limit = 120
+
+        rows = list(
+            MetricSystem.objects.filter(robot_id=robot_id)
+            .order_by("-created_at")[:limit]
+        )
+        rows.reverse()
+
+        return Response(
+            {
+                "success": True,
+                "robot_id": robot_id,
+                "items": [
+                    {
+                        "created_at": localtime(row.created_at).isoformat()
+                        if row.created_at
+                        else None,
+                        "cpu": row.cpu,
+                        "battery": row.battery,
+                        "temperature": row.temperature,
+                        "ram": row.ram,
+                    }
+                    for row in rows
+                ],
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
 class NavigationAnalyticsView(APIView):
     def get(self, request, robot_id):
         try:
@@ -543,17 +581,31 @@ class RobotStatusView(APIView):
 
         changed_fields = []
 
-        battery = s.get("battery")
+        def _int_or_none(value):
+            try:
+                return int(float(value))
+            except (TypeError, ValueError):
+                return None
+
+        battery = _int_or_none(s.get("battery"))
         if battery is not None and hasattr(robot, "battery"):
             robot.battery = battery
             changed_fields.append("battery")
 
-        fps = s.get("fps")
+        fps = _int_or_none(s.get("fps"))
         if fps is not None and hasattr(robot, "fps"):
             robot.fps = fps
             changed_fields.append("fps")
 
-        robot_connected = s.get("robot_connected")
+        server_connected = bool(s)
+        robot_serial_connected = s.get("robot_serial_connected")
+        robot_connected = s.get("server_connected")
+        if robot_connected is None:
+            robot_connected = s.get("robot_connected")
+        if robot_connected is None and server_connected:
+            robot_connected = True
+        if server_connected and s.get("lidar_running"):
+            robot_connected = True
         if robot_connected is not None and hasattr(robot, "status_text"):
             robot.status_text = "online" if robot_connected else "offline"
             changed_fields.append("status_text")
@@ -562,8 +614,12 @@ class RobotStatusView(APIView):
             robot.save(update_fields=changed_fields)
 
         data = RobotSerializer(robot).data
+        data["server_connected"] = server_connected
+        data["robot_connected"] = bool(robot_connected)
         data["telemetry"] = {
-            "robot_connected": s.get("robot_connected", False),
+            "robot_connected": bool(robot_connected),
+            "server_connected": server_connected,
+            "robot_serial_connected": robot_serial_connected,
             "speed_mode": s.get("speed_mode"),
             "gait_type": s.get("gait_type"),
             "perform_enabled": s.get("perform_enabled"),
@@ -939,7 +995,7 @@ class TextCommandView(APIView):
 
             try:
                 plan = map_text_with_openrouter(text)
-                if not plan.get("actions"):
+                if not plan.get("actions") and not plan.get("reply_text"):
                     raise ValueError("LLM không chọn action nào")
             except Exception as exc:
                 llm_error = str(exc)
@@ -1053,13 +1109,35 @@ class TextCommandView(APIView):
 
                 results.append(result)
 
+            if not results and plan.get("reply_text"):
+                reply_text = str(plan.get("reply_text") or "").strip()
+                log_line = (
+                    f'TEXT_COMMAND {json.dumps({"addr": robot_addr, "text": text}, ensure_ascii=False)} â†’ CHAT'
+                )
+                return Response(
+                    {
+                        "success": True,
+                        "robot_id": robot_id,
+                        "robot_addr": robot_addr,
+                        "input_text": text,
+                        "planner_source": planner_source,
+                        "llm_error": llm_error,
+                        "plan": plan,
+                        "result": None,
+                        "results": [],
+                        "reply_text": reply_text,
+                        "log": log_line,
+                    },
+                    status=status.HTTP_200_OK,
+                )
+
             log_line = (
                 f'TEXT_COMMAND {json.dumps({"addr": robot_addr, "text": text}, ensure_ascii=False)} → OK'
             )
             reply_text = " ".join(
                 build_bridge_response_text(result)
                 for result in results
-            ).strip() or "Em \u0111\u00e3 nh\u1eadn l\u1ec7nh."
+            ).strip() or str(plan.get("reply_text") or "").strip() or "Em \u0111\u00e3 nh\u1eadn l\u1ec7nh."
 
             return Response(
                 {
@@ -1617,12 +1695,38 @@ class GoToPointView(APIView):
             )
 
         try:
-            result = ROSClient(robot_id).go_to_point(name=name)
+            client = ROSClient(robot_id)
+            points = client.get_points() or {}
+            point = points.get(name) or points.get(name.upper())
+            if point is None:
+                return Response(
+                    {
+                        "success": False,
+                        "robot_id": robot_id,
+                        "error": f"point '{name}' not found",
+                    },
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+
+            standoff_m = float(body.get("standoff_m", 0.35))
+            point_x = float(point["x"])
+            point_y = float(point["y"])
+            approach_yaw = float(point.get("yaw", 0.0))
+            target_x = point_x - (standoff_m * math.cos(approach_yaw))
+            target_y = point_y - (standoff_m * math.sin(approach_yaw))
+            target_yaw = math.atan2(point_y - target_y, point_x - target_x)
+
+            result = client.set_goal_pose(target_x, target_y, target_yaw)
 
             log_line = build_log(
                 robot_id,
                 "GO_TO_POINT",
-                {"name": name},
+                {
+                    "name": name,
+                    "standoff_m": standoff_m,
+                    "source": {"x": point_x, "y": point_y, "yaw": approach_yaw},
+                    "goal": {"x": target_x, "y": target_y, "yaw": target_yaw},
+                },
                 True,
                 None,
             )

@@ -49,6 +49,10 @@ def mission_to_payload(mission: PatrolMission) -> dict:
         "started_at": mission.started_at,
         "finished_at": mission.finished_at,
         "total_distance_m": mission.total_distance_m,
+        "cpu_samples": mission.cpu_samples,
+        "battery_samples": mission.battery_samples,
+        "temperature_samples": mission.temperature_samples,
+        "ram_samples": mission.ram_samples,
         "results": [_point_result_to_dict(result) for result in mission.results],
     }
 
@@ -67,6 +71,10 @@ def payload_to_mission(payload: dict) -> PatrolMission:
         started_at=float(payload.get("started_at") or 0.0),
         finished_at=payload.get("finished_at"),
         total_distance_m=payload.get("total_distance_m"),
+        cpu_samples=list(payload.get("cpu_samples") or []),
+        battery_samples=list(payload.get("battery_samples") or []),
+        temperature_samples=list(payload.get("temperature_samples") or []),
+        ram_samples=list(payload.get("ram_samples") or []),
     )
     mission.results = [
         PatrolPointResult(
@@ -103,6 +111,10 @@ def append_history(robot_id: str, mission: PatrolMission) -> None:
             "finished_at": mission.finished_at,
             "total_distance_m": mission.total_distance_m,
             "payload": payload,
+            "cpu_samples": mission.cpu_samples,
+            "battery_samples": mission.battery_samples,
+            "temperature_samples": mission.temperature_samples,
+            "ram_samples": mission.ram_samples,
         },
     )
 

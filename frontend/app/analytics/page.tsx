@@ -18,6 +18,7 @@ import {
   Server,
   ShieldCheck,
   Waves,
+  X,
 } from "lucide-react";
 import { RobotAPI, robotId } from "@/app/lib/robotApi";
 
@@ -122,6 +123,14 @@ type SessionEvent = {
 
 type EffPoint = { time: string; eff: number };
 
+type SystemMetricPoint = {
+  created_at: string | null;
+  cpu: number | null;
+  battery: number | null;
+  temperature: number | null;
+  ram: number | null;
+};
+
 type PatrolResult = {
   point: string;
   status: string;
@@ -133,10 +142,22 @@ type PatrolResult = {
 
 type PatrolMission = {
   mission_id: string;
+  route_name?: string;
+  points?: string[];
   status: string;
-  started_at: string | null;
-  finished_at: string | null;
+  started_at: string | number | null;
+  finished_at: string | number | null;
+  total_distance_m?: number | null;
+  cpu_samples?: MetricSample[];
+  battery_samples?: MetricSample[];
+  temperature_samples?: MetricSample[];
+  ram_samples?: MetricSample[];
   results: PatrolResult[];
+};
+
+type MetricSample = {
+  ts?: number;
+  value?: number | null;
 };
 
 function clamp(value: number, min: number, max: number) {
@@ -167,7 +188,13 @@ function normalizeRobotStatus(raw: any): RobotStatus {
 
   // Derive robot state string
   let derivedState = "Idle";
-  if (raw?.robot_connected) {
+  const connected = Boolean(
+    raw?.server_connected ??
+    telemetry?.server_connected ??
+    raw?.robot_connected ??
+    telemetry?.robot_connected
+  );
+  if (connected) {
     derivedState = raw?.gait_type ? "Navigating" : "Online";
   } else {
     derivedState = "Offline";
@@ -176,8 +203,25 @@ function normalizeRobotStatus(raw: any): RobotStatus {
   return {
     ...raw,
     ...telemetry,
+    robot_connected: connected,
     system,
   };
+}
+
+function formatDuration(seconds: number | null | undefined) {
+  if (!Number.isFinite(Number(seconds)) || Number(seconds) <= 0) return "-";
+  const total = Math.round(Number(seconds));
+  const min = Math.floor(total / 60);
+  const sec = total % 60;
+  return min > 0 ? `${min}m ${sec}s` : `${sec}s`;
+}
+
+function formatTimestamp(value: string | number | null | undefined) {
+  if (value == null || value === "") return "-";
+  const numeric = Number(value);
+  const date = Number.isFinite(numeric) ? new Date(numeric * 1000) : new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return formatClock(date);
 }
 
 function getNetworkNumber(source: JsonRecord | null, keys: string[], fallback = 0) {
@@ -466,6 +510,266 @@ function DeliveryBarChart({ missions }: { missions: PatrolMission[] }) {
   );
 }
 
+function MetricLineChart({
+  title,
+  samples,
+  color,
+  max,
+  unit = "%",
+}: {
+  title: string;
+  samples?: MetricSample[];
+  color: string;
+  max: number;
+  unit?: string;
+}) {
+  const width = 640;
+  const height = 150;
+  const pad = 18;
+  const values = (samples || [])
+    .map((sample) => Number(sample?.value))
+    .filter((value) => Number.isFinite(value));
+  const latestValue = values.length ? values[values.length - 1] : null;
+  const points = values
+    .map((value, index) => {
+      const x = pad + (index / Math.max(values.length - 1, 1)) * (width - pad * 2);
+      const y = height - pad - (clamp(value, 0, max) / max) * (height - pad * 2);
+      return `${x},${y}`;
+    })
+    .join(" ");
+
+  return (
+    <div className="rounded-lg border border-[#2d2d2d] bg-[#1a1a1a] p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <span className="text-xs font-bold text-gray-400">{title}</span>
+        <span className="text-sm font-bold text-white">
+          {latestValue == null ? "N/A" : `${latestValue.toFixed(1)}${unit}`}
+        </span>
+      </div>
+      {points ? (
+        <svg viewBox={`0 0 ${width} ${height}`} className="h-[160px] w-full" preserveAspectRatio="none">
+          {[0, 0.25, 0.5, 0.75, 1].map((ratio) => (
+            <line
+              key={ratio}
+              x1={pad}
+              x2={width - pad}
+              y1={pad + ratio * (height - pad * 2)}
+              y2={pad + ratio * (height - pad * 2)}
+              stroke="#2d2d2d"
+              strokeWidth="1"
+            />
+          ))}
+          <polyline
+            points={points}
+            fill="none"
+            stroke={color}
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      ) : (
+        <div className="flex h-[160px] items-center justify-center text-sm text-[#888888]">
+          Chua co metric data
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PatrolMetricModal({
+  mission,
+  onClose,
+}: {
+  mission: PatrolMission | null;
+  onClose: () => void;
+}) {
+  if (!mission) return null;
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-6">
+      <div className="max-h-[90vh] w-full max-w-6xl overflow-y-auto rounded-xl border border-[#2d2d2d] bg-[#111111] shadow-2xl">
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-[#2d2d2d] bg-[#111111] px-5 py-4">
+          <div>
+            <div className="text-sm font-bold text-white">{mission.mission_id}</div>
+            <div className="mt-1 text-xs text-[#888888]">
+              {mission.route_name || "-"} • samples every 5s
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="cursor-pointer rounded-lg border border-[#2d2d2d] bg-[#1a1a1a] p-2 text-white transition hover:bg-[#252525]"
+            aria-label="Close metric details"
+          >
+            <X size={18} />
+          </button>
+        </div>
+        <div className="grid grid-cols-1 gap-4 p-5 lg:grid-cols-2">
+          <MetricLineChart title="CPU" samples={mission.cpu_samples} color="#60a5fa" max={100} />
+          <MetricLineChart title="Battery" samples={mission.battery_samples} color="#4ade80" max={100} />
+          <MetricLineChart title="Temperature" samples={mission.temperature_samples} color="#fb7185" max={90} unit="°C" />
+          <MetricLineChart title="RAM" samples={mission.ram_samples} color="#a78bfa" max={100} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SystemMetricChart({
+  title,
+  data,
+  field,
+  color,
+  max,
+  unit = "%",
+}: {
+  title: string;
+  data: SystemMetricPoint[];
+  field: keyof Pick<SystemMetricPoint, "cpu" | "battery" | "temperature" | "ram">;
+  color: string;
+  max: number;
+  unit?: string;
+}) {
+  const samples: MetricSample[] = data.map((item) => ({
+    ts: item.created_at ? new Date(item.created_at).getTime() / 1000 : undefined,
+    value: item[field],
+  }));
+  return (
+    <MetricLineChart
+      title={title}
+      samples={samples}
+      color={color}
+      max={max}
+      unit={unit}
+    />
+  );
+}
+
+function PatrolHistoryTable({
+  missions,
+  onSelectMission,
+}: {
+  missions: PatrolMission[];
+  onSelectMission: (mission: PatrolMission) => void;
+}) {
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(5);
+  const totalPages = Math.max(1, Math.ceil(missions.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const startIndex = (safePage - 1) * pageSize;
+  const visibleMissions = missions.slice(startIndex, startIndex + pageSize);
+
+  useEffect(() => {
+    setPage(1);
+  }, [missions.length, pageSize]);
+
+  return (
+    <div className="mt-4 overflow-hidden rounded-lg border border-[#2d2d2d] bg-[#1a1a1a]">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#2d2d2d] px-4 py-3">
+        <span className="text-xs font-bold text-gray-400">control_patrolhistory</span>
+        <div className="flex items-center gap-3 text-xs text-[#888888]">
+          <span>
+            {missions.length ? `${startIndex + 1}-${Math.min(startIndex + pageSize, missions.length)} / ${missions.length}` : "0 / 0"}
+          </span>
+          <select
+            value={pageSize}
+            onChange={(event) => setPageSize(Number(event.target.value))}
+            className="cursor-pointer rounded-lg border border-[#2d2d2d] bg-[#202020] px-2 py-1 font-bold text-white outline-none"
+          >
+            <option value={5}>5 rows</option>
+            <option value={10}>10 rows</option>
+            <option value={20}>20 rows</option>
+          </select>
+          <button
+            onClick={() => setPage((current) => Math.max(1, current - 1))}
+            disabled={safePage <= 1}
+            className="cursor-pointer rounded-lg border border-[#2d2d2d] bg-[#252525] px-3 py-1 font-bold text-white transition hover:bg-[#303030] disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Prev
+          </button>
+          <span className="font-bold text-white">{safePage}/{totalPages}</span>
+          <button
+            onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+            disabled={safePage >= totalPages}
+            className="cursor-pointer rounded-lg border border-[#2d2d2d] bg-[#252525] px-3 py-1 font-bold text-white transition hover:bg-[#303030] disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Next
+          </button>
+        </div>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[880px] text-left text-sm">
+          <thead className="bg-[#202020] text-[10px] uppercase tracking-[0.16em] text-[#888888]">
+            <tr>
+              <th className="px-4 py-3">Mission</th>
+              <th className="px-4 py-3">Route</th>
+              <th className="px-4 py-3">Status</th>
+              <th className="px-4 py-3">Points</th>
+              <th className="px-4 py-3">Started</th>
+              <th className="px-4 py-3">Duration</th>
+              <th className="px-4 py-3">Distance</th>
+              <th className="px-4 py-3">Metric samples</th>
+              <th className="px-4 py-3 text-right">Details</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[#2d2d2d]">
+            {visibleMissions.length ? visibleMissions.map((mission) => {
+              const started = Number(mission.started_at);
+              const finished = Number(mission.finished_at);
+              const duration = Number.isFinite(started) && Number.isFinite(finished)
+                ? finished - started
+                : null;
+              const sampleCount = Math.max(
+                mission.cpu_samples?.length || 0,
+                mission.battery_samples?.length || 0,
+                mission.temperature_samples?.length || 0,
+                mission.ram_samples?.length || 0
+              );
+              return (
+                <tr key={mission.mission_id} className="text-white/88">
+                  <td className="px-4 py-3 font-mono text-xs">{mission.mission_id}</td>
+                  <td className="px-4 py-3">{mission.route_name || "-"}</td>
+                  <td className="px-4 py-3">
+                    <span className={`rounded-full px-2 py-1 text-xs font-bold ${
+                      mission.status === "completed"
+                        ? "bg-emerald-500/15 text-emerald-300"
+                        : mission.status === "running"
+                          ? "bg-sky-500/15 text-sky-300"
+                          : "bg-red-500/15 text-red-300"
+                    }`}>
+                      {mission.status}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">{mission.points?.join(", ") || "-"}</td>
+                  <td className="px-4 py-3">{formatTimestamp(mission.started_at)}</td>
+                  <td className="px-4 py-3">{formatDuration(duration)}</td>
+                  <td className="px-4 py-3">
+                    {mission.total_distance_m != null ? `${Number(mission.total_distance_m).toFixed(2)}m` : "-"}
+                  </td>
+                  <td className="px-4 py-3">{sampleCount}</td>
+                  <td className="px-4 py-3 text-right">
+                    <button
+                      onClick={() => onSelectMission(mission)}
+                      className="cursor-pointer rounded-lg border border-[#2d2d2d] bg-[#252525] px-3 py-1.5 text-xs font-bold text-white transition hover:bg-[#303030]"
+                    >
+                      Details
+                    </button>
+                  </td>
+                </tr>
+              );
+            }) : (
+              <tr>
+                <td colSpan={9} className="px-4 py-8 text-center text-[#888888]">
+                  Chua co patrol history
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 
 function EfficiencyChart({ data }: { data: EffPoint[] }) {
   const width = 600;
@@ -519,12 +823,14 @@ export default function AnalyticsPage() {
   const [pathEfficiency, setPathEfficiency] = useState<number | null>(null);
   const [totalDistance, setTotalDistance] = useState<number | null>(null);
   const [effHistory, setEffHistory] = useState<EffPoint[]>([]);
+  const [systemMetricHistory, setSystemMetricHistory] = useState<SystemMetricPoint[]>([]);
   const [events, setEvents] = useState<EventItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorText, setErrorText] = useState("");
   const [lastRefresh, setLastRefresh] = useState("-");
   const [isPaused, setIsPaused] = useState(false);
   const [filterDate, setFilterDate] = useState<string>("today");
+  const [selectedPatrolMission, setSelectedPatrolMission] = useState<PatrolMission | null>(null);
 
   const [missionStats, setMissionStats] = useState({
     attempted: 0,
@@ -534,6 +840,7 @@ export default function AnalyticsPage() {
     avgDelivery: 0,
   });
   const [patrolMissions, setPatrolMissions] = useState<PatrolMission[]>([]);
+  const [allPatrolMissions, setAllPatrolMissions] = useState<PatrolMission[]>([]);
 
   const [qrMetrics, setQrMetrics] = useState({
     attempts: 0,
@@ -597,6 +904,9 @@ export default function AnalyticsPage() {
         const missions: PatrolMission[] = histResp?.history ?? [];
         setPatrolMissions(missions);
 
+        const allHistResp = await RobotAPI.patrolHistory("all") as any;
+        setAllPatrolMissions(allHistResp?.history ?? []);
+
         const attempted = missions.length;
         const completed = missions.filter(m => m.status === "completed").length;
 
@@ -628,6 +938,14 @@ export default function AnalyticsPage() {
         setMissionStats({ attempted, completed, failed, successRate, avgDelivery });
       } catch (err) {
         console.error("Failed to fetch patrol history:", err);
+      }
+
+      try {
+        const metricResp = await RobotAPI.systemMetrics(120);
+        setSystemMetricHistory(metricResp?.items ?? []);
+      } catch (err) {
+        console.error("Failed to fetch system metrics:", err);
+        setSystemMetricHistory([]);
       }
 
       const battery = clamp(getNumber(nextStatus?.battery, 0), 0, 100);
@@ -886,11 +1204,12 @@ export default function AnalyticsPage() {
           <h2 className="text-[#888888] text-[10px] font-bold uppercase tracking-[0.2em] mb-4 border-b border-[#2d2d2d] pb-2">
             Zone 3 — Time-series charts
           </h2>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <StatusHistoryChart data={statusHistory} />
-            <DeliveryBarChart missions={patrolMissions} />
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <SystemMetricChart title="CPU from metric_system" data={systemMetricHistory} field="cpu" color="#60a5fa" max={100} />
+            <SystemMetricChart title="Battery from metric_system" data={systemMetricHistory} field="battery" color="#4ade80" max={100} />
+            <SystemMetricChart title="Temperature from metric_system" data={systemMetricHistory} field="temperature" color="#fb7185" max={90} unit="°C" />
+            <SystemMetricChart title="RAM from metric_system" data={systemMetricHistory} field="ram" color="#a78bfa" max={100} />
           </div>
-          <EfficiencyChart data={effHistory} />
         </section>
 
         {/* ZONE 4 - NETWORK */}
@@ -934,7 +1253,23 @@ export default function AnalyticsPage() {
             <MiniMetric label="Packet loss" value={networkSummary.packetLoss >= 0 && hasNetworkData ? `${networkSummary.packetLoss.toFixed(1)}%` : "N/A"} color={networkSummary.packetLoss > 1 ? "text-red-400" : "text-[#4ade80] font-bold"} />
           </div>
         </section>
+
+        {/* ZONE 5 - PATROL HISTORY */}
+        <section>
+          <h2 className="text-[#888888] text-[10px] font-bold uppercase tracking-[0.2em] mb-4 border-b border-[#2d2d2d] pb-2">
+            Zone 5 Patrol history
+          </h2>
+          <PatrolHistoryTable
+            missions={allPatrolMissions}
+            onSelectMission={setSelectedPatrolMission}
+          />
+        </section>
       </div>
+
+      <PatrolMetricModal
+        mission={selectedPatrolMission}
+        onClose={() => setSelectedPatrolMission(null)}
+      />
 
       {errorText ? (
         <div className="fixed bottom-6 right-6 max-w-sm bg-red-900 border border-red-500 rounded-lg p-4 text-sm text-red-100 shadow-2xl z-50">

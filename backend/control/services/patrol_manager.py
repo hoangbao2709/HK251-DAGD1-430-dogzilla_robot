@@ -11,6 +11,7 @@ from .patrol_store import (
     append_history,
 )
 from .patrol_types import PatrolMission, PatrolPointResult
+from .metric_sampler import append_patrol_sample
 
 
 class PatrolManager:
@@ -24,6 +25,29 @@ class PatrolManager:
         self.saved_point_standoff_m = 0.35
         self.poll_interval_sec = 1.0
         self.point_timeout_sec = 120.0
+        self.metric_sample_interval_sec = 5.0
+
+    def _start_patrol_metric_sampler(self, mission: PatrolMission) -> threading.Event:
+        stop_event = threading.Event()
+
+        def run() -> None:
+            next_sample_at = 0.0
+            while not stop_event.is_set():
+                if time.time() >= next_sample_at:
+                    try:
+                        append_patrol_sample(mission)
+                    except Exception:
+                        pass
+                    next_sample_at = time.time() + self.metric_sample_interval_sec
+                stop_event.wait(0.25)
+
+        thread = threading.Thread(
+            target=run,
+            daemon=True,
+            name=f"patrol_metrics_{mission.robot_id}_{mission.mission_id}",
+        )
+        thread.start()
+        return stop_event
 
     def start(
         self,
@@ -239,11 +263,12 @@ class PatrolManager:
     ) -> tuple[float, float, float]:
         point_x = float(point_info["x"])
         point_y = float(point_info["y"])
-        point_yaw = float(point_info.get("yaw", 0.0))
+        approach_yaw = float(point_info.get("yaw", 0.0))
 
-        target_x = point_x - (self.saved_point_standoff_m * math.cos(point_yaw))
-        target_y = point_y - (self.saved_point_standoff_m * math.sin(point_yaw))
-        return target_x, target_y, point_yaw
+        target_x = point_x - (self.saved_point_standoff_m * math.cos(approach_yaw))
+        target_y = point_y - (self.saved_point_standoff_m * math.sin(approach_yaw))
+        target_yaw = math.atan2(point_y - target_y, point_x - target_x)
+        return target_x, target_y, target_yaw
 
     def _read_terminal_navigation_result(
         self,
@@ -354,6 +379,7 @@ class PatrolManager:
 
     def _run_patrol(self, mission: PatrolMission) -> None:
         robot_id = mission.robot_id
+        metric_stop_event = self._start_patrol_metric_sampler(mission)
 
         try:
             client = ROSClient(robot_id)
@@ -381,9 +407,7 @@ class PatrolManager:
                     point_result.status = "SKIPPED"
                     continue
 
-                target_x = float(point_info["x"])
-                target_y = float(point_info["y"])
-                target_yaw = float(point_info.get("yaw", 0.0))
+                target_x, target_y, target_yaw = self._compute_saved_point_goal(point_info)
 
                 success = False
 
@@ -406,12 +430,12 @@ class PatrolManager:
                         except Exception:
                             initial_mission_count = None
 
-                        send_result = client.go_to_point(point_name)
+                        send_result = client.set_goal_pose(target_x, target_y, target_yaw)
                         if not send_result.get("success", False):
-                            point_result.message = str(send_result.get("message") or "go_to_point failed")
+                            point_result.message = str(send_result.get("message") or "set_goal_pose failed")
                             continue
                     except Exception as e:
-                        point_result.message = f"go_to_point failed: {e}"
+                        point_result.message = f"set_goal_pose failed: {e}"
                         continue
 
                     ok, message, final_dist, terminal_result = self._wait_until_goal_reached(
@@ -419,7 +443,7 @@ class PatrolManager:
                         target_x,
                         target_y,
                         target_yaw,
-                        require_heading=False,
+                        require_heading=True,
                         initial_mission_count=initial_mission_count,
                     )
                     point_result.finished_at = time.time()
@@ -477,6 +501,7 @@ class PatrolManager:
         except Exception as e:
             mission.status = "FAILED"
         finally:
+            metric_stop_event.set()
             mission.finished_at = time.time()
             self._attach_total_distance(mission)
             append_history(robot_id, mission)

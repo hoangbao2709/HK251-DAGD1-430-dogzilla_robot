@@ -1,6 +1,7 @@
 from django.urls import path
 from .views import (
     NetworkMetricsView,
+    SystemMetricHistoryView,
     NavigationAnalyticsView,
     ActionEventListView,
     SessionSummaryView,
@@ -57,6 +58,7 @@ urlpatterns = [
     path("api/xiaozhi/command/", XiaozhiBridgeCommandView.as_view(), name="xiaozhi-bridge-command"),
     path("api/robots/<str:robot_id>/qr-metrics/", QRMetricView.as_view(), name="robot-qr-metrics"),
     path("api/robots/<str:robot_id>/network/metrics/", NetworkMetricsView.as_view(), name="robot-network-metrics"),
+    path("api/robots/<str:robot_id>/metrics/system/", SystemMetricHistoryView.as_view(), name="robot-system-metrics"),
     path("api/robots/<str:robot_id>/analytics/navigation/", NavigationAnalyticsView.as_view(), name="robot-navigation-analytics"),
     path("api/robots/<str:robot_id>/events/", ActionEventListView.as_view(), name="robot-events"),
     path("api/robots/<str:robot_id>/session/summary/", SessionSummaryView.as_view(), name="robot-session-summary"),

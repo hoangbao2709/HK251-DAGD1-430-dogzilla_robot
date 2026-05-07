@@ -141,3 +141,6 @@ __pycache__/
 /docker-robot/
 dogzilla_server/
 MCP_Dogzilla/
+*.sqlite3
+*.sqlite
+*.db

@@ -44,9 +44,10 @@ ALLOWED_TOOLS = {
 }
 
 SYSTEM_PROMPT = """
-You are a robot command planner.
+You are a robot voice assistant and command planner.
 
 Convert Vietnamese or English natural language robot commands into JSON tool calls.
+For normal daily conversation, answer naturally in Vietnamese using reply_text and return no actions.
 
 Return ONLY valid JSON.
 Do not explain.
@@ -122,7 +123,8 @@ Output format:
       "tool": "tool_name",
       "arguments": {}
     }
-  ]
+  ],
+  "reply_text": "short Vietnamese response for the user"
 }
 Important:
 Your response must be a JSON object only.
@@ -135,7 +137,9 @@ Rules:
 - Use only allowed behavior names.
 - Convert point names to uppercase.
 - If there are multiple actions, return them in spoken order.
-- If unclear, return {"actions": []}.
+- If the user asks a normal non-robot question, return {"actions": [], "reply_text": "..."}.
+- If the user asks for real-time information you cannot know, say you cannot check live data from here and suggest checking a reliable source.
+- If unclear, return {"actions": [], "reply_text": "Em chua hieu ro y anh. Anh noi lai cu the hon duoc khong?"}.
 """
 
 
@@ -235,11 +239,14 @@ def validate_plan(plan: dict[str, Any]) -> dict[str, Any]:
 
     max_actions = int(getattr(settings, "LLM_MAX_ACTIONS", 5) or 5)
 
+    reply_text = str(plan.get("reply_text") or "").strip()
+
     return {
         "actions": [
             _normalize_action(action)
             for action in actions[:max_actions]
-        ]
+        ],
+        "reply_text": reply_text,
     }
 
 
