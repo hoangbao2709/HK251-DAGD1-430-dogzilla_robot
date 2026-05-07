@@ -527,7 +527,9 @@ function MetricLineChart({
   const height = 150;
   const pad = 18;
   const values = (samples || [])
-    .map((sample) => Number(sample?.value))
+    .map((sample) => sample?.value)
+    .filter((value) => value !== null && value !== undefined)
+    .map((value) => Number(value))
     .filter((value) => Number.isFinite(value));
   const latestValue = values.length ? values[values.length - 1] : null;
   const points = values
