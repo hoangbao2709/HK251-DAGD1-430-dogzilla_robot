@@ -137,6 +137,7 @@ type PatrolMission = {
   status: string;
   started_at: string | null;
   finished_at: string | null;
+  total_distance_m?: number | null;
   results: PatrolResult[];
 };
 
@@ -568,18 +569,12 @@ export default function AnalyticsPage() {
       }
 
       try {
-
         const navResp = await RobotAPI.navigationMetrics();
         const metrics = navResp?.data ?? navResp ?? {};
         const nextPathEfficiency = Number(metrics.path_efficiency_pct);
-        const nextTotalDistance = Number(metrics.path_length_m);
-
         setPathEfficiency(Number.isFinite(nextPathEfficiency) ? nextPathEfficiency : null);
-        setTotalDistance(Number.isFinite(nextTotalDistance) ? nextTotalDistance : null);
-
       } catch {
         setPathEfficiency(null);
-        setTotalDistance(null);
       }
 
       try {
@@ -626,6 +621,9 @@ export default function AnalyticsPage() {
           });
         const avgDelivery = times.length > 0
           ? Math.round(times.reduce((a, b) => a + b, 0) / times.length) : 0;
+
+        const calculatedTotalDistance = missions.reduce((sum, m) => sum + (m.total_distance_m || 0), 0);
+        setTotalDistance(calculatedTotalDistance > 0 ? Number(calculatedTotalDistance.toFixed(2)) : null);
 
         setMissionStats({ attempted, completed, failed, successRate, avgDelivery });
       } catch (err) {
