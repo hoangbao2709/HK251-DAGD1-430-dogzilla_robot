@@ -30,7 +30,7 @@ type MapPanelProps = {
   onCancelPlacement: () => void;
   onClearPath: () => void;
   onToggleLidar: () => void;
-  onStartStatic: () => void;
+  onStartStatic: (mapArg?: string) => void;
   onToggleRobot: () => void;
   onTogglePath: () => void;
   onToggleGrid: () => void;
@@ -72,6 +72,7 @@ export function MapPanel({
 }: MapPanelProps) {
   const [lidarError, setLidarError] = useState<string | null>(null);
   const [lidarFrameLoaded, setLidarFrameLoaded] = useState(false);
+  const [staticMapArg, setStaticMapArg] = useState("");
 
   useEffect(() => {
     const id = window.requestAnimationFrame(() => {
@@ -115,101 +116,119 @@ export function MapPanel({
     <>
       <div className="flex h-full flex-col space-y-4">
         <div>
-          <div className="flex items-center justify-between gap-3 pb-3">
-            <SectionLabel>SLAM map overlay</SectionLabel>
+          <div className="pb-3">
+            <div className="flex min-h-[72px] flex-col justify-between gap-2">
+              <div className="flex items-start justify-between gap-3">
+                <SectionLabel>SLAM map overlay</SectionLabel>
 
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              <div className="flex rounded-xl border border-[var(--border)] bg-[var(--surface)] p-1 text-xs">
-                <button onClick={() => onSetMapMode("view")}
-                  className={`cursor-pointer rounded-lg px-3 py-1.5 transition ${
-                    mapMode === "view"
-                      ? "bg-cyan-400 font-semibold text-black"
-                      : "text-[var(--muted)]"
-                  }`}
-                >
-                  View
-                </button>
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <div className="flex rounded-xl border border-[var(--border)] bg-[var(--surface)] p-1 text-xs">
+                    <button onClick={() => onSetMapMode("view")}
+                      className={`cursor-pointer rounded-lg px-3 py-1.5 transition ${
+                        mapMode === "view"
+                          ? "bg-cyan-400 font-semibold text-black"
+                          : "text-[var(--muted)]"
+                      }`}
+                    >
+                      View
+                    </button>
 
-                <button onClick={() => onSetMapMode("navigate")}
-                  className={`cursor-pointer rounded-lg px-3 py-1.5 transition ${
-                    mapMode === "navigate"
-                      ? "bg-cyan-400 font-semibold text-black"
-                      : "text-[var(--muted)]"
-                  }`}
-                >
-                  Navigate
-                </button>
+                    <button onClick={() => onSetMapMode("navigate")}
+                      className={`cursor-pointer rounded-lg px-3 py-1.5 transition ${
+                        mapMode === "navigate"
+                          ? "bg-cyan-400 font-semibold text-black"
+                          : "text-[var(--muted)]"
+                      }`}
+                    >
+                      Navigate
+                    </button>
+                  </div>
+
+                  <button
+                    onClick={onToggleLidar}
+                    disabled={lidarBusy}
+                    className={`cursor-pointer rounded-lg px-3 py-1.5 text-xs font-semibold transition disabled:cursor-wait disabled:opacity-60 ${
+                      lidarActive
+                        ? "bg-emerald-500 text-black hover:bg-emerald-400"
+                        : "border border-[var(--border)] bg-[var(--surface)] text-[var(--foreground)] hover:bg-[var(--surface-2)]"
+                    }`}
+                  >
+                    {lidarButtonLabel}
+                  </button>
+                  <div className="flex items-center gap-2">
+                    <input
+                      value={staticMapArg}
+                      onChange={(event) => setStaticMapArg(event.target.value)}
+                      placeholder="map name"
+                      disabled={lidarBusy}
+                      className="h-9 w-36 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 text-xs font-medium text-[var(--foreground)] outline-none transition placeholder:text-[var(--muted-2)] focus:border-blue-400 disabled:opacity-50"
+                    />
+                    <button
+                      onClick={() => onStartStatic(staticMapArg)}
+                      disabled={lidarBusy}
+                      className="flex cursor-pointer items-center justify-center gap-2 rounded bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-500 disabled:opacity-50"
+                    >
+                      Start static
+                    </button>
+                  </div>
+                  <button
+                    onClick={onOpenModal}
+                    className="cursor-pointer inline-flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-semibold text-[var(--foreground)] transition hover:bg-[var(--surface-2)]"
+                  >
+                    <Expand size={14} />
+                    Expand
+                  </button>
+                </div>
               </div>
 
-              <button
-                onClick={onToggleLidar}
-                disabled={lidarBusy}
-                className={`cursor-pointer rounded-lg px-3 py-1.5 text-xs font-semibold transition disabled:cursor-wait disabled:opacity-60 ${
-                  lidarActive
-                    ? "bg-emerald-500 text-black hover:bg-emerald-400"
-                    : "border border-[var(--border)] bg-[var(--surface)] text-[var(--foreground)] hover:bg-[var(--surface-2)]"
+              <div
+                className={`flex min-h-[32px] flex-wrap items-center gap-2 transition-opacity ${
+                  mapMode === "navigate" ? "opacity-100" : "pointer-events-none opacity-0"
                 }`}
+                aria-hidden={mapMode !== "navigate"}
               >
-                {lidarButtonLabel}
-              </button>
-              <button
-                onClick={onStartStatic}
-                disabled={lidarBusy}
-                className="flex cursor-pointer items-center justify-center gap-2 rounded bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-500 disabled:opacity-50"
-              >
-                Start static
-              </button>
-              <button
-                onClick={onOpenModal}
-                className="cursor-pointer inline-flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-semibold text-[var(--foreground)] transition hover:bg-[var(--surface-2)]"
-              >
-                <Expand size={14} />
-                Expand
-              </button>
+                <button onClick={() => onSetNavPlacementMode("goal")}
+                  tabIndex={mapMode === "navigate" ? 0 : -1}
+                  className={`cursor-pointer rounded-lg px-3 py-2 text-xs font-semibold ${
+                    navPlacementMode === "goal"
+                      ? "bg-emerald-500 text-black"
+                      : "bg-[var(--surface)] text-[var(--foreground)]"
+                  }`}
+                >
+                  Set goal
+                </button>
+
+                <button onClick={() => onSetNavPlacementMode("initialPose")}
+                  tabIndex={mapMode === "navigate" ? 0 : -1}
+                  className={`cursor-pointer rounded-lg px-3 py-2 text-xs font-semibold ${
+                    navPlacementMode === "initialPose"
+                      ? "bg-amber-400 text-black"
+                      : "bg-[var(--surface)] text-[var(--foreground)]"
+                  }`}
+                >
+                  Set initial pose
+                </button>
+
+                <button
+                  onClick={onClearPath}
+                  tabIndex={mapMode === "navigate" ? 0 : -1}
+                  className="cursor-pointer rounded-lg bg-red-500 px-3 py-2 text-xs font-semibold text-white"
+                >
+                  Stop & clear
+                </button>
+
+                {hasPendingPlacement ? (
+                  <button
+                    onClick={onCancelPlacement}
+                    tabIndex={mapMode === "navigate" ? 0 : -1}
+                    className="cursor-pointer rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs font-semibold text-[var(--foreground)]"
+                  >
+                    Cancel placing
+                  </button>
+                ) : null}
+              </div>
             </div>
           </div>
-
-          {mapMode === "navigate" ? (
-            <div className="mb-3 flex flex-wrap items-center gap-2">
-              <button onClick={() => onSetNavPlacementMode("goal")}
-                className={`cursor-pointer rounded-lg px-3 py-2 text-xs font-semibold ${
-                  navPlacementMode === "goal"
-                    ? "bg-emerald-500 text-black"
-                    : "bg-[var(--surface)] text-[var(--foreground)]"
-                }`}
-              >
-                Set goal
-              </button>
-
-              <button onClick={() => onSetNavPlacementMode("initialPose")}
-                className={`cursor-pointer rounded-lg px-3 py-2 text-xs font-semibold ${
-                  navPlacementMode === "initialPose"
-                    ? "bg-amber-400 text-black"
-                    : "bg-[var(--surface)] text-[var(--foreground)]"
-                }`}
-              >
-                Set initial pose
-              </button>
-
-              <button
-                onClick={onClearPath}
-                className="cursor-pointer rounded-lg bg-red-500 px-3 py-2 text-xs font-semibold text-white"
-              >
-                Stop & clear
-              </button>
-
-              {hasPendingPlacement ? (
-                <button
-                  onClick={onCancelPlacement}
-                  className="cursor-pointer rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs font-semibold text-[var(--foreground)]"
-                >
-                  Cancel placing
-                </button>
-              ) : null}
-            </div>
-          ) : (
-            <div className="mb-3 flex items-center gap-2 text-xs text-[var(--muted)]"/>
-          )}
 
           <div className="relative min-h-[360px] overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)] xl:min-h-[560px]">
             <div className="absolute left-3 top-3 z-10 rounded-lg bg-black/45 px-2 py-1 text-[11px] font-medium text-white backdrop-blur-sm">

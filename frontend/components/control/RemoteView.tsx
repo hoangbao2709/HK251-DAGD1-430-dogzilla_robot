@@ -155,6 +155,7 @@ export default function RemoteView({
     direction: "",
     timestamp: 0,
   });
+  const joyStoppedRef = useRef(true);
 
   const maxV = 0.25;
   const maxSideV = 0.25;
@@ -461,13 +462,31 @@ export default function RemoteView({
       const vx = forward * maxV;
       const vy = strafe * maxSideV;
 
-      joyRef.current = { vx, vy, active: power > 0.01 };
+      const active = power > 0.01;
+      joyRef.current = { vx, vy, active };
+
+      if (active) {
+        joyStoppedRef.current = false;
+        return;
+      }
+
+      if (!joyStoppedRef.current) {
+        joyStoppedRef.current = true;
+        RobotAPI.move({ vx: 0, vy: 0, vz: 0, rx: 0, ry: 0, rz: 0 })
+          .then((res: any) => {
+            appendLog(res?.log || "[MOVE] joystick center stop");
+          })
+          .catch((e: any) => {
+            appendLog(`[MOVE ERROR] joystick center stop: ${e?.message || String(e)}`);
+          });
+      }
     },
-    []
+    [appendLog]
   );
 
   const onJoyRelease = useCallback(async () => {
     joyRef.current = { vx: 0, vy: 0, active: false };
+    joyStoppedRef.current = true;
     joyLogRef.current = { direction: "", timestamp: 0 };
     try {
       const res: any = await RobotAPI.move({

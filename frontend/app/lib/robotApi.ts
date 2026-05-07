@@ -91,6 +91,7 @@ type MoveCommandPayload = {
 type LidarOptions = {
   mode?: "live_map" | "navigation";
   map_name?: string;
+  map_arg?: string;
 };
 
 export const RobotAPI = {
@@ -282,12 +283,6 @@ export const RobotAPI = {
   slamMapUrl: (ts?: number) =>
     `${API_BASE}${CONTROL_PREFIX}/${robotId}/slam/map.png${ts ? `?t=${ts}` : ""}`,
 
-  server: () =>
-    api<any>(`${CONTROL_PREFIX}/${robotId}/server/`),
-
-  health: () =>
-    api<any>(`${CONTROL_PREFIX}/${robotId}/health/`),
-
   networkMetrics: () =>
     api<any>(`${CONTROL_PREFIX}/${robotId}/network/metrics/`),
 
@@ -297,20 +292,8 @@ export const RobotAPI = {
   sessionSummary: () =>
     api<any>(`${CONTROL_PREFIX}/${robotId}/session/summary/`),
 
-  frameUrl: (ts?: number) =>
-    `${API_BASE}${CONTROL_PREFIX}/${robotId}/frame/${ts ? `?t=${ts}` : ""}`,
-
-  test: () =>
-    api<any>(`${CONTROL_PREFIX}/${robotId}/test/`),
-
   controlStatus: () =>
     api<any>(`${CONTROL_PREFIX}/${robotId}/control-status/`),
-
-  pace: (mode: "slow" | "normal" | "high") =>
-    api<any>(`${CONTROL_PREFIX}/${robotId}/command/pace/`, {
-      method: "POST",
-      body: JSON.stringify({ mode }),
-    }),
 
   gait: (mode: "trot" | "walk" | "high_walk") =>
     api<any>(`${CONTROL_PREFIX}/${robotId}/command/gait/`, {

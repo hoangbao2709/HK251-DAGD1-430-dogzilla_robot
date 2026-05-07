@@ -662,6 +662,7 @@ class LidarView(APIView):
         action = (request.data.get("action") or "").strip().lower()
         mode = str(request.data.get("mode") or "").strip() or None
         map_name = str(request.data.get("map_name") or "").strip() or None
+        map_arg = str(request.data.get("map_arg") or "").strip() or None
         client = ROSClient(robot_id)
         log_payload: dict[str, Any] = {"action": action}
 
@@ -669,6 +670,8 @@ class LidarView(APIView):
             log_payload["mode"] = mode
         if action == "start" and map_name:
             log_payload["map_name"] = map_name
+        if action == "start" and map_arg:
+            log_payload["map_arg"] = map_arg
 
         try:
             if action == "start":
@@ -678,7 +681,8 @@ class LidarView(APIView):
                     slam_status = {}
                     logger.info("Lidar preflight status unavailable for %s: %s", robot_id, e)
 
-                if slam_status.get("running") is True:
+                should_restart_for_static_map = mode == "navigation"
+                if slam_status.get("running") is True and not should_restart_for_static_map:
                     log_line = build_log(robot_id, "LIDAR", log_payload, True, None)
                     return Response(
                         {
@@ -689,7 +693,7 @@ class LidarView(APIView):
                         status=status.HTTP_200_OK,
                     )
 
-            client.lidar(action, mode=mode, map_name=map_name)
+            client.lidar(action, mode=mode, map_name=map_name, map_arg=map_arg)
             ok, err = True, None
         except Exception as e:
             ok, err = False, str(e)
@@ -703,11 +707,13 @@ class ResetLidarView(APIView):
         wait_seconds = request.data.get("wait_seconds")
         mode = str(request.data.get("mode") or "").strip() or None
         map_name = str(request.data.get("map_name") or "").strip() or None
+        map_arg = str(request.data.get("map_arg") or "").strip() or None
         try:
             applied_wait = ROSClient(robot_id).reset_lidar(
                 wait_seconds=wait_seconds,
                 mode=mode,
                 map_name=map_name,
+                map_arg=map_arg,
             )
             ok, err = True, None
         except Exception as e:
@@ -721,6 +727,8 @@ class ResetLidarView(APIView):
             log_payload["mode"] = mode
         if map_name:
             log_payload["map_name"] = map_name
+        if map_arg:
+            log_payload["map_arg"] = map_arg
 
         log_line = build_log(
             robot_id,

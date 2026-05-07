@@ -262,13 +262,6 @@ export default function HeaderControl({
           {viewMode === "debug" ? (
             <div className="flex gap-4 h-40">
               <div className={`w-56 space-y-1 text-xs leading-relaxed ${isDark ? "text-white/82" : "text-[var(--foreground)]/88"}`}>
-                {mergedError && (
-                  <div>
-                    <span className="font-semibold text-rose-500">Status error: </span>
-                    <span className="text-rose-400">{mergedError}</span>
-                  </div>
-                )}
-
                 <div>
                   <span className="font-semibold text-[inherit]">Robot connected flag: </span>
                   <span className="font-semibold text-amber-400">

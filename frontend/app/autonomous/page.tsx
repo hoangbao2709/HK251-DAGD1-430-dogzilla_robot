@@ -173,7 +173,7 @@ export default function AutonomousControlPage() {
   const [commandResult, setCommandResult] = useState<any | null>(null);
   const [commandError, setCommandError] = useState("");
   const [isListening, setIsListening] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [dogServer, setDogServer] = useState(
     () => getSelectedRobotAddr() || DEFAULT_DOG_SERVER
   );
@@ -406,12 +406,16 @@ export default function AutonomousControlPage() {
     }
   }, [controlStatus, fetchControlStatus, lidarBusy]);
 
-  const handleStartStatic = useCallback(async () => {
+  const handleStartStatic = useCallback(async (mapArg?: string) => {
     if (lidarBusy) return;
     try {
       setLidarBusy(true);
       setLidarError(null);
-      await RobotAPI.lidar("start", { mode: "navigation" });
+      const cleanedMapArg = String(mapArg || "").trim();
+      await RobotAPI.lidar("start", {
+        mode: "navigation",
+        ...(cleanedMapArg ? { map_arg: cleanedMapArg } : {}),
+      });
       
       setControlStatus((previous) => ({
         ...(previous || {}),
@@ -1055,7 +1059,7 @@ export default function AutonomousControlPage() {
     [commandText, dogServer, fetchPatrolStatus, fetchSlamState, robotAddr, speakReply]
   );
 
-  const startListening = () => {
+  const startListening = async () => {
     const SpeechRecognition =
       typeof window !== "undefined"
         ? (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
@@ -1067,6 +1071,22 @@ export default function AutonomousControlPage() {
     }
 
     try {
+      if (
+        typeof window !== "undefined" &&
+        !window.isSecureContext &&
+        window.location.hostname !== "localhost" &&
+        window.location.hostname !== "127.0.0.1"
+      ) {
+        throw new Error("Microphone chi hoat dong tren localhost hoac HTTPS.");
+      }
+
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error("Trinh duyet khong ho tro truy cap microphone.");
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((track) => track.stop());
+
       const recognition = new SpeechRecognition();
       recognition.lang = "vi-VN";
       recognition.interimResults = false;
@@ -1085,7 +1105,16 @@ export default function AutonomousControlPage() {
       };
 
       recognition.onerror = (event: any) => {
-        setCommandError(event?.error || "Khong the nhan giong noi");
+        const errorCode = event?.error || "";
+        const errorMessage =
+          errorCode === "audio-capture"
+            ? "Khong lay duoc microphone. Hay kiem tra mic, quyen truy cap mic cua browser, va thu mo frontend bang localhost hoac HTTPS."
+            : errorCode === "not-allowed"
+              ? "Browser dang chan microphone. Hay cap quyen Microphone cho trang nay."
+              : errorCode === "no-speech"
+                ? "Khong nghe thay giong noi. Hay thu noi lai gan microphone hon."
+                : errorCode || "Khong the nhan giong noi";
+        setCommandError(errorMessage);
         setIsListening(false);
       };
 
@@ -1104,9 +1133,18 @@ export default function AutonomousControlPage() {
       recognition.start();
     } catch (error) {
       setIsListening(false);
-      setCommandError(
-        error instanceof Error ? error.message : "Khong the bat microphone"
-      );
+      const name = error instanceof DOMException ? error.name : "";
+      const message =
+        name === "NotAllowedError" || name === "SecurityError"
+          ? "Browser dang chan microphone. Hay cap quyen Microphone cho trang nay."
+          : name === "NotFoundError" || name === "DevicesNotFoundError"
+            ? "Khong tim thay microphone tren may nay."
+            : name === "NotReadableError" || name === "TrackStartError"
+              ? "Microphone dang bi ung dung khac su dung hoac thiet bi khong san sang."
+              : error instanceof Error
+                ? error.message
+                : "Khong the bat microphone";
+      setCommandError(message);
     }
   };
 
