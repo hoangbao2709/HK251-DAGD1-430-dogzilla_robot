@@ -25,8 +25,6 @@ from .views import (
     ControlStatusView,
     CameraProcessView,
     TextCommandView,
-    XiaozhiBridgeCommandView,
-    XiaozhiBridgeHealthView,
     QRStateView,
     QRPositionView,
     QRVideoFeedView,
@@ -54,8 +52,6 @@ from .views import (
 
 urlpatterns = [
     path("api/voice/tts/", VoiceTTSView.as_view(), name="voice-tts"),
-    path("api/xiaozhi/health/", XiaozhiBridgeHealthView.as_view(), name="xiaozhi-bridge-health"),
-    path("api/xiaozhi/command/", XiaozhiBridgeCommandView.as_view(), name="xiaozhi-bridge-command"),
     path("api/robots/<str:robot_id>/qr-metrics/", QRMetricView.as_view(), name="robot-qr-metrics"),
     path("api/robots/<str:robot_id>/network/metrics/", NetworkMetricsView.as_view(), name="robot-network-metrics"),
     path("api/robots/<str:robot_id>/metrics/system/", SystemMetricHistoryView.as_view(), name="robot-system-metrics"),

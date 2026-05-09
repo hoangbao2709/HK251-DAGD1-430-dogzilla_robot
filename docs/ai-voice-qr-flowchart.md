@@ -18,13 +18,13 @@ flowchart TD
     I -- Co --> J[Frontend goi RobotAPI.textCommand]
     J --> K[POST /api/robots/:robotId/command/text/]
     K --> L[TextCommandView]
-    L --> M[process_text_command robot_addr text]
-    M --> N[normalize_text + map_text_to_tool]
+    L --> M[OpenRouter planner hoac fallback keyword]
+    M --> N[tool_name + arguments]
     N --> O{Lenh thuoc nhom nao?}
     O --> O1[set_posture / play_behavior]
     O --> O2[goto_point / goto_waypoints]
     O --> O3[stop_navigation / rotation / reset_robot]
-    O1 --> P[_call_mcp_tool]
+    O1 --> P[execute_mcp_tool]
     O2 --> P
     O3 --> P
     P --> Q[Khoi tao MCP client voi robot_mcp_server.py]

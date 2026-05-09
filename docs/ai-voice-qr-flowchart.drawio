@@ -40,10 +40,10 @@
                 <mxCell id="n11" value="TextCommandView" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">
                     <mxGeometry x="1770" y="130" width="150" height="60" as="geometry"/>
                 </mxCell>
-                <mxCell id="n12" value="process_text_command" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="1" vertex="1">
+                <mxCell id="n12" value="OpenRouter planner&#xa;hoac fallback keyword" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="1" vertex="1">
                     <mxGeometry x="1960" y="130" width="170" height="60" as="geometry"/>
                 </mxCell>
-                <mxCell id="n13" value="normalize_text&#xa;+ map_text_to_tool" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="1" vertex="1">
+                <mxCell id="n13" value="tool_name&#xa;+ arguments" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="1" vertex="1">
                     <mxGeometry x="2170" y="120" width="180" height="70" as="geometry"/>
                 </mxCell>
                 <mxCell id="n14" value="Loai lenh?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" parent="1" vertex="1">
@@ -58,7 +58,7 @@
                 <mxCell id="n17" value="stop_navigation&#xa;rotation&#xa;reset_robot" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" parent="1" vertex="1">
                     <mxGeometry x="2600" y="220" width="160" height="80" as="geometry"/>
                 </mxCell>
-                <mxCell id="n18" value="_call_mcp_tool" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" parent="1" vertex="1">
+                <mxCell id="n18" value="execute_mcp_tool" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" parent="1" vertex="1">
                     <mxGeometry x="2830" y="120" width="150" height="60" as="geometry"/>
                 </mxCell>
                 <mxCell id="n19" value="StdioTransport&#xa;robot_mcp_server.py&#xa;+ env ROBOT_IP/PORT" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" parent="1" vertex="1">

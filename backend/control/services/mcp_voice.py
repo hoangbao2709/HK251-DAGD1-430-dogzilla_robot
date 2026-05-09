@@ -451,7 +451,7 @@ def parse_robot_addr(addr: str) -> Tuple[str, str, str]:
 
 def build_mcp_server_script_path() -> str:
     base_dir = Path(settings.BASE_DIR)
-    script_path = base_dir / "mcp-calculator" / "robot_mcp_server.py"
+    script_path = base_dir / "control" / "services" / "robot_mcp_server.py"
 
     if not script_path.exists():
         raise FileNotFoundError(f"Khong tim thay MCP server script: {script_path}")
@@ -515,19 +515,24 @@ async def _call_mcp_tool(
         }
 
 
-def process_text_command(robot_addr: str, text: str) -> Dict[str, Any]:
+def execute_mcp_tool(
+    *,
+    robot_addr: str,
+    text: str,
+    tool_name: str,
+    arguments: Dict[str, Any],
+    mapping: Dict[str, Any],
+) -> Dict[str, Any]:
     if not robot_addr:
         raise ValueError("robot_addr is required")
-    if not text or not text.strip():
-        raise ValueError("text is required")
+    if not tool_name:
+        raise ValueError("tool_name is required")
 
-    tool_name, arguments, mapping = map_text_to_tool(text)
     logger.info(
-        "Mapped MCP voice command | tool=%s | args=%s | matched=%s | normalized=%s",
+        "Executing planned MCP tool | tool=%s | args=%s | source=%s",
         tool_name,
         arguments,
-        mapping.get("matched_phrase"),
-        mapping.get("normalized_text"),
+        mapping.get("source"),
     )
 
     return asyncio.run(
