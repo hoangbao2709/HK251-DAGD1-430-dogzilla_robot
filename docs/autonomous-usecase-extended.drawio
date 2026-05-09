@@ -1,134 +1,187 @@
-<mxfile host="app.diagrams.net">
-  <diagram id="autonomous-usecase-extended" name="Autonomous Use Case Extended">
-    <mxGraphModel dx="1200" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1350" pageHeight="1200" math="0" shadow="0">
-      <root>
-        <mxCell id="0"/>
-        <mxCell id="1" parent="0"/>
-        <mxCell id="system" value="Web Robot Control System" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=12;verticalAlign=top;spacingTop=12;" parent="1" vertex="1">
-          <mxGeometry x="220" y="40" width="1040" height="1080" as="geometry"/>
-        </mxCell>
-        <mxCell id="user" value="User" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;" parent="1" vertex="1">
-          <mxGeometry x="75" y="500" width="40" height="80" as="geometry"/>
-        </mxCell>
-
-        <mxCell id="uc_register" value="Register" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">
-          <mxGeometry x="360" y="95" width="150" height="70" as="geometry"/>
-        </mxCell>
-        <mxCell id="uc_login" value="Login/Logout" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">
-          <mxGeometry x="360" y="185" width="150" height="70" as="geometry"/>
-        </mxCell>
-        <mxCell id="uc_manage_robot" value="Manage Robot List" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="1" vertex="1">
-          <mxGeometry x="360" y="285" width="160" height="70" as="geometry"/>
-        </mxCell>
-        <mxCell id="uc_connect" value="Connect to Robot" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="1" vertex="1">
-          <mxGeometry x="360" y="375" width="160" height="70" as="geometry"/>
-        </mxCell>
-        <mxCell id="uc_disconnect" value="Disconnect Robot" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="1" vertex="1">
-          <mxGeometry x="650" y="345" width="160" height="70" as="geometry"/>
-        </mxCell>
-        <mxCell id="uc_status" value="Monitor Robot Status" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" parent="1" vertex="1">
-          <mxGeometry x="350" y="475" width="180" height="70" as="geometry"/>
-        </mxCell>
-        <mxCell id="uc_conn_status" value="View Connection Status" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" parent="1" vertex="1">
-          <mxGeometry x="650" y="455" width="180" height="70" as="geometry"/>
-        </mxCell>
-        <mxCell id="uc_logs" value="View System Logs" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" parent="1" vertex="1">
-          <mxGeometry x="650" y="545" width="170" height="70" as="geometry"/>
-        </mxCell>
-        <mxCell id="uc_video" value="View Live Video Stream" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" parent="1" vertex="1">
-          <mxGeometry x="350" y="575" width="180" height="70" as="geometry"/>
-        </mxCell>
-        <mxCell id="uc_manual" value="Manual Control" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" parent="1" vertex="1">
-          <mxGeometry x="350" y="685" width="170" height="70" as="geometry"/>
-        </mxCell>
-        <mxCell id="uc_autonomous" value="Start Autonomous Task" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" parent="1" vertex="1">
-          <mxGeometry x="345" y="785" width="190" height="75" as="geometry"/>
-        </mxCell>
-        <mxCell id="uc_task_mode" value="Select Task Mode" style="ellipse;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" parent="1" vertex="1">
-          <mxGeometry x="650" y="675" width="170" height="70" as="geometry"/>
-        </mxCell>
-        <mxCell id="uc_target" value="Select Target" style="ellipse;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" parent="1" vertex="1">
-          <mxGeometry x="650" y="765" width="170" height="70" as="geometry"/>
-        </mxCell>
-        <mxCell id="uc_mapping" value="Manage Mapping Localization" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" parent="1" vertex="1">
-          <mxGeometry x="345" y="895" width="190" height="75" as="geometry"/>
-        </mxCell>
-        <mxCell id="uc_scan_qr" value="Scan / Verify QR" style="ellipse;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" parent="1" vertex="1">
-          <mxGeometry x="650" y="855" width="170" height="70" as="geometry"/>
-        </mxCell>
-
-        <mxCell id="uc_obstacle" value="Dynamic Obstacle Avoidance" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;" parent="1" vertex="1">
-          <mxGeometry x="865" y="650" width="210" height="75" as="geometry"/>
-        </mxCell>
-        <mxCell id="uc_lidar_scan" value="Read SLAM / LiDAR Scan" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" parent="1" vertex="1">
-          <mxGeometry x="1035" y="570" width="190" height="65" as="geometry"/>
-        </mxCell>
-        <mxCell id="uc_replan" value="Replan Path" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" parent="1" vertex="1">
-          <mxGeometry x="1045" y="650" width="170" height="65" as="geometry"/>
-        </mxCell>
-        <mxCell id="uc_log_obstacle" value="Log Obstacle Event" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" parent="1" vertex="1">
-          <mxGeometry x="1045" y="730" width="170" height="65" as="geometry"/>
-        </mxCell>
-
-        <mxCell id="uc_qr_localization" value="QR Code Localization" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;" parent="1" vertex="1">
-          <mxGeometry x="865" y="855" width="200" height="70" as="geometry"/>
-        </mxCell>
-        <mxCell id="uc_qr_pose" value="Estimate QR Pose" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="1" vertex="1">
-          <mxGeometry x="1045" y="830" width="170" height="65" as="geometry"/>
-        </mxCell>
-        <mxCell id="uc_qr_position" value="Show QR Position" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="1" vertex="1">
-          <mxGeometry x="1045" y="910" width="170" height="65" as="geometry"/>
-        </mxCell>
-
-        <mxCell id="uc_ai_voice" value="AI Voice" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;" parent="1" vertex="1">
-          <mxGeometry x="270" y="1000" width="150" height="70" as="geometry"/>
-        </mxCell>
-        <mxCell id="uc_speech_text" value="Speech to Text" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">
-          <mxGeometry x="440" y="1045" width="150" height="60" as="geometry"/>
-        </mxCell>
-        <mxCell id="uc_map_command" value="Map Voice Command" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">
-          <mxGeometry x="610" y="1045" width="170" height="60" as="geometry"/>
-        </mxCell>
-        <mxCell id="uc_execute_tool" value="Execute Robot Tool" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">
-          <mxGeometry x="800" y="1045" width="170" height="60" as="geometry"/>
-        </mxCell>
-
-        <mxCell id="note_obstacle" value="Dynamic obstacle avoidance uses SLAM/LiDAR scan points, replans when needed, and logs obstacle_detected events." style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;darkOpacity=0.05;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;" parent="1" vertex="1">
-          <mxGeometry x="1015" y="1015" width="210" height="70" as="geometry"/>
-        </mxCell>
-
-        <mxCell id="e_user_register" style="endArrow=none;html=1;rounded=0;" parent="1" source="user" target="uc_register" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e_user_login" style="endArrow=none;html=1;rounded=0;" parent="1" source="user" target="uc_login" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e_user_manage_robot" style="endArrow=none;html=1;rounded=0;" parent="1" source="user" target="uc_manage_robot" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e_user_connect" style="endArrow=none;html=1;rounded=0;" parent="1" source="user" target="uc_connect" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e_user_status" style="endArrow=none;html=1;rounded=0;" parent="1" source="user" target="uc_status" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e_user_video" style="endArrow=none;html=1;rounded=0;" parent="1" source="user" target="uc_video" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e_user_manual" style="endArrow=none;html=1;rounded=0;" parent="1" source="user" target="uc_manual" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e_user_autonomous" style="endArrow=none;html=1;rounded=0;" parent="1" source="user" target="uc_autonomous" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e_user_mapping" style="endArrow=none;html=1;rounded=0;" parent="1" source="user" target="uc_mapping" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e_user_voice" style="endArrow=none;html=1;rounded=0;" parent="1" source="user" target="uc_ai_voice" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-
-        <mxCell id="e_connect_disconnect" value="&lt;&lt;extend&gt;&gt;" style="endArrow=open;html=1;dashed=1;rounded=0;fontSize=10;" parent="1" source="uc_disconnect" target="uc_connect" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e_status_conn" value="&lt;&lt;include&gt;&gt;" style="endArrow=open;html=1;dashed=1;rounded=0;fontSize=10;" parent="1" source="uc_status" target="uc_conn_status" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e_status_logs" value="&lt;&lt;include&gt;&gt;" style="endArrow=open;html=1;dashed=1;rounded=0;fontSize=10;" parent="1" source="uc_status" target="uc_logs" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e_auto_task_mode" value="&lt;&lt;include&gt;&gt;" style="endArrow=open;html=1;dashed=1;rounded=0;fontSize=10;" parent="1" source="uc_autonomous" target="uc_task_mode" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e_auto_target" value="&lt;&lt;include&gt;&gt;" style="endArrow=open;html=1;dashed=1;rounded=0;fontSize=10;" parent="1" source="uc_autonomous" target="uc_target" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e_auto_scan_qr" value="&lt;&lt;include&gt;&gt;" style="endArrow=open;html=1;dashed=1;rounded=0;fontSize=10;" parent="1" source="uc_autonomous" target="uc_scan_qr" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e_auto_obstacle" value="&lt;&lt;include&gt;&gt;" style="endArrow=open;html=1;dashed=1;rounded=0;fontSize=10;" parent="1" source="uc_autonomous" target="uc_obstacle" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e_mapping_scan_qr" value="&lt;&lt;include&gt;&gt;" style="endArrow=open;html=1;dashed=1;rounded=0;fontSize=10;" parent="1" source="uc_mapping" target="uc_scan_qr" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e_mapping_qr_loc" value="&lt;&lt;include&gt;&gt;" style="endArrow=open;html=1;dashed=1;rounded=0;fontSize=10;" parent="1" source="uc_mapping" target="uc_qr_localization" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e_qr_scan" value="&lt;&lt;include&gt;&gt;" style="endArrow=open;html=1;dashed=1;rounded=0;fontSize=10;" parent="1" source="uc_qr_localization" target="uc_scan_qr" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e_qr_pose" value="&lt;&lt;include&gt;&gt;" style="endArrow=open;html=1;dashed=1;rounded=0;fontSize=10;" parent="1" source="uc_qr_localization" target="uc_qr_pose" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e_qr_position" value="&lt;&lt;include&gt;&gt;" style="endArrow=open;html=1;dashed=1;rounded=0;fontSize=10;" parent="1" source="uc_qr_localization" target="uc_qr_position" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e_ob_lidar" value="&lt;&lt;include&gt;&gt;" style="endArrow=open;html=1;dashed=1;rounded=0;fontSize=10;" parent="1" source="uc_obstacle" target="uc_lidar_scan" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e_ob_replan" value="&lt;&lt;include&gt;&gt;" style="endArrow=open;html=1;dashed=1;rounded=0;fontSize=10;" parent="1" source="uc_obstacle" target="uc_replan" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e_ob_log" value="&lt;&lt;include&gt;&gt;" style="endArrow=open;html=1;dashed=1;rounded=0;fontSize=10;" parent="1" source="uc_obstacle" target="uc_log_obstacle" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e_voice_speech" value="&lt;&lt;include&gt;&gt;" style="endArrow=open;html=1;dashed=1;rounded=0;fontSize=10;" parent="1" source="uc_ai_voice" target="uc_speech_text" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e_voice_map" value="&lt;&lt;include&gt;&gt;" style="endArrow=open;html=1;dashed=1;rounded=0;fontSize=10;" parent="1" source="uc_ai_voice" target="uc_map_command" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e_voice_execute" value="&lt;&lt;include&gt;&gt;" style="endArrow=open;html=1;dashed=1;rounded=0;fontSize=10;" parent="1" source="uc_ai_voice" target="uc_execute_tool" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e_voice_manual" value="&lt;&lt;extend&gt;&gt;" style="endArrow=open;html=1;dashed=1;rounded=0;fontSize=10;" parent="1" source="uc_ai_voice" target="uc_manual" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e_voice_auto" value="&lt;&lt;extend&gt;&gt;" style="endArrow=open;html=1;dashed=1;rounded=0;fontSize=10;" parent="1" source="uc_ai_voice" target="uc_autonomous" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
-      </root>
-    </mxGraphModel>
-  </diagram>
+<mxfile host="65bd71144e">
+    <diagram id="autonomous-usecase-extended" name="Autonomous Use Case Extended">
+        <mxGraphModel dx="1200" dy="1302" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1350" pageHeight="1200" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="system" value="Web Robot Control System" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;fontSize=12;verticalAlign=top;spacingTop=12;" parent="1" vertex="1">
+                    <mxGeometry x="220" y="40" width="1040" height="1080" as="geometry"/>
+                </mxCell>
+                <mxCell id="user" value="User" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;" parent="1" vertex="1">
+                    <mxGeometry x="75" y="500" width="40" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc_register" value="Register" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">
+                    <mxGeometry x="360" y="95" width="150" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc_login" value="Login/Logout" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">
+                    <mxGeometry x="360" y="185" width="150" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc_manage_robot" value="Manage Robot List" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="1" vertex="1">
+                    <mxGeometry x="360" y="285" width="160" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc_connect" value="Connect to Robot" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="1" vertex="1">
+                    <mxGeometry x="360" y="375" width="160" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc_disconnect" value="Disconnect Robot" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="1" vertex="1">
+                    <mxGeometry x="650" y="345" width="160" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc_status" value="Monitor Robot Status" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" parent="1" vertex="1">
+                    <mxGeometry x="350" y="475" width="180" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc_conn_status" value="View Connection Status" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" parent="1" vertex="1">
+                    <mxGeometry x="650" y="455" width="180" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc_logs" value="View System Logs" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" parent="1" vertex="1">
+                    <mxGeometry x="650" y="545" width="170" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc_video" value="View Live Video Stream" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" parent="1" vertex="1">
+                    <mxGeometry x="350" y="575" width="180" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc_manual" value="Manual Control" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" parent="1" vertex="1">
+                    <mxGeometry x="350" y="685" width="170" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc_autonomous" value="Start Autonomous Task" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" parent="1" vertex="1">
+                    <mxGeometry x="345" y="785" width="190" height="75" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc_task_mode" value="Select Task Mode" style="ellipse;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" parent="1" vertex="1">
+                    <mxGeometry x="650" y="675" width="170" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc_target" value="Select Target" style="ellipse;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" parent="1" vertex="1">
+                    <mxGeometry x="650" y="765" width="170" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc_mapping" value="Manage Mapping Localization" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" parent="1" vertex="1">
+                    <mxGeometry x="345" y="895" width="190" height="75" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc_scan_qr" value="Scan / Verify QR" style="ellipse;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" parent="1" vertex="1">
+                    <mxGeometry x="650" y="855" width="170" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc_obstacle" value="Dynamic Obstacle Avoidance" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="865" y="650" width="210" height="75" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc_lidar_scan" value="Read SLAM / LiDAR Scan" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" parent="1" vertex="1">
+                    <mxGeometry x="1035" y="570" width="190" height="65" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc_replan" value="Replan Path" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" parent="1" vertex="1">
+                    <mxGeometry x="1045" y="650" width="170" height="65" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc_log_obstacle" value="Log Obstacle Event" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" parent="1" vertex="1">
+                    <mxGeometry x="1045" y="730" width="170" height="65" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc_qr_localization" value="QR Code Localization" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="865" y="855" width="200" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc_qr_pose" value="Estimate QR Pose" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="1" vertex="1">
+                    <mxGeometry x="1045" y="830" width="170" height="65" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc_qr_position" value="Show QR Position" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="1" vertex="1">
+                    <mxGeometry x="1045" y="910" width="170" height="65" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc_ai_voice" value="AI Voice" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="270" y="1000" width="150" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc_speech_text" value="Speech to Text" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">
+                    <mxGeometry x="440" y="1045" width="150" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc_map_command" value="Map Voice Command" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">
+                    <mxGeometry x="610" y="1045" width="170" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="uc_execute_tool" value="Execute Robot Tool" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">
+                    <mxGeometry x="800" y="1045" width="170" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="note_obstacle" value="Dynamic obstacle avoidance uses SLAM/LiDAR scan points, replans when needed, and logs obstacle_detected events." style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;darkOpacity=0.05;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="1015" y="1015" width="210" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_user_register" style="endArrow=none;html=1;rounded=0;" parent="1" source="user" target="uc_register" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_user_login" style="endArrow=none;html=1;rounded=0;" parent="1" source="user" target="uc_login" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_user_manage_robot" style="endArrow=none;html=1;rounded=0;" parent="1" source="user" target="uc_manage_robot" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_user_connect" style="endArrow=none;html=1;rounded=0;" parent="1" source="user" target="uc_connect" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_user_status" style="endArrow=none;html=1;rounded=0;" parent="1" source="user" target="uc_status" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_user_video" style="endArrow=none;html=1;rounded=0;" parent="1" source="user" target="uc_video" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_user_manual" style="endArrow=none;html=1;rounded=0;" parent="1" source="user" target="uc_manual" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_user_autonomous" style="endArrow=none;html=1;rounded=0;" parent="1" source="user" target="uc_autonomous" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_user_mapping" style="endArrow=none;html=1;rounded=0;" parent="1" source="user" target="uc_mapping" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_user_voice" style="endArrow=none;html=1;rounded=0;" parent="1" source="user" target="uc_ai_voice" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_connect_disconnect" value="&lt;&lt;extend&gt;&gt;" style="endArrow=open;html=1;dashed=1;rounded=0;fontSize=10;" parent="1" source="uc_disconnect" target="uc_connect" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_status_conn" value="&lt;&lt;include&gt;&gt;" style="endArrow=open;html=1;dashed=1;rounded=0;fontSize=10;" parent="1" source="uc_status" target="uc_conn_status" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_status_logs" value="&lt;&lt;include&gt;&gt;" style="endArrow=open;html=1;dashed=1;rounded=0;fontSize=10;" parent="1" source="uc_status" target="uc_logs" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_auto_task_mode" value="&lt;&lt;include&gt;&gt;" style="endArrow=open;html=1;dashed=1;rounded=0;fontSize=10;" parent="1" source="uc_autonomous" target="uc_task_mode" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_auto_target" value="&lt;&lt;include&gt;&gt;" style="endArrow=open;html=1;dashed=1;rounded=0;fontSize=10;" parent="1" source="uc_autonomous" target="uc_target" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_auto_scan_qr" value="&lt;&lt;include&gt;&gt;" style="endArrow=open;html=1;dashed=1;rounded=0;fontSize=10;" parent="1" source="uc_autonomous" target="uc_scan_qr" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_auto_obstacle" value="&lt;&lt;include&gt;&gt;" style="endArrow=open;html=1;dashed=1;rounded=0;fontSize=10;" parent="1" source="uc_autonomous" target="uc_obstacle" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_mapping_scan_qr" value="&lt;&lt;include&gt;&gt;" style="endArrow=open;html=1;dashed=1;rounded=0;fontSize=10;" parent="1" source="uc_mapping" target="uc_scan_qr" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_mapping_qr_loc" value="&lt;&lt;include&gt;&gt;" style="endArrow=open;html=1;dashed=1;rounded=0;fontSize=10;" parent="1" source="uc_mapping" target="uc_qr_localization" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_qr_scan" value="&lt;&lt;include&gt;&gt;" style="endArrow=open;html=1;dashed=1;rounded=0;fontSize=10;" parent="1" source="uc_qr_localization" target="uc_scan_qr" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_qr_pose" value="&lt;&lt;include&gt;&gt;" style="endArrow=open;html=1;dashed=1;rounded=0;fontSize=10;" parent="1" source="uc_qr_localization" target="uc_qr_pose" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_qr_position" value="&lt;&lt;include&gt;&gt;" style="endArrow=open;html=1;dashed=1;rounded=0;fontSize=10;" parent="1" source="uc_qr_localization" target="uc_qr_position" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_ob_lidar" value="&lt;&lt;include&gt;&gt;" style="endArrow=open;html=1;dashed=1;rounded=0;fontSize=10;" parent="1" source="uc_obstacle" target="uc_lidar_scan" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_ob_replan" value="&lt;&lt;include&gt;&gt;" style="endArrow=open;html=1;dashed=1;rounded=0;fontSize=10;" parent="1" source="uc_obstacle" target="uc_replan" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_ob_log" value="&lt;&lt;include&gt;&gt;" style="endArrow=open;html=1;dashed=1;rounded=0;fontSize=10;" parent="1" source="uc_obstacle" target="uc_log_obstacle" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_voice_speech" value="&lt;&lt;include&gt;&gt;" style="endArrow=open;html=1;dashed=1;rounded=0;fontSize=10;" parent="1" source="uc_ai_voice" target="uc_speech_text" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_voice_map" value="&lt;&lt;include&gt;&gt;" style="endArrow=open;html=1;dashed=1;rounded=0;fontSize=10;" parent="1" source="uc_ai_voice" target="uc_map_command" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_voice_execute" value="&lt;&lt;include&gt;&gt;" style="endArrow=open;html=1;dashed=1;rounded=0;fontSize=10;" parent="1" source="uc_ai_voice" target="uc_execute_tool" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_voice_manual" value="&lt;&lt;extend&gt;&gt;" style="endArrow=open;html=1;dashed=1;rounded=0;fontSize=10;" parent="1" source="uc_ai_voice" target="uc_manual" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_voice_auto" value="&lt;&lt;extend&gt;&gt;" style="endArrow=open;html=1;dashed=1;rounded=0;fontSize=10;" parent="1" source="uc_ai_voice" target="uc_autonomous" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
 </mxfile>

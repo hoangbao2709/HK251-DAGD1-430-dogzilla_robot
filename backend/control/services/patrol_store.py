@@ -9,6 +9,36 @@ _lock = threading.Lock()
 _current_missions: Dict[str, PatrolMission] = {}
 
 
+def _coerce_timestamp(value) -> float | None:
+    if value in (None, ""):
+        return None
+
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        pass
+
+    if isinstance(value, str):
+        raw = value.strip()
+        if raw.endswith("Z"):
+            raw = f"{raw[:-1]}+00:00"
+        for candidate in (raw, raw.replace(" ", "T", 1)):
+            try:
+                parsed = datetime.datetime.fromisoformat(candidate)
+                return parsed.timestamp()
+            except ValueError:
+                continue
+
+    return None
+
+
+def _timestamp_date(value) -> datetime.date | None:
+    timestamp = _coerce_timestamp(value)
+    if timestamp is None:
+        return None
+    return datetime.datetime.fromtimestamp(timestamp).date()
+
+
 def set_current_mission(robot_id: str, mission: Optional[PatrolMission]) -> None:
     with _lock:
         if mission is None:
@@ -58,6 +88,8 @@ def mission_to_payload(mission: PatrolMission) -> dict:
 
 
 def payload_to_mission(payload: dict) -> PatrolMission:
+    started_at = _coerce_timestamp(payload.get("started_at")) or 0.0
+    finished_at = _coerce_timestamp(payload.get("finished_at"))
     mission = PatrolMission(
         mission_id=str(payload.get("mission_id") or ""),
         robot_id=str(payload.get("robot_id") or ""),
@@ -68,8 +100,8 @@ def payload_to_mission(payload: dict) -> PatrolMission:
         skip_on_fail=bool(payload.get("skip_on_fail", True)),
         status=str(payload.get("status") or "IDLE"),
         current_index=int(payload.get("current_index") or 0),
-        started_at=float(payload.get("started_at") or 0.0),
-        finished_at=payload.get("finished_at"),
+        started_at=started_at,
+        finished_at=finished_at,
         total_distance_m=payload.get("total_distance_m"),
         cpu_samples=list(payload.get("cpu_samples") or []),
         battery_samples=list(payload.get("battery_samples") or []),
@@ -81,8 +113,8 @@ def payload_to_mission(payload: dict) -> PatrolMission:
             point=str(item.get("point") or ""),
             status=str(item.get("status") or "PENDING"),
             attempts=int(item.get("attempts") or 0),
-            started_at=item.get("started_at"),
-            finished_at=item.get("finished_at"),
+            started_at=_coerce_timestamp(item.get("started_at")),
+            finished_at=_coerce_timestamp(item.get("finished_at")),
             reach_time_sec=item.get("reach_time_sec"),
             distance_on_finish=item.get("distance_on_finish"),
             message=str(item.get("message") or ""),
@@ -124,22 +156,30 @@ def get_history(robot_id: str, date_filter: str | None = None) -> List[PatrolMis
         robot_id=robot_id
     ).order_by("-finished_at", "-started_at")
 
-    if date_filter == "all":
-        today = None
-    elif date_filter == "today" or not date_filter:
-        today = datetime.date.today()
+    normalized_filter = str(date_filter or "all").strip().lower()
+    if normalized_filter in {"", "all", "alltime", "all_time"}:
+        target_date = None
+    elif normalized_filter == "today":
+        target_date = datetime.date.today()
     else:
         try:
-            today = datetime.datetime.strptime(date_filter, "%Y-%m-%d").date()
+            target_date = datetime.datetime.strptime(normalized_filter, "%Y-%m-%d").date()
         except ValueError:
-            today = datetime.date.today()
+            target_date = datetime.date.today()
 
-    if today:
-        start_ts = datetime.datetime.combine(today, datetime.time.min).timestamp()
-        end_ts   = datetime.datetime.combine(today, datetime.time.max).timestamp()
-        records = records.filter(
-            started_at__gte=start_ts,
-            started_at__lte=end_ts,
-        )
+    missions = [payload_to_mission(record.payload) for record in records]
+    if target_date:
+        missions = [
+            mission
+            for mission in missions
+            if _timestamp_date(mission.started_at) == target_date
+        ]
 
-    return [payload_to_mission(record.payload) for record in records]
+    return sorted(
+        missions,
+        key=lambda mission: (
+            _coerce_timestamp(mission.finished_at) or 0.0,
+            _coerce_timestamp(mission.started_at) or 0.0,
+        ),
+        reverse=True,
+    )

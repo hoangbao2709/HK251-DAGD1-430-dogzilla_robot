@@ -38,6 +38,7 @@ from .views import (
     GoToPointView,
     GoToMarkerView,
     ManualGoalView,
+    PatrolUIActionHistoryView,
     PatrolStartView,
     PatrolStopView,
     PatrolPauseView,
@@ -45,6 +46,7 @@ from .views import (
     PatrolStatusView,
     PatrolHistoryView,
     QRMetricView,   
+    QRLocalizationMetricView,
     VoiceTTSView,
 )
 
@@ -53,6 +55,7 @@ from .views import (
 urlpatterns = [
     path("api/voice/tts/", VoiceTTSView.as_view(), name="voice-tts"),
     path("api/robots/<str:robot_id>/qr-metrics/", QRMetricView.as_view(), name="robot-qr-metrics"),
+    path("api/robots/<str:robot_id>/metrics/qr-localization/", QRLocalizationMetricView.as_view(), name="robot-qr-localization-metrics"),
     path("api/robots/<str:robot_id>/network/metrics/", NetworkMetricsView.as_view(), name="robot-network-metrics"),
     path("api/robots/<str:robot_id>/metrics/system/", SystemMetricHistoryView.as_view(), name="robot-system-metrics"),
     path("api/robots/<str:robot_id>/analytics/navigation/", NavigationAnalyticsView.as_view(), name="robot-navigation-analytics"),
@@ -91,6 +94,7 @@ urlpatterns = [
     path("api/robots/<str:robot_id>/go-to-point/", GoToPointView.as_view(), name="robot-go-to-point"),
     path("api/robots/<str:robot_id>/go-to-marker/", GoToMarkerView.as_view(), name="robot-go-to-marker"),
     path("api/robots/<str:robot_id>/manual-goal/", ManualGoalView.as_view(), name="robot-manual-goal"),
+    path("api/robots/<str:robot_id>/patrol/ui-action/", PatrolUIActionHistoryView.as_view(), name="robot-patrol-ui-action"),
     path("api/robots/<str:robot_id>/patrol/start/", PatrolStartView.as_view(), name="robot-patrol-start"),
     path("api/robots/<str:robot_id>/patrol/stop/", PatrolStopView.as_view(), name="robot-patrol-stop"),
     path("api/robots/<str:robot_id>/patrol/pause/", PatrolPauseView.as_view(), name="robot-patrol-pause"),

@@ -1,17 +1,20 @@
 import json
 import math
-from datetime import timedelta
+from datetime import datetime, timedelta
 from unittest.mock import patch
 
 from django.test import SimpleTestCase, TestCase
 from django.utils import timezone
 
-from .models import ActionEvent, Robot
+from .models import ActionEvent, MetricSystem, QRLocalizationMetric, Robot, VoiceConversationMetric
 from .services.patrol_manager import PatrolManager
 from .services.patrol_store import append_history, get_history
 from .services.patrol_types import PatrolMission, PatrolPointResult
 from .services.ros import ROSClient
-from .services.slam_payload import build_slam_ui_state
+from .services.qr_detect import enrich_detection_result_with_lidar
+from .services.models import QRItem, DetectionResult
+from .services.qr_localization_metrics import create_qr_localization_metric
+from .services.slam_payload import build_slam_ui_state, find_nearest_obstacle_at_bearing
 
 
 class SlamPayloadTests(SimpleTestCase):
@@ -51,6 +54,68 @@ class SlamPayloadTests(SimpleTestCase):
         self.assertEqual(payload["paths"]["a_star"][1]["x"], 1.0)
         self.assertAlmostEqual(payload["nearest_obstacle_ahead"]["x"], 1.0)
         self.assertAlmostEqual(payload["nearest_obstacle_ahead"]["dist"], 1.0)
+
+    def test_finds_lidar_point_near_qr_bearing(self):
+        point = find_nearest_obstacle_at_bearing(
+            {"ok": True, "x": 0.0, "y": 0.0, "theta": 0.0},
+            [
+                {"x": 1.0, "y": 0.5},
+                {"x": 1.2, "y": -0.1},
+                {"x": 0.3, "y": 1.0},
+            ],
+            bearing_rad=0.0,
+            half_fov_rad=0.12,
+        )
+
+        self.assertIsNotNone(point)
+        assert point is not None
+        self.assertAlmostEqual(point["x"], 1.2)
+        self.assertAlmostEqual(point["dist"], math.hypot(1.2, -0.1))
+
+    @patch("control.services.qr_detect.ROSClient")
+    def test_enrich_detection_result_with_lidar_replaces_range_values(self, ros_client_cls):
+        ros_client = ros_client_cls.return_value
+        ros_client.get_slam_state_for_ui.return_value = {
+            "pose": {"ok": True, "x": 0.0, "y": 0.0, "theta": 0.0},
+            "scan": {
+                "ok": True,
+                "points": [
+                    {"x": 0.4, "y": 0.1},
+                    {"x": 1.2, "y": 0.0},
+                ],
+            },
+        }
+
+        result = DetectionResult(
+            ok=True,
+            items=[
+                QRItem(
+                    text="QR-A",
+                    qr_type="QRCODE",
+                    angle_deg=0.0,
+                    angle_rad=0.0,
+                    distance_m=0.45,
+                    lateral_x_m=0.0,
+                    forward_z_m=0.45,
+                    target_x_m=0.0,
+                    target_z_m=0.8,
+                    target_distance_m=0.8,
+                    direction="center",
+                    center_px=(100, 100),
+                    corners=[[0, 0], [1, 0], [1, 1], [0, 1]],
+                ),
+            ],
+        )
+
+        enriched = enrich_detection_result_with_lidar("robot-qr", result)
+        item = enriched.items[0]
+
+        self.assertAlmostEqual(item.camera_distance_m, 0.45)
+        self.assertAlmostEqual(item.lidar_distance_m, 1.2)
+        self.assertAlmostEqual(item.distance_m, 1.2)
+        self.assertAlmostEqual(item.forward_z_m, 1.2)
+        self.assertAlmostEqual(item.lateral_x_m, 0.0)
+        self.assertAlmostEqual(item.target_distance_m, 1.55)
 
 
 class ROSClientStateSelectionTests(SimpleTestCase):
@@ -109,7 +174,7 @@ class PointFromObstacleViewTests(TestCase):
 
         response = self.client.post(
             "/control/api/robots/robot-a/points/from-obstacle/",
-            data=json.dumps({"name": "QR-A"}),
+            data=json.dumps({"name": "QR-A", "qr_detected": True}),
             content_type="application/json",
         )
 
@@ -120,6 +185,65 @@ class PointFromObstacleViewTests(TestCase):
         self.assertAlmostEqual(kwargs["x"], 1.0)
         self.assertAlmostEqual(kwargs["y"], 2.0)
         self.assertAlmostEqual(kwargs["yaw"], math.pi / 2, places=5)
+
+    @patch("control.views.ROSClient")
+    def test_rejects_save_when_qr_is_not_detected_and_logs_event(self, ros_client_cls):
+        ros_client = ros_client_cls.return_value
+
+        response = self.client.post(
+            "/control/api/robots/robot-a/points/from-obstacle/",
+            data=json.dumps({"name": "POINT", "qr_detected": False}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["reason"], "qr_not_detected")
+        ros_client.create_point.assert_not_called()
+        self.assertEqual(
+            ActionEvent.objects.filter(robot_id="robot-a", event="qr_point_save", status=ActionEvent.Status.FAILED).count(),
+            1,
+        )
+
+
+class TextCommandMetricTests(TestCase):
+    @patch("control.views.execute_mcp_tool")
+    @patch("control.views.map_text_with_openrouter")
+    def test_persists_voice_conversation_metric_on_success(self, map_text_mock, execute_tool_mock):
+        map_text_mock.return_value = {
+            "actions": [
+                {
+                    "tool": "play_behavior",
+                    "arguments": {"name": "Swing"},
+                }
+            ],
+            "reply_text": "Em đã nhận lệnh.",
+        }
+        execute_tool_mock.return_value = {
+            "tool": "play_behavior",
+            "arguments": {"name": "Swing"},
+            "status": "ok",
+        }
+
+        response = self.client.post(
+            "/control/api/robots/robot-voice/command/text/",
+            data=json.dumps({"addr": "192.168.1.10", "text": "high Swing"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(VoiceConversationMetric.objects.filter(robot_id="robot-voice").count(), 1)
+
+        row = VoiceConversationMetric.objects.get(robot_id="robot-voice")
+        self.assertEqual(row.input_text, "high Swing")
+        self.assertEqual(row.robot_addr, "192.168.1.10")
+        self.assertEqual(row.planner_source, "openrouter")
+        self.assertTrue(row.success)
+        self.assertFalse(row.dry_run)
+        self.assertGreaterEqual(row.response_time_ms or 0.0, 0.0)
+        self.assertIn("Swing", row.reply_text)
+        self.assertEqual(row.result_json["tool"], "play_behavior")
+        self.assertEqual(row.plan_json["actions"][0]["tool"], "play_behavior")
+        self.assertIn("reply_text", row.response_json)
 
 
 class SessionSummaryTests(TestCase):
@@ -160,6 +284,164 @@ class SessionSummaryTests(TestCase):
         self.assertTrue(response.data["ok"])
         self.assertEqual(response.data["obstacle_events_today"], 1)
         self.assertEqual(response.data["robot_id"], "robot-a")
+
+    def test_action_events_keep_only_latest_twenty_per_robot(self):
+        robot = Robot.objects.create(id="robot-events-prune", name="Robot Events")
+
+        for i in range(25):
+            ActionEvent.objects.create(
+                robot=robot,
+                event=f"event-{i:02d}",
+                severity=ActionEvent.Severity.INFO,
+                status=ActionEvent.Status.SUCCESS,
+            )
+
+        events = list(
+            ActionEvent.objects.filter(robot=robot).order_by("timestamp", "id")
+        )
+        self.assertEqual(len(events), 20)
+        self.assertEqual(events[0].event, "event-05")
+        self.assertEqual(events[-1].event, "event-24")
+
+
+class MetricFallbackTests(TestCase):
+    def test_status_uses_local_metric_system_when_robot_is_not_connected(self):
+        robot = Robot.objects.create(id="robot-metric", name="Metric Robot")
+        MetricSystem.objects.create(
+            robot=robot,
+            cpu=42.0,
+            battery=77.0,
+            temperature=36.5,
+            ram=61.0,
+        )
+
+        with patch("control.views.ROSClient.get_status", return_value={}):
+            response = self.client.get("/control/api/robots/robot-metric/status/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data["robot_connected"])
+        self.assertEqual(response.data["battery"], 77.0)
+        self.assertEqual(response.data["metric_system_latest"]["battery"], 77.0)
+        self.assertEqual(response.data["telemetry"]["battery"], 77.0)
+        self.assertEqual(response.data["telemetry"]["system"]["cpu_percent"], 42.0)
+        self.assertEqual(response.data["telemetry"]["system"]["temperature"], 36.5)
+        self.assertEqual(response.data["telemetry"]["system"]["ram"], "61.0%")
+
+    def test_metric_system_keeps_only_latest_fifty_samples(self):
+        robot = Robot.objects.create(id="robot-metric-prune", name="Metric Prune")
+
+        for i in range(55):
+            MetricSystem.objects.create(
+                robot=robot,
+                cpu=float(i),
+                battery=80.0,
+                temperature=30.0,
+                ram=40.0,
+            )
+
+        rows = list(MetricSystem.objects.order_by("created_at", "id"))
+        self.assertEqual(len(rows), 50)
+        self.assertEqual(rows[0].cpu, 5.0)
+        self.assertEqual(rows[-1].cpu, 54.0)
+
+
+class QRLocalizationMetricTests(TestCase):
+    def test_creates_manual_metric_with_errors(self):
+        body = {
+            "label": "QR-A",
+            "trial": "angle_10",
+            "ground_truth": {
+                "distance_m": 1.0,
+                "angle_deg": 10.0,
+                "x": 2.0,
+                "y": 3.0,
+            },
+            "estimate": {
+                "detected": True,
+                "qr_text": "A",
+                "distance_m": 1.08,
+                "lidar_distance_m": 1.08,
+                "angle_deg": 13.0,
+                "x": 2.1,
+                "y": 3.2,
+            },
+            "nav": {
+                "goal_x": 2.0,
+                "goal_y": 3.0,
+                "stop_x": 2.3,
+                "stop_y": 3.4,
+            },
+            "processing_time_ms": 31.5,
+            "qr_detect_time_ms": 18.2,
+            "docker_save_time_ms": 44.0,
+        }
+
+        row = create_qr_localization_metric("robot-qr-metric", body)
+
+        self.assertEqual(row.label, "QR-A")
+        self.assertTrue(row.detected)
+        self.assertAlmostEqual(row.distance_error_m, 0.08)
+        self.assertAlmostEqual(row.angle_error_deg, 3.0)
+        self.assertAlmostEqual(row.qr_world_error_m, math.hypot(0.1, 0.2))
+        self.assertAlmostEqual(row.nav_error_m, 0.5)
+        self.assertAlmostEqual(row.qr_detect_time_ms, 18.2)
+        self.assertAlmostEqual(row.docker_save_time_ms, 44.0)
+
+    def test_qr_localization_metric_api_persists_row(self):
+        response = self.client.post(
+            "/control/api/robots/robot-qr-api/metrics/qr-localization/",
+            data=json.dumps(
+                {
+                    "label": "QR-B",
+                    "ground_truth": {"distance_m": 0.8, "angle_deg": 0},
+                    "estimate": {
+                        "detected": True,
+                        "distance_m": 0.7,
+                        "lidar_distance_m": 0.7,
+                        "angle_deg": -2,
+                    },
+                    "qr_detect_time_ms": 12.0,
+                    "docker_save_time_ms": 30.0,
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(QRLocalizationMetric.objects.filter(robot_id="robot-qr-api").count(), 1)
+        self.assertAlmostEqual(response.data["data"]["distance"]["error_m"], 0.1)
+        self.assertAlmostEqual(response.data["data"]["timing"]["qr_detect_time_ms"], 12.0)
+        self.assertAlmostEqual(response.data["data"]["timing"]["docker_save_time_ms"], 30.0)
+
+    @patch("control.services.qr_localization_metrics.ROSClient")
+    def test_metric_can_measure_docker_point_save(self, ros_client_cls):
+        ros_client = ros_client_cls.return_value
+        ros_client.create_point.return_value = {"success": True}
+
+        row = create_qr_localization_metric(
+            "robot-qr-save",
+            {
+                "label": "QR-SAVE",
+                "estimate": {"detected": True, "x": 1.0, "y": 2.0},
+                "save_point": {
+                    "enabled": True,
+                    "name": "QR-SAVE",
+                    "x": 1.0,
+                    "y": 2.0,
+                    "yaw": 0.5,
+                },
+            },
+        )
+
+        ros_client.create_point.assert_called_once_with(
+            name="QR-SAVE",
+            x=1.0,
+            y=2.0,
+            yaw=0.5,
+        )
+        self.assertTrue(row.docker_save_success)
+        self.assertIsNotNone(row.docker_save_time_ms)
+        self.assertGreaterEqual(row.docker_save_time_ms, 0.0)
 
 
 class PatrolHistoryTests(TestCase):
@@ -202,6 +484,129 @@ class PatrolHistoryTests(TestCase):
 
         record = PatrolHistory.objects.get(mission_id="patrol_test123")
         self.assertEqual(record.total_distance_m, 12.34)
+
+    def test_all_history_is_not_limited_to_today(self):
+        old_mission = PatrolMission(
+            mission_id="patrol_old",
+            robot_id="robot-history-all",
+            route_name="old_route",
+            points=["A"],
+            status="DONE",
+            started_at=100.0,
+            finished_at=120.0,
+        )
+        today_ts = datetime.combine(datetime.today().date(), datetime.min.time()).timestamp()
+        today_mission = PatrolMission(
+            mission_id="patrol_today",
+            robot_id="robot-history-all",
+            route_name="today_route",
+            points=["B"],
+            status="DONE",
+            started_at=today_ts,
+            finished_at=today_ts + 10,
+        )
+
+        append_history("robot-history-all", old_mission)
+        append_history("robot-history-all", today_mission)
+
+        self.assertEqual(len(get_history("robot-history-all", "all")), 2)
+        self.assertEqual(len(get_history("robot-history-all", "today")), 1)
+
+        response = self.client.get("/control/api/robots/robot-history-all/patrol/history/?date=all")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data["history"]), 2)
+
+    def test_history_accepts_string_timestamps_and_custom_date_filter(self):
+        mission = PatrolMission(
+            mission_id="patrol_string_time",
+            robot_id="robot-history-string",
+            route_name="string_route",
+            points=["A"],
+            status="DONE",
+            started_at=100.0,
+            finished_at=120.0,
+        )
+        append_history("robot-history-string", mission)
+
+        from .models import PatrolHistory
+        from django.db import connection
+
+        record = PatrolHistory.objects.get(mission_id="patrol_string_time")
+        payload = record.payload
+        payload["started_at"] = "2026-05-08 11:06:07"
+        payload["finished_at"] = "2026-05-08 11:08:07"
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE control_patrolhistory
+                SET started_at = %s, finished_at = %s, payload = %s
+                WHERE id = %s
+                """,
+                [
+                    "2026-05-08 11:06:07",
+                    "2026-05-08 11:08:07",
+                    json.dumps(payload),
+                    record.pk,
+                ],
+            )
+
+        history = get_history("robot-history-string", "2026-05-08")
+
+        self.assertEqual(len(history), 1)
+        self.assertEqual(history[0].mission_id, "patrol_string_time")
+        self.assertIsInstance(history[0].started_at, float)
+
+    def test_records_docker_ui_goal_in_patrol_history(self):
+        response = self.client.post(
+            "/control/api/robots/robot-docker-ui/patrol/ui-action/",
+            data=json.dumps(
+                {
+                    "action": "goal",
+                    "x": 1.25,
+                    "y": -0.5,
+                    "yaw": 0.75,
+                    "u": 120,
+                    "v": 80,
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["mission"]["status"], "completed")
+
+        history = get_history("robot-docker-ui", "all")
+        self.assertEqual(len(history), 1)
+        self.assertEqual(history[0].route_name, "docker_ui_goal")
+        self.assertEqual(history[0].status, "DONE")
+        self.assertEqual(history[0].results[0].status, "SUCCESS")
+
+        from .models import PatrolHistory
+
+        record = PatrolHistory.objects.get(mission_id=history[0].mission_id)
+        self.assertEqual(record.route_name, "docker_ui_goal")
+
+    def test_records_docker_ui_initial_pose_in_patrol_history(self):
+        response = self.client.post(
+            "/control/api/robots/robot-docker-ui-init/patrol/ui-action/",
+            data=json.dumps(
+                {
+                    "action": "initial_pose",
+                    "x": -1.0,
+                    "y": 2.5,
+                    "yaw": 1.57,
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+
+        history = get_history("robot-docker-ui-init", "all")
+        self.assertEqual(len(history), 1)
+        self.assertEqual(history[0].route_name, "docker_ui_initial_pose")
+        self.assertEqual(history[0].points[0], "INITPOSE(-1.000,2.500)")
 
 
 class PatrolManagerStopTests(TestCase):
