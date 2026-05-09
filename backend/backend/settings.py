@@ -82,7 +82,7 @@ INSTALLED_APPS = [
     "corsheaders",
     "channels",
 
-    "control",
+    "control.apps.ControlConfig",
     "authapp",
 ]
 

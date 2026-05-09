@@ -54,13 +54,25 @@ class ActionEvent(models.Model):
 
 class PatrolHistory(models.Model):
     mission_id = models.CharField(max_length=64, unique=True, db_index=True)
-    robot = models.ForeignKey(Robot, on_delete=models.CASCADE, related_name="patrol_history")
+    robot = models.ForeignKey(
+        Robot,
+        on_delete=models.CASCADE,
+        related_name="patrol_history",
+    )
     route_name = models.CharField(max_length=128, blank=True, default="")
     status = models.CharField(max_length=32, db_index=True)
+
     started_at = models.FloatField(db_index=True)
     finished_at = models.FloatField(null=True, blank=True, db_index=True)
+
     total_distance_m = models.FloatField(null=True, blank=True)
     payload = models.JSONField(default=dict, blank=True)
+
+    cpu_samples = models.JSONField(default=list, blank=True)
+    battery_samples = models.JSONField(default=list, blank=True)
+    temperature_samples = models.JSONField(default=list, blank=True)
+    ram_samples = models.JSONField(default=list, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 
     class Meta:
@@ -68,3 +80,23 @@ class PatrolHistory(models.Model):
 
     def __str__(self) -> str:
         return f"{self.robot_id} {self.mission_id} {self.status}"
+class MetricSystem(models.Model):
+    robot = models.ForeignKey(
+        Robot,
+        on_delete=models.CASCADE,
+        related_name="system_metrics",
+        null=True,
+        blank=True,
+    )
+    cpu = models.FloatField(null=True, blank=True)
+    battery = models.FloatField(null=True, blank=True)
+    temperature = models.FloatField(null=True, blank=True)
+    ram = models.FloatField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = "metric_system"
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"CPU={self.cpu}, Battery={self.battery}, Temp={self.temperature}, RAM={self.ram}"

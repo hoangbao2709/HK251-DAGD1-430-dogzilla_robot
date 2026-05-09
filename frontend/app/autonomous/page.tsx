@@ -828,8 +828,6 @@ export default function AutonomousControlPage() {
       : null);
     const pointName = (qrText || "POINT").trim() || "POINT";
 
-    // CASE 1: KhĂ´ng cĂ³ obstacle â†’ Attempt tháº¥t báº¡i
-    // CASE 2: Point Ä‘Ă£ tá»“n táº¡i â†’ khĂ´ng tĂ­nh Attempt
     if (savedPoints[pointName]) {
       window.alert(`Diem ${pointName} da ton tai.`);
       return;
@@ -838,10 +836,8 @@ export default function AutonomousControlPage() {
     try {
       setPointActionLoading(true);
 
-      // LÆ°u vĂ o ROS
       await RobotAPI.createPointFromObstacle({ name: pointName });
 
-      // CASE 3: LÆ°u ROS thĂ nh cĂ´ng â†’ Attempt + Success
       await RobotAPI.logQRAttempt({
         name: pointName,
         success: true,
@@ -855,7 +851,6 @@ export default function AutonomousControlPage() {
       if (reason === "no_obstacle") {
         window.alert("Chua co obstacle phia truoc de luu.");
       }
-      // CASE 4: LÆ°u ROS tháº¥t báº¡i â†’ Attempt khĂ´ng thĂ nh cĂ´ng
       await RobotAPI.logQRAttempt({
         name: pointName,
         success: false,
@@ -1165,7 +1160,13 @@ export default function AutonomousControlPage() {
 
   const slamMapSrc = RobotAPI.slamMapUrl(mapReloadKey);
   const lidarActive = Boolean(
-    controlStatus?.lidar_running ?? controlStatus?.lidar?.running ?? false
+    controlStatus?.lidar_running ||
+    controlStatus?.lidar?.running ||
+    slamState?.status?.lidar_running ||
+    slamState?.status?.planner_ok === true ||
+    slamState?.status?.slam_ok === true ||
+    slamState?.pose?.ok === true ||
+    slamState?.scan?.ok === true
   );
   const robotFps = robotStatus?.telemetry?.fps;
   const pointNames = Object.keys(savedPoints || {}).sort();

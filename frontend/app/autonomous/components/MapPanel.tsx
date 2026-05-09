@@ -187,36 +187,6 @@ export function MapPanel({
                 }`}
                 aria-hidden={mapMode !== "navigate"}
               >
-                <button onClick={() => onSetNavPlacementMode("goal")}
-                  tabIndex={mapMode === "navigate" ? 0 : -1}
-                  className={`cursor-pointer rounded-lg px-3 py-2 text-xs font-semibold ${
-                    navPlacementMode === "goal"
-                      ? "bg-emerald-500 text-black"
-                      : "bg-[var(--surface)] text-[var(--foreground)]"
-                  }`}
-                >
-                  Set goal
-                </button>
-
-                <button onClick={() => onSetNavPlacementMode("initialPose")}
-                  tabIndex={mapMode === "navigate" ? 0 : -1}
-                  className={`cursor-pointer rounded-lg px-3 py-2 text-xs font-semibold ${
-                    navPlacementMode === "initialPose"
-                      ? "bg-amber-400 text-black"
-                      : "bg-[var(--surface)] text-[var(--foreground)]"
-                  }`}
-                >
-                  Set initial pose
-                </button>
-
-                <button
-                  onClick={onClearPath}
-                  tabIndex={mapMode === "navigate" ? 0 : -1}
-                  className="cursor-pointer rounded-lg bg-red-500 px-3 py-2 text-xs font-semibold text-white"
-                >
-                  Stop & clear
-                </button>
-
                 {hasPendingPlacement ? (
                   <button
                     onClick={onCancelPlacement}

@@ -37,20 +37,6 @@ def log_obstacle_detected(robot_id: str, distance_m: float) -> ActionEvent:
 
 
 class ROSClient:
-    """
-    Thay vì nói chuyện trực tiếp với ROS2,
-    lớp này gọi HTTP tới các service đang chạy trên robot:
-
-    - Dogzilla control/camera:   http://<host>:9000
-    - QR service:               http://<host>:8888
-    - SLAM/navigation service:  http://<host>:8080
-
-    Robot.addr trong DB vẫn lưu base Dogzilla URL, ví dụ:
-        http://192.168.1.50:9000
-
-    Từ đó class này sẽ tự suy ra host và build các URL còn lại.
-    """
-
     def __init__(self, robot_id: str):
         self.robot_id = robot_id
         self.timeout = getattr(settings, "DOGZILLA_TIMEOUT", 5)
@@ -58,17 +44,10 @@ class ROSClient:
         self.session = requests.Session()
         self.session.trust_env = False
 
-    # ------------------------------------------------------------------
-    # Helpers nội bộ
-    # ------------------------------------------------------------------
     def _get_robot(self) -> Robot:
         return _get_or_create_robot(self.robot_id)
 
     def _get_base_url(self) -> str:
-        """
-        Base URL của Dogzilla server từ Robot.addr.
-        Ví dụ: http://192.168.1.50:9000
-        """
         robot = self._get_robot()
         base = (robot.addr or "").strip().rstrip("/")
         if not base:
@@ -171,13 +150,6 @@ class ROSClient:
     # 1) Connect
     # ------------------------------------------------------------------
     def connect(self, addr: str) -> Dict[str, Any]:
-        """
-        Frontend gửi addr (VD: 'http://192.168.1.50:9000').
-        Ta:
-          - làm sạch addr
-          - thử ping /health trên Flask server Dogzilla
-          - trả kết quả connect cho view
-        """
         addr_clean = (addr or "").strip().rstrip("/")
         if not addr_clean:
             return {"connected": False, "error": "addr is empty"}

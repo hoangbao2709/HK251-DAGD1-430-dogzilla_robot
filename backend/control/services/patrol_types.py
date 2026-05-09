@@ -29,4 +29,8 @@ class PatrolMission:
     started_at: float = field(default_factory=time.time)
     finished_at: Optional[float] = None
     total_distance_m: Optional[float] = None
+    cpu_samples: List[dict] = field(default_factory=list)
+    battery_samples: List[dict] = field(default_factory=list)
+    temperature_samples: List[dict] = field(default_factory=list)
+    ram_samples: List[dict] = field(default_factory=list)
     results: List[PatrolPointResult] = field(default_factory=list)

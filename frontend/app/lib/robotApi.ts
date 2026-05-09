@@ -343,6 +343,9 @@ export const RobotAPI = {
   patrolHistory: (date?: string) =>
     api<any>(`${CONTROL_PREFIX}/${robotId}/patrol/history/${date ? `?date=${date}` : ""}`),
 
+  systemMetrics: (limit = 120) =>
+    api<any>(`${CONTROL_PREFIX}/${robotId}/metrics/system/?limit=${limit}`),
+
   patrolStart: (payload: {
     route_name?: string;
     points: string[];
