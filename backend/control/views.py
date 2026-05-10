@@ -1,5 +1,6 @@
 import math
 import asyncio
+from datetime import datetime
 import time
 import uuid
 from typing import Any, ClassVar
@@ -8,7 +9,7 @@ from django.conf import settings  # type: ignore[import-untyped]
 from rest_framework.views import APIView  # type: ignore[import-untyped]
 from rest_framework.response import Response  # type: ignore[import-untyped]
 from rest_framework import status  # type: ignore[import-untyped]
-from django.utils.timezone import now, localtime  # type: ignore[import-untyped]
+from django.utils.timezone import now, localtime, localdate  # type: ignore[import-untyped]
 from django.http import StreamingHttpResponse, HttpResponse  # type: ignore[import-untyped]
 import json
 import cv2
@@ -265,17 +266,33 @@ class QRLocalizationMetricView(APIView):
         qs = QRLocalizationMetric.objects.filter(robot_id=robot_id)
         label = str(request.query_params.get("label") or "").strip()
         trial_name = str(request.query_params.get("trial") or "").strip()
+        date_filter = str(request.query_params.get("date") or "all").strip().lower()
         if label:
             qs = qs.filter(label=label)
         if trial_name:
             qs = qs.filter(trial_name=trial_name)
 
+        if date_filter in {"", "all", "alltime", "all_time"}:
+            target_date = None
+        elif date_filter == "today":
+            target_date = localdate()
+        else:
+            try:
+                target_date = datetime.strptime(date_filter, "%Y-%m-%d").date()
+            except ValueError:
+                target_date = localdate()
+
+        if target_date is not None:
+            qs = qs.filter(created_at__date=target_date)
+
+        summary = summarize_qr_localization_metrics(qs)
         rows = list(qs[:limit])
         return Response(
             {
                 "success": True,
                 "robot_id": robot_id,
-                "summary": summarize_qr_localization_metrics(rows),
+                "date": date_filter,
+                "summary": summary,
                 "items": [metric_to_dict(row) for row in rows],
             },
             status=status.HTTP_200_OK,
@@ -2003,7 +2020,7 @@ class PatrolUIActionHistoryView(APIView):
 
         now_ts = time.time()
         point_label = "GOAL" if action == "goal" else "INITPOSE"
-        route_name = "docker_ui_goal" if action == "goal" else "docker_ui_initial_pose"
+        route_name = "manual_map_goal" if action == "goal" else "docker_ui_initial_pose"
         mission = PatrolMission(
             mission_id=f"docker_ui_{action}_{uuid.uuid4().hex[:8]}",
             robot_id=robot_id,
@@ -2037,6 +2054,7 @@ class PatrolUIActionHistoryView(APIView):
                 "success": True,
                 "robot_id": robot_id,
                 "mission": mission_to_dict(mission),
+                "route_name": route_name,
             },
             status=status.HTTP_201_CREATED,
         )

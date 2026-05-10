@@ -413,6 +413,58 @@ class QRLocalizationMetricTests(TestCase):
         self.assertAlmostEqual(response.data["data"]["timing"]["qr_detect_time_ms"], 12.0)
         self.assertAlmostEqual(response.data["data"]["timing"]["docker_save_time_ms"], 30.0)
 
+    def test_qr_localization_metric_api_filters_by_date(self):
+        today = timezone.localdate()
+        yesterday = today - timedelta(days=1)
+
+        today_row = create_qr_localization_metric(
+            "robot-qr-api",
+            {
+                "label": "QR-TODAY",
+                "estimate": {"detected": True, "distance_m": 0.9, "angle_deg": 1.0},
+            },
+        )
+        yesterday_row = create_qr_localization_metric(
+            "robot-qr-api",
+            {
+                "label": "QR-YESTERDAY",
+                "estimate": {"detected": False},
+            },
+        )
+
+        QRLocalizationMetric.objects.filter(id=today_row.id).update(
+            created_at=timezone.make_aware(datetime.combine(today, datetime.min.time()))
+        )
+        QRLocalizationMetric.objects.filter(id=yesterday_row.id).update(
+            created_at=timezone.make_aware(datetime.combine(yesterday, datetime.min.time()))
+        )
+
+        today_response = self.client.get(
+            "/control/api/robots/robot-qr-api/metrics/qr-localization/?date=today"
+        )
+        self.assertEqual(today_response.status_code, 200)
+        self.assertEqual(today_response.data["summary"]["total"], 1)
+        self.assertEqual(today_response.data["summary"]["detected"], 1)
+        self.assertAlmostEqual(today_response.data["summary"]["success_rate_pct"], 100.0)
+        self.assertEqual(len(today_response.data["items"]), 1)
+
+        all_response = self.client.get(
+            "/control/api/robots/robot-qr-api/metrics/qr-localization/?date=all"
+        )
+        self.assertEqual(all_response.status_code, 200)
+        self.assertEqual(all_response.data["summary"]["total"], 2)
+        self.assertEqual(all_response.data["summary"]["detected"], 1)
+        self.assertAlmostEqual(all_response.data["summary"]["success_rate_pct"], 50.0)
+        self.assertEqual(len(all_response.data["items"]), 2)
+
+        custom_response = self.client.get(
+            f"/control/api/robots/robot-qr-api/metrics/qr-localization/?date={today.isoformat()}"
+        )
+        self.assertEqual(custom_response.status_code, 200)
+        self.assertEqual(custom_response.data["summary"]["total"], 1)
+        self.assertEqual(custom_response.data["summary"]["detected"], 1)
+        self.assertAlmostEqual(custom_response.data["summary"]["success_rate_pct"], 100.0)
+
     @patch("control.services.qr_localization_metrics.ROSClient")
     def test_metric_can_measure_docker_point_save(self, ros_client_cls):
         ros_client = ros_client_cls.return_value
@@ -578,14 +630,14 @@ class PatrolHistoryTests(TestCase):
 
         history = get_history("robot-docker-ui", "all")
         self.assertEqual(len(history), 1)
-        self.assertEqual(history[0].route_name, "docker_ui_goal")
+        self.assertEqual(history[0].route_name, "manual_map_goal")
         self.assertEqual(history[0].status, "DONE")
         self.assertEqual(history[0].results[0].status, "SUCCESS")
 
         from .models import PatrolHistory
 
         record = PatrolHistory.objects.get(mission_id=history[0].mission_id)
-        self.assertEqual(record.route_name, "docker_ui_goal")
+        self.assertEqual(record.route_name, "manual_map_goal")
 
     def test_records_docker_ui_initial_pose_in_patrol_history(self):
         response = self.client.post(
