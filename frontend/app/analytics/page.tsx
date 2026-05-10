@@ -1030,11 +1030,13 @@ export default function AnalyticsPage() {
         setEvents([]);
       }
 
-      let nextPathEfficiency: number | null = null;
-      if (navRes.status === "fulfilled") {
-        const metrics = navRes.value?.data ?? navRes.value ?? {};
-        const eff = Number(metrics.path_efficiency_pct);
-        nextPathEfficiency = Number.isFinite(eff) ? eff : null;
+      try {
+        const navResp = await RobotAPI.navigationMetrics();
+        const metrics = navResp?.data ?? navResp ?? {};
+        const nextPathEfficiency = Number(metrics.path_efficiency_pct);
+        setPathEfficiency(Number.isFinite(nextPathEfficiency) ? nextPathEfficiency : null);
+      } catch {
+        setPathEfficiency(null);
       }
       setPathEfficiency(nextPathEfficiency);
 
