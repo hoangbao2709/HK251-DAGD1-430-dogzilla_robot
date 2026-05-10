@@ -90,11 +90,19 @@ type RobotStatus = {
   step_default?: number;
   system?: {
     cpu_percent?: number;
+    battery?: number;
+    temperature?: number;
     disk?: string;
     ip?: string;
-    ram?: string;
+    ram?: string | number | null;
     time?: string;
   } | null;
+  metric_system_latest?: {
+    cpu?: number | null;
+    battery?: number | null;
+    temperature?: number | null;
+    ram?: number | null;
+  };
   turn_speed_range?: [number, number];
   yaw_current?: number;
   z_current?: number;
@@ -160,6 +168,16 @@ type MetricSample = {
   value?: number | null;
 };
 
+type MissionStats = {
+  attempted: number;
+  completed: number;
+  failed: number;
+  stopped: number;
+  successRate: number;
+  avgDelivery: number;
+  totalDistance: number | null;
+};
+
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
@@ -175,6 +193,38 @@ function formatClock(date = new Date()) {
 function getNumber(value: unknown, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeoutId = window.setTimeout(() => {
+      reject(new Error(`${label} timed out`));
+    }, timeoutMs);
+
+    promise.then(
+      (value) => {
+        window.clearTimeout(timeoutId);
+        resolve(value);
+      },
+      (error) => {
+        window.clearTimeout(timeoutId);
+        reject(error);
+      }
+    );
+  });
+}
+
+function getLatestMetricValue(
+  points: SystemMetricPoint[],
+  field: keyof Pick<SystemMetricPoint, "cpu" | "battery" | "temperature" | "ram">
+) {
+  for (let index = points.length - 1; index >= 0; index -= 1) {
+    const value = points[index]?.[field];
+    if (value != null && Number.isFinite(Number(value))) {
+      return Number(value);
+    }
+  }
+  return null;
 }
 
 function normalizeRobotStatus(raw: any): RobotStatus {
@@ -216,10 +266,64 @@ function formatDuration(seconds: number | null | undefined) {
   return min > 0 ? `${min}m ${sec}s` : `${sec}s`;
 }
 
+function timestampSeconds(value: string | number | null | undefined) {
+  if (value == null || value === "") return null;
+  const numeric = Number(value);
+  if (Number.isFinite(numeric)) return numeric;
+  const parsed = new Date(value).getTime() / 1000;
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getMissionDurationSec(mission: PatrolMission) {
+  const startedSec = timestampSeconds(mission.started_at);
+  const finishedSec = timestampSeconds(mission.finished_at);
+  if (startedSec == null || finishedSec == null) return null;
+  const diff = finishedSec - startedSec;
+  return diff > 0 ? diff : null;
+}
+
+function buildMissionStats(missions: PatrolMission[]): MissionStats {
+  const attempted = missions.length;
+  const completed = missions.filter((mission) => mission.status === "completed").length;
+  const failed = missions.filter((mission) => mission.status === "failed").length;
+  const stopped = missions.filter((mission) => mission.status === "stopped").length;
+  const successRate = attempted > 0 ? Math.round((completed / attempted) * 100) : 0;
+  const times = missions
+    .filter((mission) => mission.status === "completed")
+    .flatMap((mission) => {
+      const fromResults = (mission.results ?? [])
+        .map((result) => result.reach_time_sec)
+        .filter((time): time is number => time != null && time > 0);
+      if (fromResults.length > 0) return fromResults;
+      const duration = getMissionDurationSec(mission);
+      return duration != null ? [duration] : [];
+    });
+  const avgDelivery = times.length > 0
+    ? Math.round(times.reduce((sum, time) => sum + time, 0) / times.length)
+    : 0;
+  const distances = missions
+    .map((mission) => Number(mission.total_distance_m))
+    .filter((distance) => Number.isFinite(distance) && distance > 0);
+  const totalDistance = distances.length > 0
+    ? Number(distances.reduce((sum, distance) => sum + distance, 0).toFixed(2))
+    : null;
+
+  return {
+    attempted,
+    completed,
+    failed,
+    stopped,
+    successRate,
+    avgDelivery,
+    totalDistance,
+  };
+}
+
 function formatTimestamp(value: string | number | null | undefined) {
   if (value == null || value === "") return "-";
-  const numeric = Number(value);
-  const date = Number.isFinite(numeric) ? new Date(numeric * 1000) : new Date(value);
+  const seconds = timestampSeconds(value);
+  if (seconds == null) return "-";
+  const date = new Date(seconds * 1000);
   if (Number.isNaN(date.getTime())) return "-";
   return formatClock(date);
 }
@@ -715,11 +819,10 @@ function PatrolHistoryTable({
           </thead>
           <tbody className="divide-y divide-[#2d2d2d]">
             {visibleMissions.length ? visibleMissions.map((mission) => {
-              const started = Number(mission.started_at);
-              const finished = Number(mission.finished_at);
-              const duration = Number.isFinite(started) && Number.isFinite(finished)
-                ? finished - started
-                : null;
+              let duration: number | null = null;
+              if (mission.started_at != null && mission.finished_at != null) {
+                duration = getMissionDurationSec(mission);
+              }
               const sampleCount = Math.max(
                 mission.cpu_samples?.length || 0,
                 mission.battery_samples?.length || 0,
@@ -831,18 +934,19 @@ export default function AnalyticsPage() {
   const [errorText, setErrorText] = useState("");
   const [lastRefresh, setLastRefresh] = useState("-");
   const [isPaused, setIsPaused] = useState(false);
-  const [filterDate, setFilterDate] = useState<string>("today");
+  const [filterDate, setFilterDate] = useState<string>("all");
   const [selectedPatrolMission, setSelectedPatrolMission] = useState<PatrolMission | null>(null);
 
   const [missionStats, setMissionStats] = useState({
     attempted: 0,
     completed: 0,
     failed: 0,
+    stopped: 0,
     successRate: 0,
     avgDelivery: 0,
+    totalDistance: null as number | null,
   });
   const [patrolMissions, setPatrolMissions] = useState<PatrolMission[]>([]);
-  const [allPatrolMissions, setAllPatrolMissions] = useState<PatrolMission[]>([]);
 
   const [qrMetrics, setQrMetrics] = useState({
     attempts: 0,
@@ -853,24 +957,76 @@ export default function AnalyticsPage() {
   const refreshStatus = useCallback(async () => {
     try {
       setErrorText("");
-      let newPathEfficiency: number | null = null;
-      let newObstacleEvents: number | null = null;
 
-      const nextStatus = normalizeRobotStatus(await RobotAPI.status());
-      setStatus(nextStatus);
+      const [histRes, sysRes] = await Promise.allSettled([
+        withTimeout(RobotAPI.patrolHistory(filterDate), 8000, "patrol history"),
+        withTimeout(RobotAPI.systemMetrics(120), 8000, "system metrics"),
+      ]);
+
+      if (histRes.status === "fulfilled") {
+        const missions: PatrolMission[] = (histRes.value as any)?.history ?? [];
+        setPatrolMissions(missions);
+
+        const stats = buildMissionStats(missions);
+        setMissionStats(stats);
+        setTotalDistance(stats.totalDistance);
+      } else {
+        console.error("Failed to fetch patrol history:", histRes.reason);
+        setPatrolMissions([]);
+        setMissionStats({
+          attempted: 0,
+          completed: 0,
+          failed: 0,
+          stopped: 0,
+          successRate: 0,
+          avgDelivery: 0,
+          totalDistance: null,
+        });
+        setTotalDistance(null);
+      }
+
+      if (sysRes.status === "fulfilled") {
+        setSystemMetricHistory(sysRes.value?.items ?? []);
+      } else {
+        console.error("Failed to fetch system metrics:", sysRes.reason);
+        setSystemMetricHistory([]);
+      }
+
+      setLoading(false);
+
+      const [
+        statusRes,
+        networkRes,
+        eventsRes,
+        navRes,
+        qrRes
+      ] = await Promise.allSettled([
+        withTimeout(RobotAPI.status(), 8000, "robot status"),
+        withTimeout(RobotAPI.networkMetrics(), 8000, "network metrics"),
+        withTimeout(RobotAPI.events(20, 0), 8000, "events"),
+        withTimeout(RobotAPI.navigationMetrics(), 8000, "navigation metrics"),
+        withTimeout(RobotAPI.qrMetrics(), 8000, "qr metrics"),
+      ]);
+
+      let nextStatus: RobotStatus | null = null;
+      if (statusRes.status === "fulfilled") {
+        nextStatus = normalizeRobotStatus(statusRes.value);
+        setStatus(nextStatus);
+      } else {
+        console.warn("Robot status offline:", statusRes.reason);
+        setStatus(null);
+      }
 
       let nextNetworkMetrics: JsonRecord | null = null;
-      try {
-        nextNetworkMetrics = await RobotAPI.networkMetrics();
-      } catch {
-        nextNetworkMetrics = null;
+      if (networkRes.status === "fulfilled") {
+        nextNetworkMetrics = networkRes.value;
       }
       setNetworkMetrics(nextNetworkMetrics);
 
-      try {
-        const response = (await RobotAPI.events(20, 0)) as EventsResponse;
+      if (eventsRes.status === "fulfilled") {
+        const response = eventsRes.value as EventsResponse;
         setEvents((response?.items ?? []).map(normalizeEventItem));
-      } catch {
+      } else {
         setEvents([]);
       }
 
@@ -882,69 +1038,15 @@ export default function AnalyticsPage() {
       } catch {
         setPathEfficiency(null);
       }
+      setPathEfficiency(nextPathEfficiency);
 
-      try {
-        const qrResp = await RobotAPI.qrMetrics();
-        const qrData = qrResp?.qr_scan || {};
+      if (qrRes.status === "fulfilled") {
+        const qrData = qrRes.value?.qr_scan || {};
         setQrMetrics({
           attempts: Number(qrData.attempts) || 0,
           successes: Number(qrData.successes) || 0,
           successRate: Number(qrData.success_rate_pct) || 0,
         });
-      } catch (err) {
-        console.warn("Failed to fetch QR metrics:", err);
-      }
-
-      try {
-        const histResp = await RobotAPI.patrolHistory(filterDate) as any;
-        const missions: PatrolMission[] = histResp?.history ?? [];
-        setPatrolMissions(missions);
-
-        const allHistResp = await RobotAPI.patrolHistory("all") as any;
-        setAllPatrolMissions(allHistResp?.history ?? []);
-
-        const attempted = missions.length;
-        const completed = missions.filter(m => m.status === "completed").length;
-
-        // ✅ FIX: tính cả stopped vào failed
-        const failed = missions.filter(m =>
-          m.status === "failed" || m.status === "stopped"
-        ).length;
-
-        const successRate = attempted > 0
-          ? Math.round(completed / attempted * 100) : 0;
-
-        // ✅ FIX: fallback tính avgDelivery
-        const times = missions
-          .filter(m => m.status === "completed")
-          .flatMap(m => {
-            const fromResults = (m.results ?? [])
-              .map(r => r.reach_time_sec)
-              .filter((t): t is number => t != null && t > 0);
-            if (fromResults.length > 0) return fromResults;
-            if (m.started_at != null && m.finished_at != null) {
-              const diff = Number(m.finished_at) - Number(m.started_at);
-              if (diff > 0) return [diff];
-            }
-            return [];
-          });
-        const avgDelivery = times.length > 0
-          ? Math.round(times.reduce((a, b) => a + b, 0) / times.length) : 0;
-
-        const calculatedTotalDistance = missions.reduce((sum, m) => sum + (m.total_distance_m || 0), 0);
-        setTotalDistance(calculatedTotalDistance > 0 ? Number(calculatedTotalDistance.toFixed(2)) : null);
-
-        setMissionStats({ attempted, completed, failed, successRate, avgDelivery });
-      } catch (err) {
-        console.error("Failed to fetch patrol history:", err);
-      }
-
-      try {
-        const metricResp = await RobotAPI.systemMetrics(120);
-        setSystemMetricHistory(metricResp?.items ?? []);
-      } catch (err) {
-        console.error("Failed to fetch system metrics:", err);
-        setSystemMetricHistory([]);
       }
 
       const battery = clamp(getNumber(nextStatus?.battery, 0), 0, 100);
@@ -968,11 +1070,10 @@ export default function AnalyticsPage() {
       setLastRefresh(timestamp);
       setEffHistory(prev => [...prev, {
         time: timestamp,
-        eff: pathEfficiency ?? 0,
-
+        eff: nextPathEfficiency ?? 0,
       }].slice(-20));
     } catch (err: any) {
-      setErrorText(err?.message || "Failed to load robot status");
+      setErrorText(err?.message || "Failed to load analytics data");
     } finally {
       setLoading(false);
     }
@@ -986,9 +1087,32 @@ export default function AnalyticsPage() {
     }
   }, [refreshStatus, isPaused]);
 
-  const battery = clamp(getNumber(status?.battery, 0), 0, 100);
+  const latestMetricCpu =
+    status?.metric_system_latest?.cpu ?? getLatestMetricValue(systemMetricHistory, "cpu");
+  const latestMetricBattery =
+    status?.metric_system_latest?.battery ?? getLatestMetricValue(systemMetricHistory, "battery");
+  const latestMetricTemperature =
+    status?.metric_system_latest?.temperature ?? getLatestMetricValue(systemMetricHistory, "temperature");
+  const latestMetricRam =
+    status?.metric_system_latest?.ram ?? getLatestMetricValue(systemMetricHistory, "ram");
+  const periodLabel = filterDate === "today"
+    ? "Today"
+    : filterDate === "all"
+      ? "All Time"
+      : filterDate;
+  const battery = clamp(getNumber(latestMetricBattery ?? status?.battery, 0), 0, 100);
   const fps = Math.max(0, getNumber(status?.fps, 0));
-  const cpuPercent = clamp(getNumber(status?.system?.cpu_percent, 0), 0, 100);
+  const cpuPercent = clamp(getNumber(latestMetricCpu ?? status?.system?.cpu_percent, 0), 0, 100);
+  const ramValue = latestMetricRam != null
+    ? `${latestMetricRam}%`
+    : status?.system?.ram != null
+      ? String(status.system.ram)
+      : "N/A";
+  const temperatureValue = latestMetricTemperature != null
+    ? `${latestMetricTemperature}°C`
+    : status?.system?.temperature != null
+      ? `${status.system.temperature}°C`
+      : "N/A";
   const connectionOk = Boolean(status?.robot_connected);
   const networkSummary = getNetworkSummary(networkMetrics);
   const hasNetworkData =
@@ -1124,8 +1248,8 @@ export default function AnalyticsPage() {
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8 px-2 max-w-2xl">
             <MiniMetric label="CPU" value={`${cpuPercent}%`} />
-            <MiniMetric label="RAM" value={status?.system?.ram ?? "N/A"} />
-            <MiniMetric label="Disk" value={status?.system?.disk ?? "N/A"} />
+            <MiniMetric label="RAM" value={ramValue} />
+            <MiniMetric label="Temp" value={temperatureValue} />
             <MiniMetric label="Firmware" value={status?.fw ?? "N/A"} />
           </div>
         </section>
@@ -1133,7 +1257,7 @@ export default function AnalyticsPage() {
         {/* ZONE 2 - MISSION PERFORMANCE */}
         <section>
           <h2 className="text-[#888888] text-[10px] font-bold uppercase tracking-[0.2em] mb-4 border-b border-[#2d2d2d] pb-2">
-            Zone 2 — Mission Performance ({filterDate === 'today' ? 'Today' : filterDate === 'all' ? 'All Time' : filterDate})
+            Zone 2 — Mission Performance ({periodLabel})
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
             <DataCard
@@ -1148,19 +1272,21 @@ export default function AnalyticsPage() {
               trendColor="text-red-400"
             />
             <DataCard
-              label="Path efficiency"
-              value={pathEfficiency != null ? `${pathEfficiency}%` : "N/A"}
-              sub="actual / optimal path"
+              label="Total distance"
+              value={totalDistance != null ? `${totalDistance}m` : "N/A"}
+              sub="from control_patrolhistory"
             />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-[#1a1a1a] border border-[#2d2d2d] rounded-lg p-4">
-              <span className="text-[#888888] text-[10px] font-bold uppercase tracking-wider">Missions today</span>
+              <span className="text-[#888888] text-[10px] font-bold uppercase tracking-wider">Missions {periodLabel}</span>
               <div className="flex items-baseline gap-2 mt-1">
                 <span className="text-2xl font-bold">{missionStats.completed}</span>
                 <span className="text-[#888888] text-sm">/ {missionStats.attempted} attempted</span>
               </div>
-              <div className="text-[#888888] text-xs mt-1">{missionStats.failed} failed • 0 aborted</div>
+              <div className="text-[#888888] text-xs mt-1">
+                {missionStats.failed} failed • {missionStats.stopped} stopped
+              </div>
             </div>
             {/* <div className="bg-[#1a1a1a] border border-[#2d2d2d] rounded-lg p-4">
               <span className="text-[#888888] text-[10px] font-bold uppercase tracking-wider">QR scan success</span>
@@ -1191,9 +1317,11 @@ export default function AnalyticsPage() {
               </div>
             </div>
             <div className="bg-[#1a1a1a] border border-[#2d2d2d] rounded-lg p-4">
-              <span className="text-[#888888] text-[10px] font-bold uppercase tracking-wider">Total distance</span>
-              <div className="text-2xl font-bold mt-1">{totalDistance != null ? `${totalDistance}m` : "N/A"}</div>
-              <div className="text-[#888888] text-xs mt-1">9.8m / % battery • efficient</div>
+              <span className="text-[#888888] text-[10px] font-bold uppercase tracking-wider">control_patrolhistory rows</span>
+              <div className="text-2xl font-bold mt-1">{missionStats.attempted}</div>
+              <div className="text-[#888888] text-xs mt-1">
+                {missionStats.completed} completed • {missionStats.failed + missionStats.stopped} not completed
+              </div>
             </div>
           </div>
         </section>
@@ -1259,7 +1387,7 @@ export default function AnalyticsPage() {
             Zone 5 Patrol history
           </h2>
           <PatrolHistoryTable
-            missions={allPatrolMissions}
+            missions={patrolMissions}
             onSelectMission={setSelectedPatrolMission}
           />
         </section>

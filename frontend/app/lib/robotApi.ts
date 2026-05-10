@@ -1,6 +1,8 @@
 // app/lib/robotApi.ts
 const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
+  typeof window === "undefined"
+    ? process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000"
+    : "";
 
 export const DEFAULT_DOG_SERVER = "http://100.95.128.237:9000";
 
@@ -11,7 +13,7 @@ type RequestInitWithBody = RequestInit & {
 };
 
 async function api<T = any>(path: string, init?: RequestInitWithBody): Promise<T> {
-  if (!API_BASE) {
+  if (typeof window === "undefined" && !API_BASE) {
     throw new Error("API_BASE is not configured");
   }
 
@@ -38,7 +40,7 @@ async function api<T = any>(path: string, init?: RequestInitWithBody): Promise<T
 }
 
 async function apiBlob(path: string, init?: RequestInitWithBody): Promise<Blob> {
-  if (!API_BASE) {
+  if (typeof window === "undefined" && !API_BASE) {
     throw new Error("API_BASE is not configured");
   }
 
@@ -92,6 +94,49 @@ type LidarOptions = {
   mode?: "live_map" | "navigation";
   map_name?: string;
   map_arg?: string;
+};
+
+type QRLocalizationMetricPayload = {
+  label?: string;
+  trial?: string;
+  source?: string;
+  ground_truth?: {
+    distance_m?: number;
+    distance_source?: string;
+    camera_distance_m?: number;
+    lidar_distance_m?: number;
+    angle_deg?: number;
+    x?: number;
+    y?: number;
+  };
+  estimate?: {
+    detected?: boolean;
+    qr_text?: string;
+    text?: string;
+    distance_m?: number;
+    angle_deg?: number;
+    lateral_x_m?: number;
+    forward_z_m?: number;
+    x?: number;
+    y?: number;
+  };
+  nav?: {
+    goal_x?: number;
+    goal_y?: number;
+    stop_x?: number;
+    stop_y?: number;
+  };
+  qr_detect_time_ms?: number;
+  docker_save_time_ms?: number;
+  docker_save_success?: boolean;
+  docker_save_error?: string;
+  save_point?: {
+    enabled?: boolean;
+    name?: string;
+    x?: number;
+    y?: number;
+    yaw?: number;
+  };
 };
 
 export const RobotAPI = {
@@ -197,6 +242,15 @@ export const RobotAPI = {
     body: JSON.stringify(payload),
   }),
 
+  logQRLocalizationMetric: (payload: QRLocalizationMetricPayload) =>
+    api<any>(`${CONTROL_PREFIX}/${robotId}/metrics/qr-localization/`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  qrLocalizationMetrics: (limit = 100) =>
+    api<any>(`${CONTROL_PREFIX}/${robotId}/metrics/qr-localization/?limit=${limit}`),
+
   qrPosition: () =>
     api<any>(`${CONTROL_PREFIX}/${robotId}/qr/position/`),
 
@@ -235,6 +289,7 @@ export const RobotAPI = {
 
   createPointFromObstacle: (payload: {
     name: string;
+    qr_detected: boolean;
     yaw?: number;
   }) =>
     api<any>(`${CONTROL_PREFIX}/${robotId}/points/from-obstacle/`, {
@@ -278,10 +333,10 @@ export const RobotAPI = {
     }),
 
   qrVideoFeedUrl: () =>
-    `${API_BASE}${CONTROL_PREFIX}/${robotId}/qr/video-feed/`,
+    `${CONTROL_PREFIX}/${robotId}/qr/video-feed/`,
 
   slamMapUrl: (ts?: number) =>
-    `${API_BASE}${CONTROL_PREFIX}/${robotId}/slam/map.png${ts ? `?t=${ts}` : ""}`,
+    `${CONTROL_PREFIX}/${robotId}/slam/map.png${ts ? `?t=${ts}` : ""}`,
 
   networkMetrics: () =>
     api<any>(`${CONTROL_PREFIX}/${robotId}/network/metrics/`),

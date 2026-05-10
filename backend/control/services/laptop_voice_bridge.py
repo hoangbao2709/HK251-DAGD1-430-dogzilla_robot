@@ -16,7 +16,8 @@ from fastmcp.client.transports import StdioTransport
 from openai import OpenAI
 
 BASE_DIR = Path(__file__).resolve().parent
-load_dotenv(BASE_DIR / ".env")
+BACKEND_DIR = BASE_DIR.parents[1]
+load_dotenv(BACKEND_DIR / ".env")
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),

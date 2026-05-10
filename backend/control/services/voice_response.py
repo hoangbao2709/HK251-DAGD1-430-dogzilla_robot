@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 
-def build_bridge_response_text(result: dict[str, Any]) -> str:
+def build_voice_response_text(result: dict[str, Any]) -> str:
     tool_name = str(result.get("tool") or "")
     arguments = result.get("arguments") or {}
 

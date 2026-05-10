@@ -1,4 +1,6 @@
+import math
 import time
+from dataclasses import replace
 from typing import Any, Dict
 
 import cv2
@@ -7,6 +9,7 @@ import numpy as np
 from .ros import ROSClient
 from .models import QRItem, DetectionResult
 from .qr_detector import detect_qr_items, PYZBAR_AVAILABLE, PYZBAR_IMPORT_ERROR
+from .slam_payload import find_nearest_obstacle_at_bearing
 from .overlay import draw_overlay
 
 # Django models cho việc lưu event
@@ -32,6 +35,75 @@ DIST_COEFFS = np.array([0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)
 
 # Trạng thái tracking QR per robot
 qr_tracking_state: dict[str, dict] = {}
+
+
+def _item_with_lidar_distance(item: QRItem, lidar_distance_m: float) -> QRItem:
+    angle_rad = float(item.angle_rad)
+    lateral_x_m = lidar_distance_m * math.sin(angle_rad)
+    forward_z_m = lidar_distance_m * math.cos(angle_rad)
+    target_distance_m = max(lidar_distance_m + TARGET_PUSH_M, MIN_TARGET_DISTANCE_M)
+    target_x_m = target_distance_m * math.sin(angle_rad)
+    target_z_m = target_distance_m * math.cos(angle_rad)
+
+    return replace(
+        item,
+        distance_m=lidar_distance_m,
+        lateral_x_m=lateral_x_m,
+        forward_z_m=forward_z_m,
+        target_x_m=target_x_m,
+        target_z_m=target_z_m,
+        target_distance_m=target_distance_m,
+        camera_distance_m=item.camera_distance_m if item.camera_distance_m is not None else item.distance_m,
+        lidar_distance_m=lidar_distance_m,
+    )
+
+
+def enrich_detection_result_with_lidar(robot_id: str, result: DetectionResult) -> DetectionResult:
+    """
+    Recompute range-related QR overlay values from LiDAR when a matching scan
+    point exists for the QR bearing.
+    """
+    if not result.ok or not result.items:
+        return result
+
+    try:
+        slam_state = ROSClient(robot_id).get_slam_state_for_ui(
+            include_scan_points=True,
+            max_scan_points=240,
+        )
+        pose = slam_state.get("pose") or {}
+        scan_points = (slam_state.get("scan") or {}).get("points") or []
+    except Exception as exc:
+        logger.warning("QR overlay LiDAR enrichment failed for %s: %s", robot_id, exc)
+        return result
+
+    if not pose.get("ok") or not scan_points:
+        return result
+
+    enriched_items: list[QRItem] = []
+    for item in result.items:
+        lidar_point = find_nearest_obstacle_at_bearing(
+            pose,
+            scan_points,
+            float(item.angle_rad),
+        )
+        if not lidar_point:
+            enriched_items.append(item)
+            continue
+
+        try:
+            lidar_distance_m = float(lidar_point["dist"])
+        except (TypeError, ValueError):
+            enriched_items.append(item)
+            continue
+
+        if not math.isfinite(lidar_distance_m):
+            enriched_items.append(item)
+            continue
+
+        enriched_items.append(_item_with_lidar_distance(item, lidar_distance_m))
+
+    return DetectionResult(ok=result.ok, items=enriched_items)
 
 
 def save_qr_metric_event(robot_id: str, event_type: str, detail: str = "", payload: dict | None = None):
@@ -88,6 +160,8 @@ def qr_item_to_dict(item: QRItem) -> Dict[str, Any]:
         "direction": item.direction,
         "center_px": item.center_px,
         "corners": item.corners,
+        "camera_distance_m": item.camera_distance_m,
+        "lidar_distance_m": item.lidar_distance_m,
     }
 
 
@@ -222,6 +296,8 @@ def generate_qr_video_frames(robot_id: str):
                 min_target_distance_m=MIN_TARGET_DISTANCE_M,
                 detect_width=DETECT_WIDTH,
             )
+
+            result = enrich_detection_result_with_lidar(robot_id, result)
 
             # Tracking metrics ngay cả trong video stream
             update_qr_tracking_state(robot_id, result.items)

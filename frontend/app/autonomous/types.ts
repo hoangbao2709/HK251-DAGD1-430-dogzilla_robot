@@ -89,6 +89,8 @@ export type QrItem = {
     target_x_m: number;
     target_z_m: number;
     direction: string;
+    camera_distance_m?: number | null;
+    lidar_distance_m?: number | null;
 };
 
 export type QrStateData = {
@@ -110,11 +112,30 @@ export type QrPositionData = {
         distance_m?: number;
         lateral_x_m?: number;
         forward_z_m?: number;
+        distance_source?: "camera" | "lidar" | string;
     };
     target?: {
         x_m?: number;
         z_m?: number;
         distance_m?: number;
+        distance_source?: "camera" | "lidar" | string;
+    };
+    camera_position?: {
+        angle_deg?: number;
+        angle_rad?: number;
+        distance_m?: number;
+        lateral_x_m?: number;
+        forward_z_m?: number;
+    };
+    lidar?: {
+        ok?: boolean;
+        source?: string;
+        reason?: string;
+        distance_m?: number;
+        x?: number;
+        y?: number;
+        bearing_rad?: number;
+        bearing_error_rad?: number;
     };
     image?: {
         center_px?: { x?: number; y?: number };

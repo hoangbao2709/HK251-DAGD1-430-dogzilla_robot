@@ -11,14 +11,12 @@ type GamepadSnapshot = {
 };
 
 const DEADZONE = 0.2;
-const SEND_INTERVAL = 80; // ms
-const MAX_V = 0.4; // m/s
-const MAX_W = 1.2; // rad/s
+const SEND_INTERVAL = 80;
+const MAX_V = 0.4; 
+const MAX_W = 1.2; 
 
 type Options = {
-  /** callback khi B0 (A) được nhấn – dùng để toggle LiDAR */
   onToggleLidar?: () => void;
-  /** callback khi B2 (X) được nhấn – dùng để toggle stabilizing */
   onToggleStabilizing?: () => void;
   onLog?: (line: string) => void;
 };
@@ -28,12 +26,6 @@ function errorText(error: unknown) {
   return String(error || "Unknown error");
 }
 
-/**
- * Đọc tay cầm và gửi lệnh move cho robot.
- * - Left stick: tiến/lùi + đi ngang
- * - B1 / B3: quay trái / quay phải
- * - Nếu truyền callback: B0 toggle LiDAR, B2 toggle stabilizing
- */
 export function useGamepadMove(opts: Options = {}) {
   const { onToggleLidar, onToggleStabilizing, onLog } = opts;
 
@@ -104,7 +96,6 @@ export function useGamepadMove(opts: Options = {}) {
     window.addEventListener("gamepadconnected", handleConnect);
     window.addEventListener("gamepaddisconnected", handleDisconnect);
 
-    // nếu tay cầm đã cắm sẵn khi load trang
     const pads = nav.getGamepads() as (Gamepad | null)[];
     if (pads[0]) {
       rafId = requestAnimationFrame(loop);
@@ -117,7 +108,6 @@ export function useGamepadMove(opts: Options = {}) {
     };
   }, []);
 
-  // Map gamepad → move + callback nút B0/B2
   useEffect(() => {
     const timer = setInterval(() => {
       const snap = padRef.current;
@@ -127,13 +117,11 @@ export function useGamepadMove(opts: Options = {}) {
       const buttons = snap.buttons;
       const lastButtons = lastButtonsRef.current;
 
-      // ===== LEFT STICK: move =====
-      // Axis 0 = left X (strafe), Axis 1 = left Y (forward/back)
       const axLX = axes[0] ?? 0;
       const axLY = axes[1] ?? 0;
 
-      let fwd = -axLY; // lên = tiến
-      let strafe = axLX; // trái / phải
+      let fwd = -axLY;
+      let strafe = axLX; 
 
       if (Math.abs(fwd) < DEADZONE) fwd = 0;
       if (Math.abs(strafe) < DEADZONE) strafe = 0;
@@ -141,16 +129,14 @@ export function useGamepadMove(opts: Options = {}) {
       const vx = fwd * MAX_V;
       const vy = strafe * MAX_V;
 
-      // ===== B1 / B3: rotate =====
-      const btnB1 = buttons[1] ?? false; // xoay trái
-      const btnB3 = buttons[3] ?? false; // xoay phải
+      const btnB1 = buttons[1] ?? false;
+      const btnB3 = buttons[3] ?? false; 
       let yaw = 0;
       if (btnB1 && !btnB3) yaw = +1;
       else if (btnB3 && !btnB1) yaw = -1;
 
       const rz = yaw * MAX_W;
 
-      // ===== gửi lệnh move nếu thay đổi =====
       const last = lastMoveRef.current;
       if (
         Math.abs(vx - last.vx) > 0.01 ||
@@ -163,14 +149,12 @@ export function useGamepadMove(opts: Options = {}) {
         });
       }
 
-      // ===== B0: toggle LiDAR (nếu có callback) =====
       const btnB0 = buttons[0] ?? false;
       const prevB0 = lastButtons[0] ?? false;
       if (btnB0 && !prevB0 && onToggleLidar) {
         onToggleLidar();
       }
 
-      // ===== B2: toggle stabilizing_mode (nếu có callback) =====
       const btnB2 = buttons[2] ?? false;
       const prevB2 = lastButtons[2] ?? false;
       if (btnB2 && !prevB2 && onToggleStabilizing) {

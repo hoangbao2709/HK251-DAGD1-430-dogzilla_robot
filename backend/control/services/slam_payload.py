@@ -113,6 +113,50 @@ def find_nearest_obstacle_ahead(
     return best
 
 
+def find_nearest_obstacle_at_bearing(
+    pose: dict[str, Any] | None,
+    scan_points: list[dict[str, float]],
+    bearing_rad: float,
+    *,
+    half_fov_rad: float = 0.18,
+    min_distance_m: float = 0.05,
+) -> dict[str, float] | None:
+    if not pose or not pose.get("ok") or not scan_points:
+        return None
+
+    rx = _as_float(pose.get("x"))
+    ry = _as_float(pose.get("y"))
+    yaw = _as_float(pose.get("theta"))
+
+    best: dict[str, float] | None = None
+    best_abs_diff = float("inf")
+    best_dist = float("inf")
+
+    for point in scan_points:
+        px = _as_float(point.get("x"))
+        py = _as_float(point.get("y"))
+        dx = px - rx
+        dy = py - ry
+        dist = math.hypot(dx, dy)
+        if not math.isfinite(dist) or dist < min_distance_m:
+            continue
+
+        point_bearing = normalize_angle(math.atan2(dy, dx) - yaw)
+        diff = abs(normalize_angle(point_bearing - bearing_rad))
+        if diff <= half_fov_rad and (diff < best_abs_diff or (diff == best_abs_diff and dist < best_dist)):
+            best_abs_diff = diff
+            best_dist = dist
+            best = {
+                "x": px,
+                "y": py,
+                "dist": dist,
+                "bearing_rad": point_bearing,
+                "bearing_error_rad": diff,
+            }
+
+    return best
+
+
 def _first_path(paths: dict[str, Any]) -> list[dict[str, float]]:
     for key in ("a_star", "received_plan", "plan", "nav2", "local_plan"):
         value = paths.get(key)

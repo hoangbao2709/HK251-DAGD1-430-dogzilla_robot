@@ -163,6 +163,7 @@ export default function AutonomousControlPage() {
   const overlayRef = useRef<HTMLCanvasElement | null>(null);
   const modalMapImgRef = useRef<HTMLImageElement | null>(null);
   const modalOverlayRef = useRef<HTMLCanvasElement | null>(null);
+  const lastQrDetectTimeMsRef = useRef<number | undefined>(undefined);
 
   const [robotAddr, setRobotAddr] = useState(
     () => getSelectedRobotAddr() || DEFAULT_DOG_SERVER
@@ -277,11 +278,14 @@ export default function AutonomousControlPage() {
 
   const fetchQrPosition = useCallback(async () => {
     try {
+      const started = performance.now();
       const json = await RobotAPI.qrPosition();
+      lastQrDetectTimeMsRef.current = performance.now() - started;
       const data = json?.data ?? json ?? null;
       setQrPosition(data);
       setQrPositionError("");
     } catch (error) {
+      lastQrDetectTimeMsRef.current = undefined;
       setQrPosition(null);
       setQrPositionError(
         error instanceof Error ? error.message : "Khong lay duoc vi tri QR"
@@ -826,31 +830,97 @@ export default function AutonomousControlPage() {
     const qrText = (qrState?.ok && qrState.items?.length
       ? qrState.items[0].text
       : null);
-    const pointName = (qrText || "POINT").trim() || "POINT";
+    const pointName = (qrText || "").trim();
+    const qrDetected = Boolean(pointName);
+    const qrMetricText = qrPosition?.qr?.text?.trim() || pointName;
+    const qrMetricPosition = qrPosition?.position;
+    const lidarDistanceM = qrPosition?.lidar?.distance_m;
+    const metricDistanceM =
+      typeof lidarDistanceM === "number"
+        ? lidarDistanceM
+        : qrMetricPosition?.distance_m;
+    const qrMetricEstimate = qrMetricPosition
+      ? {
+        detected: Boolean(qrPosition?.detected),
+        qr_text: qrMetricText,
+        distance_m: metricDistanceM,
+        distance_source: typeof lidarDistanceM === "number" ? "lidar" : qrMetricPosition.distance_source,
+        lidar_distance_m: lidarDistanceM,
+        angle_deg: qrMetricPosition.angle_deg,
+        lateral_x_m: qrMetricPosition.lateral_x_m,
+        forward_z_m: qrMetricPosition.forward_z_m,
+        ...(qrPreviewPoint
+          ? { x: qrPreviewPoint.x, y: qrPreviewPoint.y }
+          : {}),
+      }
+      : {
+        detected: false,
+        qr_text: qrMetricText,
+      };
 
-    if (savedPoints[pointName]) {
+    if (qrDetected && savedPoints[pointName]) {
       window.alert(`Diem ${pointName} da ton tai.`);
       return;
     }
 
+    let dockerSaveTimeMs: number | undefined;
+
     try {
       setPointActionLoading(true);
 
-      await RobotAPI.createPointFromObstacle({ name: pointName });
+      if (!qrDetected) {
+        await RobotAPI.createPointFromObstacle({
+          name: "",
+          qr_detected: false,
+        });
+      } else {
+        const saveStarted = performance.now();
+        await RobotAPI.createPointFromObstacle({ name: pointName, qr_detected: true });
+        dockerSaveTimeMs = performance.now() - saveStarted;
+      }
 
-      await RobotAPI.logQRAttempt({
-        name: pointName,
-        success: true,
-      }).catch(() => { });
+      if (qrDetected) {
+        await RobotAPI.logQRLocalizationMetric({
+          label: pointName,
+          source: "autonomous_create_point",
+          estimate: qrMetricEstimate,
+          qr_detect_time_ms: lastQrDetectTimeMsRef.current,
+          docker_save_time_ms: dockerSaveTimeMs,
+          docker_save_success: true,
+        }).catch(() => { });
 
-      await fetchPoints();
-      await fetchSlamState();
+        await RobotAPI.logQRAttempt({
+          name: pointName,
+          success: true,
+        }).catch(() => { });
+
+        await fetchPoints();
+        await fetchSlamState();
+      }
     } catch (error) {
       const body = (error as any)?.body || {};
-      const reason = body?.reason === "no_obstacle" ? "no_obstacle" : "ros_error";
+      const reason =
+        body?.reason === "qr_not_detected"
+          ? "qr_not_detected"
+          : body?.reason === "no_obstacle"
+            ? "no_obstacle"
+            : "ros_error";
+      if (reason === "qr_not_detected") {
+        window.alert("Khong nhan dang duoc QR nen khong the luu diem.");
+        return;
+      }
       if (reason === "no_obstacle") {
         window.alert("Chua co obstacle phia truoc de luu.");
       }
+      await RobotAPI.logQRLocalizationMetric({
+        label: pointName,
+        source: "autonomous_create_point_failed",
+        estimate: qrMetricEstimate,
+        qr_detect_time_ms: lastQrDetectTimeMsRef.current,
+        docker_save_time_ms: dockerSaveTimeMs,
+        docker_save_success: false,
+        docker_save_error: reason,
+      }).catch(() => { });
       await RobotAPI.logQRAttempt({
         name: pointName,
         success: false,

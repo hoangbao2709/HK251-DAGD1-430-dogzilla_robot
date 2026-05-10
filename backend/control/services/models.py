@@ -17,6 +17,8 @@ class QRItem:
     direction: str
     center_px: tuple[int, int]
     corners: list[list[int]]
+    camera_distance_m: float | None = None
+    lidar_distance_m: float | None = None
 
 
 @dataclass

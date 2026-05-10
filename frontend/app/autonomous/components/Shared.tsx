@@ -63,6 +63,23 @@ export function TopDownQrView({ data }: { data: QrPositionData | null }) {
                   y: toY(data.position.forward_z_m),
               }
             : null;
+    const lidarDistance =
+        typeof data?.lidar?.distance_m === "number"
+            ? data.lidar.distance_m
+            : undefined;
+    const displayDistance =
+        typeof lidarDistance === "number"
+            ? lidarDistance
+            : data?.position?.distance_source === "lidar" &&
+              typeof data?.position?.distance_m === "number"
+              ? data.position.distance_m
+              : undefined;
+    const distanceText =
+        typeof displayDistance === "number"
+            ? `${displayDistance.toFixed(2)} m`
+            : "--";
+    const sourceText =
+        typeof displayDistance === "number" ? "LiDAR" : "--";
 
     const targetPoint =
         typeof data?.target?.x_m === "number" && typeof data?.target?.z_m === "number"
@@ -176,6 +193,16 @@ export function TopDownQrView({ data }: { data: QrPositionData | null }) {
                     strokeWidth="2"
                 />
             </svg>
+            <div className="grid grid-cols-2 gap-2 border-t border-[var(--border)] px-3 py-2 text-xs">
+                <div>
+                    <div className="text-[10px] uppercase tracking-wider text-[var(--muted)]">Distance</div>
+                    <div className="mt-0.5 font-semibold text-[var(--foreground)]">{distanceText}</div>
+                </div>
+                <div>
+                    <div className="text-[10px] uppercase tracking-wider text-[var(--muted)]">Source</div>
+                    <div className="mt-0.5 font-semibold text-[var(--foreground)]">{sourceText}</div>
+                </div>
+            </div>
         </div>
     );
 }

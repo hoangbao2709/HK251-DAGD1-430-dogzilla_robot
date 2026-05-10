@@ -1,4 +1,5 @@
 from pathlib import Path
+import math
 
 import cv2
 import numpy as np
@@ -65,12 +66,30 @@ def draw_overlay(frame, detection_result):
         cv2.circle(out, item.center_px, 6, (255, 0, 0), -1)
 
         x, y = item.center_px
+        display_distance_m = item.lidar_distance_m
+        distance_source = "LiDAR"
+        try:
+            display_distance_m = float(display_distance_m)
+        except (TypeError, ValueError):
+            display_distance_m = item.distance_m
+            distance_source = "camera"
+        else:
+            if not math.isfinite(display_distance_m):
+                display_distance_m = item.distance_m
+                distance_source = "camera"
+
+        angle_rad = float(item.angle_rad)
+        lateral_x_m = display_distance_m * math.sin(angle_rad)
+        forward_z_m = display_distance_m * math.cos(angle_rad)
+        target_distance_m = max(display_distance_m + 0.35, 0.65)
+        target_x_m = target_distance_m * math.sin(angle_rad)
+        target_z_m = target_distance_m * math.cos(angle_rad)
         lines = [
             f"QR: {item.text}",
             f"angle: {item.angle_deg:.1f} deg",
-            f"dist : {item.distance_m:.2f} m",
-            f"tx/tz: ({item.lateral_x_m:.2f}, {item.forward_z_m:.2f})",
-            f"target: ({item.target_x_m:.2f}, {item.target_z_m:.2f})",
+            f"dist : {display_distance_m:.2f} m",
+            f"tx/tz: ({lateral_x_m:.2f}, {forward_z_m:.2f})",
+            f"target: ({target_x_m:.2f}, {target_z_m:.2f})",
         ]
 
         yy = y - 55
