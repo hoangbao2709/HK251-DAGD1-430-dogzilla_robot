@@ -248,8 +248,14 @@ export const RobotAPI = {
       body: JSON.stringify(payload),
     }),
 
-  qrLocalizationMetrics: (limit = 100) =>
-    api<any>(`${CONTROL_PREFIX}/${robotId}/metrics/qr-localization/?limit=${limit}`),
+  qrLocalizationMetrics: (date?: string, limit = 100) => {
+    const params = new URLSearchParams();
+    params.set("limit", String(limit));
+    if (date && date !== "all") {
+      params.set("date", date);
+    }
+    return api<any>(`${CONTROL_PREFIX}/${robotId}/metrics/qr-localization/?${params.toString()}`);
+  },
 
   qrPosition: () =>
     api<any>(`${CONTROL_PREFIX}/${robotId}/qr/position/`),

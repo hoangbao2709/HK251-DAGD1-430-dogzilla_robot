@@ -949,8 +949,8 @@ export default function AnalyticsPage() {
   const [patrolMissions, setPatrolMissions] = useState<PatrolMission[]>([]);
 
   const [qrMetrics, setQrMetrics] = useState({
-    attempts: 0,
-    successes: 0,
+    total: 0,
+    detected: 0,
     successRate: 0,
   });
 
@@ -999,13 +999,13 @@ export default function AnalyticsPage() {
         networkRes,
         eventsRes,
         navRes,
-        qrRes
+        qrRes,
       ] = await Promise.allSettled([
         withTimeout(RobotAPI.status(), 8000, "robot status"),
         withTimeout(RobotAPI.networkMetrics(), 8000, "network metrics"),
         withTimeout(RobotAPI.events(20, 0), 8000, "events"),
         withTimeout(RobotAPI.navigationMetrics(), 8000, "navigation metrics"),
-        withTimeout(RobotAPI.qrMetrics(), 8000, "qr metrics"),
+        withTimeout(RobotAPI.qrLocalizationMetrics(filterDate, 500), 8000, "qr localization metrics"),
       ]);
 
       let nextStatus: RobotStatus | null = null;
@@ -1030,22 +1030,29 @@ export default function AnalyticsPage() {
         setEvents([]);
       }
 
+      let nextPathEfficiency: number | null = null;
       try {
         const navResp = await RobotAPI.navigationMetrics();
         const metrics = navResp?.data ?? navResp ?? {};
-        const nextPathEfficiency = Number(metrics.path_efficiency_pct);
-        setPathEfficiency(Number.isFinite(nextPathEfficiency) ? nextPathEfficiency : null);
+        const parsedPathEfficiency = Number(metrics.path_efficiency_pct);
+        nextPathEfficiency = Number.isFinite(parsedPathEfficiency) ? parsedPathEfficiency : null;
+        setPathEfficiency(nextPathEfficiency);
       } catch {
         setPathEfficiency(null);
       }
-      setPathEfficiency(nextPathEfficiency);
 
       if (qrRes.status === "fulfilled") {
-        const qrData = qrRes.value?.qr_scan || {};
+        const qrData = qrRes.value?.summary || {};
         setQrMetrics({
-          attempts: Number(qrData.attempts) || 0,
-          successes: Number(qrData.successes) || 0,
+          total: Number(qrData.total) || 0,
+          detected: Number(qrData.detected) || 0,
           successRate: Number(qrData.success_rate_pct) || 0,
+        });
+      } else {
+        setQrMetrics({
+          total: 0,
+          detected: 0,
+          successRate: 0,
         });
       }
 
@@ -1300,7 +1307,7 @@ export default function AnalyticsPage() {
                   {qrMetrics.successRate}%
                 </span>
                 <span className="text-[#888888] text-sm">
-                  {qrMetrics.successes} / {qrMetrics.attempts}
+                  {qrMetrics.detected} / {qrMetrics.total}
                 </span>
               </div>
 
@@ -1313,7 +1320,7 @@ export default function AnalyticsPage() {
               </div>
 
               <div className="text-[#888888] text-xs mt-2">
-                Today • Attempt: {qrMetrics.attempts} • Success: {qrMetrics.successes}
+                {periodLabel} • Total: {qrMetrics.total} • Detected: {qrMetrics.detected}
               </div>
             </div>
             <div className="bg-[#1a1a1a] border border-[#2d2d2d] rounded-lg p-4">
