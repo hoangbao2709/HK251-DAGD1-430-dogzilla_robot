@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import RemoteView from "@/components/control/RemoteView";
 import FPVView from "@/components/control/FPVView";
 import HeaderControl from "@/components/header_control";
+import { RobotAPI } from "@/app/lib/robotApi";
 
 import Sidebar from "@/components/Sidebar";
 import Topbar from "@/components/Topbar";
@@ -11,7 +12,7 @@ import { ChevronLeft } from "lucide-react";
 
 async function robotStop() {
   try {
-    await fetch("/api/robots/robot-a/command/move/stop", { method: "POST" });
+    await RobotAPI.move({ command: "stop" });
   } catch {}
 }
 async function getFpv() {
@@ -22,7 +23,12 @@ export default function ManualControlPage() {
   const [mode, setMode] = useState<"remote" | "fpv">("remote");
   const [fpv, setFpv] = useState<{ stream_url?: string; fps?: number }>({});
   const [isMobile, setIsMobile] = useState(false);
+  const [fpvCommandLog, setFpvCommandLog] = useState<string[]>([]);
   const router = useRouter();
+
+  const appendFpvLog = useCallback((line: string) => {
+    setFpvCommandLog((prev) => [line, ...prev].slice(0, 50));
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -55,15 +61,12 @@ export default function ManualControlPage() {
   const goToConnection = useCallback(() => {
     router.push("/dashboard");
   }, [router]);
-
-  /* ----------------- MOBILE ----------------- */
   if (isMobile) {
     return (
-      <div className="relative min-h-screen w-full bg-slate-50 text-slate-900 dark:bg-[#0c0520] dark:text-white">
-        {/* Nút quay lại Connection (floating) */}
+      <div className="relative min-h-screen w-full bg-[radial-gradient(circle_at_top_left,rgba(253,116,155,0.12),transparent_28%),radial-gradient(circle_at_top_right,rgba(0,184,255,0.10),transparent_24%),var(--background)] text-[var(--foreground)]">
         <button
           onClick={goToConnection}
-          className="
+          className="cursor-pointer 
             fixed left-3 top-3 z-50
             flex items-center gap-1
             px-3 py-1.5 rounded-full
@@ -83,30 +86,27 @@ export default function ManualControlPage() {
             toggleMode={toggleMode}
           />
         ) : (
-          <section className="min-h-screen w-full bg-slate-50 text-slate-900 dark:bg-[#0c0520] dark:text-white pt-12">
-            {/* chừa khoảng trên cho nút back */}
+          <section className="min-h-screen w-full bg-[var(--background)] text-[var(--foreground)] pt-12">
             <div className="mx-auto max-w-5xl px-2 py-3 space-y-3">
               <HeaderControl
                 mode={mode}
                 onToggle={toggleMode}
                 connected={true}
+                commandLog={fpvCommandLog}
               />
-              <FPVView fps={fpv.fps ?? 30} />
+              <FPVView fps={fpv.fps ?? 30} onCommandLog={appendFpvLog} />
             </div>
           </section>
         )}
       </div>
     );
   }
-
-  /* ----------------- DESKTOP ----------------- */
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900 dark:bg-[#1A0F28] dark:text-white">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(253,116,155,0.12),transparent_28%),radial-gradient(circle_at_top_right,rgba(0,184,255,0.10),transparent_24%),var(--background)] text-[var(--foreground)]">
       <div className="flex min-h-screen">
         <Sidebar />
         <div className="flex flex-col flex-1">
-          <Topbar />
-          <section className="flex-1 w-full bg-slate-50 text-slate-900 dark:bg-[#0c0520] dark:text-white p-6">
+          <section className="flex-1 w-full bg-[var(--background)] text-[var(--foreground)] p-6">
             <div className="">
               {mode === "remote" ? (
                 <RemoteView
@@ -120,8 +120,9 @@ export default function ManualControlPage() {
                     mode={mode}
                     onToggle={toggleMode}
                     connected={true}
+                    commandLog={fpvCommandLog}
                   />
-                  <FPVView fps={fpv.fps ?? 30} />
+                  <FPVView fps={fpv.fps ?? 30} onCommandLog={appendFpvLog} />
                 </div>
               )}
             </div>
@@ -131,3 +132,4 @@ export default function ManualControlPage() {
     </div>
   );
 }
+

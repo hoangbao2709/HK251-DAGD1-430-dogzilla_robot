@@ -1,4 +1,3 @@
-// components/control/RemoteView.tsx
 "use client";
 
 import {
@@ -8,11 +7,14 @@ import {
   useCallback,
   useMemo,
 } from "react";
-import { useSearchParams } from "next/navigation";
 import { HalfCircleJoystick } from "@/components/HalfCircleJoystick";
 import HeaderControl from "@/components/header_control";
 import MouselookPad from "@/components/MouselookPad";
 import { useGamepadMove } from "@/app/lib/useGamepadMove";
+import {
+  getSelectedRobotAddr,
+  SELECTED_ROBOT_ADDR_EVENT,
+} from "@/app/lib/selectedRobot";
 import {
   RobotAPI,
   DEFAULT_DOG_SERVER,
@@ -45,20 +47,38 @@ export default function RemoteView({
   mode: "remote" | "fpv";
   toggleMode: () => void;
 }) {
-  const searchParams = useSearchParams();
-  const ipParam = searchParams.get("ip");
-  const DOG_SERVER = ipParam || DEFAULT_DOG_SERVER;
+  const [dogServer, setDogServer] = useState(
+    () => getSelectedRobotAddr() || DEFAULT_DOG_SERVER
+  );
 
   const isCheckingRef = useRef(false);
+  const lidarRunningRef = useRef(false);
+
+  useEffect(() => {
+    const syncSelectedRobot = () => {
+      const nextAddr = getSelectedRobotAddr() || DEFAULT_DOG_SERVER;
+      setDogServer((current) => (current === nextAddr ? current : nextAddr));
+    };
+
+    syncSelectedRobot();
+    window.addEventListener(SELECTED_ROBOT_ADDR_EVENT, syncSelectedRobot);
+    window.addEventListener("focus", syncSelectedRobot);
+    window.addEventListener("pageshow", syncSelectedRobot);
+    document.addEventListener("visibilitychange", syncSelectedRobot);
+
+    return () => {
+      window.removeEventListener(SELECTED_ROBOT_ADDR_EVENT, syncSelectedRobot);
+      window.removeEventListener("focus", syncSelectedRobot);
+      window.removeEventListener("pageshow", syncSelectedRobot);
+      document.removeEventListener("visibilitychange", syncSelectedRobot);
+    };
+  }, []);
 
   const lidarUrl = useMemo(() => {
     try {
-      const url = new URL(DOG_SERVER);
+      const url = new URL(dogServer);
       const host = url.hostname;
       const port = url.port;
-
-      const isCloudflare = host.endsWith("trycloudflare.com");
-      if (isCloudflare) return `${url.origin.replace(/\/$/, "")}/lidar/`;
 
       if (port === "9000" || port === "") {
         return `${url.protocol}//${host}:8080`;
@@ -70,10 +90,15 @@ export default function RemoteView({
     } catch {
       return "";
     }
-  }, [DOG_SERVER]);
+  }, [dogServer]);
 
   const [isRunning, setIsRunning] = useState(false);
+  const [lidarBusy, setLidarBusy] = useState(false);
+  const [lidarError, setLidarError] = useState<string | null>(null);
+  const [lidarFrameLoaded, setLidarFrameLoaded] = useState(false);
+  const [lidarFrameKey, setLidarFrameKey] = useState(0);
   const [speed, setSpeed] = useState<"slow" | "normal" | "high">("normal");
+  const [speedBusy, setSpeedBusy] = useState(false);
   const [fps, setFps] = useState(30);
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
@@ -83,7 +108,7 @@ export default function RemoteView({
   const [righting, setRighting] = useState(false);
   const [mouseLook, setMouseLook] = useState(false);
   const [commandLog, setCommandLog] = useState<string[]>([]);
-  const postureBtns = ["Lie_Down", "Stand_Up", "Sit_Down", "Squat", "Crawl"];
+  const postureBtns = ["Lie_Down", "Stand_Up", "Crawl", "Squat", "Sit_Down"];
   const axisMotionBtns = [
     "Turn_Roll",
     "Turn_Pitch",
@@ -91,8 +116,17 @@ export default function RemoteView({
     "3_Axis",
     "Turn_Around",
   ];
-  const behavior1 = ["Wave_Hand", "Handshake", "Pray", "Stretch", "Swing"];
-  const behavior2 = ["Wave_Body", "Handshake", "Pee", "Play_Ball", "Mark_Time"];
+  const behaviorBtns = [
+    "Mark_Time",
+    "Pee",
+    "Wave_Hand",
+    "Stretch",
+    "Wave_Body",
+    "Swing",
+    "Pray",
+    "Seek",
+    "Handshake",
+  ];
 
   const hasResetBody = useRef(false);
   const [isMobile, setIsMobile] = useState(false);
@@ -102,7 +136,7 @@ export default function RemoteView({
     if (!line) return;
     setCommandLog(prev => [line, ...prev].slice(0, 50)); 
   }, []);
-  // body sliders
+  const lastConnectionStateRef = useRef<boolean | null>(null);
   const [sliders, setSliders] = useState<BodyState>({
     tx: 0,
     ty: 0,
@@ -112,18 +146,19 @@ export default function RemoteView({
     rz: 0,
   });
   const bodyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // joystick state
   const joyRef = useRef<{ vx: number; vy: number; active: boolean }>({
     vx: 0,
     vy: 0,
     active: false,
   });
+  const joyLogRef = useRef<{ direction: string; timestamp: number }>({
+    direction: "",
+    timestamp: 0,
+  });
+  const joyStoppedRef = useRef(true);
 
   const maxV = 0.25;
   const maxSideV = 0.25;
-
-  // ==== responsive ====
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -142,37 +177,52 @@ export default function RemoteView({
       window.removeEventListener("orientationchange", update);
     };
   }, []);
-
-  // ==== ping lidar server ====
   useEffect(() => {
-    if (!lidarUrl) {
+    if (!connected) {
       setIsRunning(false);
+      setLidarFrameLoaded(false);
       return;
     }
 
     let stop = false;
-
-    async function pingLidar() {
+    async function fetchControlStatus() {
       try {
-        const res = await fetch(lidarUrl, { cache: "no-store" });
+        const res: any = await RobotAPI.controlStatus();
         if (stop) return;
-        setIsRunning(res.ok);
+        const data = res?.data ?? res ?? {};
+        const running = Boolean(data?.lidar_running ?? data?.lidar?.running ?? false);
+        const wasRunning = lidarRunningRef.current;
+        lidarRunningRef.current = running;
+        setIsRunning(running);
+        if (running) {
+          setLidarError(null);
+          if (!wasRunning) {
+            setLidarFrameLoaded(false);
+            setLidarFrameKey((value) => value + 1);
+          }
+        } else {
+          setLidarFrameLoaded(false);
+        }
       } catch {
         if (stop) return;
         setIsRunning(false);
+        setLidarFrameLoaded(false);
+      } finally {
       }
     }
 
-    pingLidar();
-    const id = setInterval(pingLidar, 2000);
+    fetchControlStatus();
+    const id = setInterval(fetchControlStatus, 2500);
 
     return () => {
       stop = true;
       clearInterval(id);
     };
+  }, [connected]);
+  useEffect(() => {
+    setLidarFrameLoaded(false);
+    setLidarFrameKey((value) => value + 1);
   }, [lidarUrl]);
-
-  // ==== connect Django -> Dogzilla + lấy stream_url ====
   useEffect(() => {
     let stop = false;
     let iv: ReturnType<typeof setInterval> | null = null;
@@ -183,13 +233,17 @@ export default function RemoteView({
       isCheckingRef.current = true;
 
       try {
-        const res = await RobotAPI.connect(DOG_SERVER);
+        const res = await RobotAPI.connect(dogServer);
         if (stop) return;
 
         if (res?.connected) {
+          const wasConnected = lastConnectionStateRef.current;
           setConnected(true);
           setConnectError(null);
-          appendLog(`[CONNECT] Connected to ${DOG_SERVER}`);
+          if (wasConnected !== true) {
+            appendLog(`[CONNECT] Connected to ${dogServer}`);
+          }
+          lastConnectionStateRef.current = true;
           if (!hasResetBody.current) {
             try {
               await resetBody();
@@ -211,9 +265,13 @@ export default function RemoteView({
             }
           }
         } else {
+          const wasConnected = lastConnectionStateRef.current;
           setConnected(false);
           const msg = res?.error || "Không kết nối được tới Dogzilla server";
-          appendLog(`[CONNECT ERROR] ${msg}`);
+          if (wasConnected !== false) {
+            appendLog(`[DISCONNECT] ${msg}`);
+          }
+          lastConnectionStateRef.current = false;
           setConnectError(
             res?.error || "Không kết nối được tới Dogzilla server"
           );
@@ -221,7 +279,12 @@ export default function RemoteView({
       } catch (e: any) {
         console.error("Connect error:", e);
         if (!stop) {
+          const wasConnected = lastConnectionStateRef.current;
           setConnected(false);
+          if (wasConnected !== false) {
+            appendLog(`[DISCONNECT] ${e?.message || "Lỗi kết nối"}`);
+          }
+          lastConnectionStateRef.current = false;
           setConnectError(e?.message || "Lỗi kết nối");
         }
       } finally {
@@ -237,9 +300,7 @@ export default function RemoteView({
       if (iv) clearInterval(iv);
       onEmergencyStop?.();
     };
-  }, [DOG_SERVER, onEmergencyStop, streamUrl]);
-
-  // ==== poll fps từ /status (nếu backend có) ====
+  }, [dogServer, onEmergencyStop, streamUrl]);
   useEffect(() => {
     let stop = false;
     const iv = setInterval(async () => {
@@ -249,7 +310,6 @@ export default function RemoteView({
           setFps(s.fps);
         }
       } catch {
-        // ignore
       }
     }, 2000);
 
@@ -258,39 +318,82 @@ export default function RemoteView({
       clearInterval(iv);
     };
   }, []);
-
-  // ==== speed ====
   const changeSpeed = useCallback(
     async (m: "slow" | "normal" | "high") => {
+      if (speedBusy || !connected || speed === m) return;
+
+      const previousSpeed = speed;
       setSpeed(m);
+      setSpeedBusy(true);
       try {
         const res: any = await RobotAPI.speed(m);
         appendLog(res?.log || `[SPEED] → ${m.toUpperCase()}`);
       } catch (e: any) {
         console.error("Speed error:", e);
+        setSpeed(previousSpeed);
         appendLog(`[SPEED ERROR] ${e?.message || String(e)}`);
+      } finally {
+        setSpeedBusy(false);
+      }
+    },
+    [appendLog, connected, speed, speedBusy]
+  );
+
+  const runPostureCommand = useCallback(
+    async (name: string) => {
+      appendLog(`[POSTURE] ${name}`);
+      try {
+        const res: any = await RobotAPI.posture(name);
+        appendLog(res?.log || `[POSTURE] -> ${name}`);
+      } catch (e: any) {
+        appendLog(`[POSTURE ERROR] ${name}: ${e?.message || String(e)}`);
       }
     },
     [appendLog]
   );
 
-  // ==== lidar toggle ====
+  const runBehaviorCommand = useCallback(
+    async (name: string, group: "AXIS" | "BEHAVIOR") => {
+      appendLog(`[${group}] ${name}`);
+      try {
+        const res: any = await RobotAPI.behavior(name);
+        appendLog(res?.log || `[${group}] -> ${name}`);
+      } catch (e: any) {
+        appendLog(`[${group} ERROR] ${name}: ${e?.message || String(e)}`);
+      }
+    },
+    [appendLog]
+  );
   const handleToggleLidar = useCallback(async () => {
+    if (lidarBusy) return;
+
     const next = !isRunning;
     try {
+      setLidarBusy(true);
+      setLidarError(null);
       const res: any = await RobotAPI.lidar(next ? "start" : "stop");
       appendLog(
         res?.log || `[LIDAR] ${next ? "start" : "stop"} (frontend toggle)`
       );
       setIsRunning(next);
+      lidarRunningRef.current = next;
+      if (next) {
+        setLidarFrameLoaded(false);
+        window.setTimeout(() => {
+          setLidarFrameKey((value) => value + 1);
+        }, 700);
+      }
+      if (!next) {
+        setLidarFrameLoaded(false);
+      }
     } catch (e: any) {
       console.error("Lidar error:", e);
+      setLidarError(e?.message || "Không điều khiển được LiDAR");
       appendLog(`[LIDAR ERROR] ${e?.message || String(e)}`);
+    } finally {
+      setLidarBusy(false);
     }
-  }, [isRunning, appendLog]);
-
-
-  // ==== stabilizing toggle ====
+  }, [isRunning, lidarBusy, appendLog]);
   const handleToggleStabilizing = useCallback(async () => {
     const next = !stabilizing;
     setStabilizing(next);
@@ -306,19 +409,49 @@ export default function RemoteView({
       setStabilizing((prev) => !prev);
     }
   }, [stabilizing, appendLog]);
-
-
-  // ==== joystick send loop ====
   useEffect(() => {
-    const timer = setInterval(() => {
+    let isRequesting = false;
+    const timer = setInterval(async () => {
       const { vx, vy, active } = joyRef.current;
       if (!active) return;
+      if (isRequesting) return;
 
-      RobotAPI.move({ vx, vy, vz: 0, rx: 0, ry: 0, rz: 0 }).catch(() => {});
+      isRequesting = true;
+      try {
+        const direction =
+          Math.abs(vx) >= Math.abs(vy)
+            ? vx >= 0
+              ? "forward"
+              : "back"
+            : vy >= 0
+            ? "right"
+            : "left";
+        const now = Date.now();
+        const shouldLog =
+          joyLogRef.current.direction !== direction ||
+          now - joyLogRef.current.timestamp >= 1000;
+        const res: any = await RobotAPI.move({ vx, vy, vz: 0, rx: 0, ry: 0, rz: 0 });
+
+        if (shouldLog) {
+          appendLog(
+            res?.log ||
+              `[MOVE] joystick ${direction} vx=${vx.toFixed(2)}, vy=${vy.toFixed(2)}`
+          );
+          joyLogRef.current = { direction, timestamp: now };
+        }
+      } catch (e: any) {
+        const now = Date.now();
+        if (now - joyLogRef.current.timestamp >= 1000) {
+          appendLog(`[MOVE ERROR] joystick: ${e?.message || String(e)}`);
+          joyLogRef.current = { direction: "error", timestamp: now };
+        }
+      } finally {
+        isRequesting = false;
+      }
     }, 80);
 
     return () => clearInterval(timer);
-  }, []);
+  }, [appendLog]);
 
   const onJoyChange = useCallback(
     ({ angleDeg, power }: { angleDeg: number; power: number }) => {
@@ -329,15 +462,34 @@ export default function RemoteView({
       const vx = forward * maxV;
       const vy = strafe * maxSideV;
 
-      joyRef.current = { vx, vy, active: power > 0.01 };
+      const active = power > 0.01;
+      joyRef.current = { vx, vy, active };
+
+      if (active) {
+        joyStoppedRef.current = false;
+        return;
+      }
+
+      if (!joyStoppedRef.current) {
+        joyStoppedRef.current = true;
+        RobotAPI.move({ vx: 0, vy: 0, vz: 0, rx: 0, ry: 0, rz: 0 })
+          .then((res: any) => {
+            appendLog(res?.log || "[MOVE] joystick center stop");
+          })
+          .catch((e: any) => {
+            appendLog(`[MOVE ERROR] joystick center stop: ${e?.message || String(e)}`);
+          });
+      }
     },
-    []
+    [appendLog]
   );
 
   const onJoyRelease = useCallback(async () => {
     joyRef.current = { vx: 0, vy: 0, active: false };
+    joyStoppedRef.current = true;
+    joyLogRef.current = { direction: "", timestamp: 0 };
     try {
-      await RobotAPI.move({
+      const res: any = await RobotAPI.move({
         vx: 0,
         vy: 0,
         vz: 0,
@@ -345,12 +497,11 @@ export default function RemoteView({
         ry: 0,
         rz: 0,
       });
-    } catch {
-      /* ignore */
+      appendLog(res?.log || "[MOVE] joystick stop");
+    } catch (e: any) {
+      appendLog(`[MOVE ERROR] joystick stop: ${e?.message || String(e)}`);
     }
-  }, []);
-
-  // ==== quay trái / phải + stop ====
+  }, [appendLog]);
   const stopMove = useCallback(() => {
     RobotAPI.move({ vx: 0, vy: 0, vz: 0, rx: 0, ry: 0, rz: 0 })
       .then((res: any) => {
@@ -410,7 +561,6 @@ export default function RemoteView({
       setLefting(false);
     }
   };
-  // ==== body adjust ====
   const updateBody = useCallback(
     (partial: Partial<BodyState>) => {
       setSliders((prev) => {
@@ -458,27 +608,32 @@ export default function RemoteView({
         appendLog(`[BODY ERROR] reset: ${e?.message || String(e)}`);
       });
   }, [appendLog]);
-
-
-  // gamepad điều khiển chung
   useGamepadMove();
 
-  /* ========== MOBILE LAYOUT ========== */
+  const lidarButtonLabel = lidarBusy
+    ? isRunning
+      ? "Stopping LiDAR..."
+      : "Starting LiDAR..."
+    : isRunning
+    ? "Stop Lidar"
+    : "Start Lidar";
+  const lidarFrameSrc = lidarUrl
+    ? `${lidarUrl}${lidarUrl.includes("?") ? "&" : "?"}t=${lidarFrameKey}`
+    : "";
   if (isMobile) {
     return (
-      <section className="h-screen w-full bg-slate-50 text-slate-900 dark:bg-[#0c0520] dark:text-white relative">
+      <section className="h-screen w-full bg-[var(--background)] text-[var(--foreground)] relative">
         {mobileMenuOpen && (
           <div className="fixed inset-0 z-40">
             <div
-              className="absolute inset-0 bg-black/40"
+              className="absolute inset-0 bg-[rgba(0,0,0,0.35)]"
               onClick={() => setMobileMenuOpen(false)}
             />
-            <div className="absolute inset-y-0 right-0 w-72 max-w-[80%] bg-white border-l border-slate-200 dark:bg-slate-900 dark:border-white/10 p-4 flex flex-col gap-4 shadow-2xl">
+            <div className="absolute inset-y-0 right-0 w-72 max-w-[80%] bg-[var(--surface)] border-l border-[var(--border)] p-4 flex flex-col gap-4 shadow-2xl">
               <div className="flex items-center justify-between mb-1">
                 <div className="text-sm font-semibold">Controls</div>
-                <button
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="w-8 h-8 flex items-center justify-center rounded-full bg-black/5 dark:bg-white/10 text-lg leading-none"
+                <button onClick={() => setMobileMenuOpen(false)}
+                  className="cursor-pointer w-8 h-8 flex items-center justify-center rounded-full bg-[var(--surface-2)] text-[var(--foreground)] text-lg leading-none"
                 >
                   ×
                 </button>
@@ -495,8 +650,13 @@ export default function RemoteView({
                     {(["slow", "normal", "high"] as const).map((s) => (
                       <Chip
                         key={s}
-                        label={s.charAt(0).toUpperCase() + s.slice(1)}
+                        label={
+                          speedBusy && speed === s
+                            ? `${s.charAt(0).toUpperCase() + s.slice(1)}...`
+                            : s.charAt(0).toUpperCase() + s.slice(1)
+                        }
                         active={speed === s}
+                        disabled={speedBusy || !connected}
                         onClick={() => changeSpeed(s)}
                       />
                     ))}
@@ -506,7 +666,7 @@ export default function RemoteView({
                 <div className="space-y-2">
                   <Btn
                     variant={isRunning ? "success" : "default"}
-                    label={isRunning ? "Stop Lidar" : "Start Lidar"}
+                    label={lidarButtonLabel}
                     onClick={handleToggleLidar}
                   />
                   <Btn
@@ -516,7 +676,7 @@ export default function RemoteView({
                   />
                 </div>
 
-                <div className="border-t border-slate-200 dark:border-white/10 pt-3 mt-1">
+                <div className="border-t border-[var(--border)] pt-3 mt-1">
                   <div className="text-xs mb-2 opacity-80">
                     Body Adjustment
                   </div>
@@ -557,8 +717,8 @@ export default function RemoteView({
                       className="
                         px-3 py-1.5 text-xs rounded-lg cursor-pointer font-semibold
                         border border-fuchsia-400/70
-                        bg-fuchsia-500/10 dark:bg-fuchsia-500/15 text-fuchsia-700 dark:text-fuchsia-100
-                        shadow-sm shadow-black/10 dark:shadow-black/40
+                        bg-fuchsia-500/10 text-fuchsia-700
+                        shadow-sm shadow-black/10
                         transition-all duration-200
                         hover:bg-fuchsia-500
                         hover:text-[#0c0520]
@@ -587,9 +747,8 @@ export default function RemoteView({
                 </span>
               )}
             </div>
-            <button
-              onClick={() => setMobileMenuOpen(true)}
-              className="w-9 h-9 rounded-full border border-slate-300 dark:border-white/20 bg-white/70 dark:bg-white/10 flex items-center justify-center text-lg leading-none active:scale-95"
+            <button onClick={() => setMobileMenuOpen(true)}
+            className="cursor-pointer w-9 h-9 rounded-full border border-[var(--border)] bg-[var(--surface)] flex items-center justify-center text-lg leading-none text-[var(--foreground)] active:scale-95"
               aria-label="Open control menu"
             >
               ☰
@@ -597,20 +756,20 @@ export default function RemoteView({
           </div>
 
           {isPortrait && (
-            <div className="rounded-xl bg-amber-100 dark:bg-amber-500/10 border border-amber-300 dark:border-amber-400/40 px-3 py-2 text-[11px] text-amber-700 dark:text-amber-200">
+            <div className="rounded-xl bg-amber-100/80 dark:bg-amber-500/10 border border-amber-300 dark:border-amber-400/40 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-200">
               For better control, please rotate your phone to{" "}
               <span className="font-semibold">landscape</span>.
             </div>
           )}
 
           <div className="flex-1">
-            <div className="relative w-full h-full rounded-2xl border border-slate-200 dark:border-white/10 bg-black overflow-hidden">
+            <div className="relative w-full h-full rounded-2xl border border-[var(--border)] bg-[var(--surface-elev)] overflow-hidden">
               <img
                 src={streamUrl || "/placeholder.svg?height=360&width=640"}
                 alt="FPV"
                 className="absolute inset-0 w-full h-full object-cover opacity-80 z-0"
               />
-              <div className="absolute left-2 top-2 text-[11px] font-semibold text-green-500 dark:text-green-300 z-10">
+              <div className="absolute left-2 top-2 text-[11px] font-semibold text-emerald-500 dark:text-emerald-300 z-10">
                 FPS:{fps}
               </div>
 
@@ -629,8 +788,8 @@ export default function RemoteView({
                   <div className="flex items-center gap-3">
                     <button
                       onClick={turnLeft}
-                      className={`w-10 h-10 rounded-full bg-black/60 text-white text-lg flex items-center justify-center border border-white/20 ${
-                        lefting ? "bg-cyan-600/70" : "hover:bg-white/20"
+                      className={`cursor-pointer w-10 h-10 rounded-full bg-[var(--surface-2)] text-[var(--foreground)] text-lg flex items-center justify-center border border-[var(--border)] ${
+                        lefting ? "bg-cyan-600/70 text-white" : "hover:bg-[var(--surface)]"
                       }`}
                     >
                       {"<"}
@@ -638,15 +797,15 @@ export default function RemoteView({
 
                     <button
                       onClick={stopMove}
-                      className="w-12 h-12 rounded-full bg-red-600 text-white text-xs font-semibold flex items-center justify-center shadow-lg active:scale-95"
+                      className="cursor-pointer w-12 h-12 rounded-full bg-rose-500 text-white text-xs font-semibold flex items-center justify-center shadow-lg active:scale-95"
                     >
                       Stop
                     </button>
 
                     <button
                       onClick={turnRight}
-                      className={`w-10 h-10 rounded-full bg-black/60 text-white text-lg flex items-center justify-center border border-white/20 ${
-                        righting ? "bg-cyan-600/70" : "hover:bg-white/20"
+                      className={`cursor-pointer w-10 h-10 rounded-full bg-[var(--surface-2)] text-[var(--foreground)] text-lg flex items-center justify-center border border-[var(--border)] ${
+                        righting ? "bg-cyan-600/70 text-white" : "hover:bg-[var(--surface)]"
                       }`}
                     >
                       {">"}
@@ -660,24 +819,23 @@ export default function RemoteView({
       </section>
     );
   }
-
-  /* ========== DESKTOP LAYOUT ========== */
   return (
-    <section className="min-h-screen w-full bg-slate-50 text-slate-900 dark:bg-[#0c0520] dark:text-white">
+    <section className="min-h-screen w-full bg-[var(--background)] text-[var(--foreground)]">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
           <HeaderControl
             mode={mode}
             onToggle={toggleMode}
             lidarUrl={lidarUrl}
+            lidarActive={isRunning}
             connected={connected}
             errorExternal={connectError}   
             commandLog={commandLog}  
           />
 
 
-          <div className="relative overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10 bg-black">
-            <div className="absolute left-3 top-2 text-green-600 dark:text-green-300 text-xl font-bold drop-shadow z-10">
+          <div className="relative overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface-elev)]">
+            <div className="absolute left-3 top-2 text-emerald-600 dark:text-emerald-300 text-xl font-bold drop-shadow z-10">
               FPS:{fps}
             </div>
             <img
@@ -690,37 +848,31 @@ export default function RemoteView({
           </div>
 
           <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Panel title="Basic Postures">
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            <Panel title="Basic Postures" tone="pink">
+              <div className="grid grid-cols-[repeat(5,minmax(0,1fr))] gap-2">
                 {postureBtns.map((b) => (
                   <Btn
                     key={b}
                     label={b.replaceAll("_", " ")}
-                        onClick={() => {
-                          appendLog(`[POSTURE] ${b}`);
-                          RobotAPI.posture(b).catch((e: any) =>
-                            appendLog(`[POSTURE ERROR] ${b}: ${e?.message || String(e)}`)
-                          );
-                        }}
+                    onClick={() => runPostureCommand(b)}
                     variant="default"
+                    tone="pink"
+                    className="w-full"
                   />
                 ))}
               </div>
             </Panel>
 
-            <Panel title="Axis Motion">
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            <Panel title="Axis Motion" tone="cyan">
+              <div className="grid grid-cols-[repeat(5,minmax(0,1fr))] gap-2">
                 {axisMotionBtns.map((b) => (
                   <Btn
                     key={b}
                     label={b.replaceAll("_", " ")}
-                        onClick={() => {
-                          appendLog(`[AXIS] ${b}`);
-                          RobotAPI.behavior(b).catch((e: any) =>
-                            appendLog(`[AXIS ERROR] ${b}: ${e?.message || String(e)}`)
-                          );
-                        }}
+                    onClick={() => runBehaviorCommand(b, "AXIS")}
                     variant="default"
+                    tone="cyan"
+                    className="w-full"
                   />
                 ))}
               </div>
@@ -728,19 +880,16 @@ export default function RemoteView({
           </div>
 
           <div className="mt-6">
-            <Panel title="Behavior Control">
-              <div className="grid grid-cols-2 sm:grid-cols-10 gap-3">
-                {[...behavior1, ...behavior2].map((b, i) => (
+            <Panel title="Behavior Control" tone="emerald">
+              <div className="grid grid-cols-5 gap-2 xl:grid-cols-9">
+                {behaviorBtns.map((b) => (
                   <Btn
-                    key={`${b}-${i}`}
+                    key={b}
                     label={b.replaceAll("_", " ")}
-                    onClick={() => {
-                      appendLog(`[BEHAVIOR] ${b}`);
-                      RobotAPI.behavior(b).catch((e: any) =>
-                        appendLog(`[BEHAVIOR ERROR] ${b}: ${e?.message || String(e)}`)
-                      );
-                    }}
+                    onClick={() => runBehaviorCommand(b, "BEHAVIOR")}
                     variant="default"
+                    tone="emerald"
+                    className="w-full whitespace-nowrap"
                   />
                 ))}
               </div>
@@ -748,132 +897,188 @@ export default function RemoteView({
           </div>
         </div>
 
-        <div className="space-y-6">
-          <div
-            className={`rounded-2xl bg-white/80 border border-slate-200 dark:bg-white/5 dark:border-white/10 ${
-              !isRunning ? "hidden" : ""
-            }`}
-          >
-            <div className="text-sm mb-2 opacity-80">Lidar map</div>
-            <div className="relative w-full pt-[100%] rounded-xl overflow-hidden border border-slate-200 dark:border-white/10 bg-black">
-              <iframe
-                src={lidarUrl}
-                className="absolute inset-0 w-full h-full border-0"
-              />
-            </div>
+        <div className="flex flex-col gap-4 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:pr-1">
+          <div className="order-1">
+            <Panel title="Move" tone="cyan">
+              <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-4 items-start">
+                <div className="justify-self-center sm:justify-self-start cursor-pointer">
+                  <HalfCircleJoystick
+                    width={220}
+                    height={140}
+                    rest="center"
+                    onChange={onJoyChange}
+                    onRelease={onJoyRelease}
+                  />
+                </div>
+
+                <div className="flex flex-col gap-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    <Btn label="Turn left" variant={lefting ? "success" : "default"} tone="cyan" onClick={turnLeft} />
+                    <Btn label="Turn right" variant={righting ? "success" : "default"} tone="cyan" onClick={turnRight} />
+                    <Btn variant="danger" label="Stop" onClick={stopMove} />
+                    <Btn
+                      variant={isRunning ? "success" : "danger"}
+                      label={lidarButtonLabel}
+                      onClick={handleToggleLidar}
+                    />
+                    <Btn
+                      variant={stabilizing ? "success" : "default"}
+                      label={stabilizing ? "Stabilizing ON" : "Stabilizing OFF"}
+                      tone="violet"
+                      onClick={handleToggleStabilizing}
+                    />
+                    <MouseLookToggle
+                      variant={mouseLook ? "success" : "default"}
+                      on={mouseLook}
+                      onToggle={() => setMouseLook((prev) => !prev)}
+                    />
+                  </div>
+                </div>
+              </div>
+            </Panel>
           </div>
 
-          <Panel title="Speed">
-            <div className="flex gap-3">
-              {(["slow", "normal", "high"] as const).map((s) => (
-                <Chip
-                  key={s}
-                  label={s.charAt(0).toUpperCase() + s.slice(1)}
-                  active={speed === s}
-                  onClick={() => changeSpeed(s)}
-                />
-              ))}
-            </div>
-          </Panel>
-
-          <Panel title="Move">
-            <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-4 items-start">
-              <div className="justify-self-center sm:justify-self-start cursor-pointer">
-                <HalfCircleJoystick
-                  width={260}
-                  height={160}
-                  rest="center"
-                  onChange={onJoyChange}
-                  onRelease={onJoyRelease}
-                />
+          <div className="order-2">
+            <Panel title="Speed" tone="violet">
+              <div className="flex gap-3">
+                {(["slow", "normal", "high"] as const).map((s) => (
+                  <Chip
+                    key={s}
+                    label={
+                      speedBusy && speed === s
+                        ? `${s.charAt(0).toUpperCase() + s.slice(1)}...`
+                        : s.charAt(0).toUpperCase() + s.slice(1)
+                    }
+                    active={speed === s}
+                    disabled={speedBusy || !connected}
+                    onClick={() => changeSpeed(s)}
+                  />
+                ))}
               </div>
+            </Panel>
+          </div>
 
-              <div className="flex flex-col gap-3">
-                <div className="grid grid-cols-2 gap-2">
-                  <Btn
-                    label="Turn left"
-                    variant={lefting ? "success" : "default"}
-                    onClick={turnLeft}
-                  />
-                  <Btn
-                    label="Turn right"
-                    variant={righting ? "success" : "default"}
-                    onClick={turnRight}
-                  />
-                  <Btn variant="danger" label="Stop" onClick={stopMove} />
-                  <Btn
-                    variant={isRunning ? "success" : "danger"}
-                    label={isRunning ? "Stop Lidar" : "Start Lidar"}
-                    onClick={handleToggleLidar}
-                  />
-                  <Btn
-                    variant={stabilizing ? "success" : "default"}
-                    label={stabilizing ? "Stabilizing ON" : "Stabilizing OFF"}
-                    onClick={handleToggleStabilizing}
-                  />
-                  <MouseLookToggle
-                    variant={mouseLook ? "success" : "default"}
-                    on={mouseLook}
-                    onToggle={() => setMouseLook((prev) => !prev)}
-                  />
+          <div className="order-3 rounded-2xl bg-[var(--surface)] border border-[var(--border)] p-4">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <div className="text-sm text-[var(--foreground)]/80">Lidar map</div>
+              <div
+                className={`text-[11px] font-medium ${
+                  lidarError
+                    ? "text-rose-400"
+                    : isRunning
+                    ? "text-emerald-500"
+                    : "text-[var(--muted)]"
+                }`}
+              >
+                {lidarError
+                  ? "LiDAR error"
+                  : isRunning
+                  ? lidarFrameLoaded
+                    ? "Live"
+                    : "Loading..."
+                  : "Offline"}
+              </div>
+            </div>
+
+            <div
+              className={`relative w-full rounded-xl overflow-hidden border border-[var(--border)] bg-[var(--surface-elev)] transition-[height] duration-300 ${
+                isRunning || lidarError ? "h-80 xl:h-96" : "h-28"
+              }`}
+            >
+              {isRunning && lidarFrameSrc ? (
+                <iframe
+                  key={lidarFrameSrc}
+                  src={lidarFrameSrc}
+                  title="LiDAR map"
+                  className={`absolute inset-0 w-full h-full border-0 transition-opacity duration-300 ${
+                    lidarFrameLoaded ? "opacity-100" : "opacity-0"
+                  }`}
+                  onLoad={() => {
+                    setLidarFrameLoaded(true);
+                    setLidarError(null);
+                  }}
+                  onError={() => {
+                    setLidarFrameLoaded(false);
+                    setLidarError(`Cannot load ${lidarUrl}`);
+                  }}
+                />
+              ) : null}
+
+              <div
+                className={`absolute inset-0 flex items-center justify-center text-xs transition-opacity duration-300 ${
+                  isRunning && lidarFrameLoaded ? "opacity-0 pointer-events-none" : "opacity-100"
+                }`}
+              >
+                <div
+                  className={`rounded-xl border border-[var(--border)] bg-[var(--surface)] text-center text-[var(--foreground)]/70 ${
+                    isRunning || lidarError ? "px-4 py-3" : "px-3 py-2"
+                  }`}
+                >
+                  {lidarError
+                    ? `LiDAR error: ${lidarError}`
+                    : isRunning
+                    ? "Waiting for LiDAR stream..."
+                    : "LiDAR is currently off"}
                 </div>
               </div>
             </div>
-          </Panel>
+          </div>
 
-          <Panel title="Body Adjustment">
-            <SliderRow
-              label="Translation_X"
-              value={sliders.tx}
-              onChange={(v) => updateBody({ tx: v })}
-            />
-            <SliderRow
-              label="Translation_Y"
-              value={sliders.ty}
-              onChange={(v) => updateBody({ ty: v })}
-            />
-            <SliderRow
-              label="Translation_Z"
-              value={sliders.tz}
-              onChange={(v) => updateBody({ tz: v })}
-            />
-            <SliderRow
-              label="Rotation_X"
-              value={sliders.rx}
-              onChange={(v) => updateBody({ rx: v })}
-            />
-            <SliderRow
-              label="Rotation_Y"
-              value={sliders.ry}
-              onChange={(v) => updateBody({ ry: v })}
-            />
-            <SliderRow
-              label="Rotation_Z"
-              value={sliders.rz}
-              onChange={(v) => updateBody({ rz: v })}
-            />
+          <div className="order-4">
+            <Panel title="Body Adjustment" tone="pink">
+              <SliderRow
+                label="Translation_X"
+                value={sliders.tx}
+                onChange={(v) => updateBody({ tx: v })}
+              />
+              <SliderRow
+                label="Translation_Y"
+                value={sliders.ty}
+                onChange={(v) => updateBody({ ty: v })}
+              />
+              <SliderRow
+                label="Translation_Z"
+                value={sliders.tz}
+                onChange={(v) => updateBody({ tz: v })}
+              />
+              <SliderRow
+                label="Rotation_X"
+                value={sliders.rx}
+                onChange={(v) => updateBody({ rx: v })}
+              />
+              <SliderRow
+                label="Rotation_Y"
+                value={sliders.ry}
+                onChange={(v) => updateBody({ ry: v })}
+              />
+              <SliderRow
+                label="Rotation_Z"
+                value={sliders.rz}
+                onChange={(v) => updateBody({ rz: v })}
+              />
 
-            <div className="mt-3 flex justify-end">
-              <button
-                onClick={resetBody}
-                className="
-                  px-3 py-1.5 text-xs rounded-lg cursor-pointer font-semibold
-                  border border-fuchsia-400/70
-                  bg-fuchsia-500/10 dark:bg-fuchsia-500/15 text-fuchsia-700 dark:text-fuchsia-100
-                  shadow-sm shadow-black/10 dark:shadow-black/40
-                  transition-all duration-200
-                  hover:bg-fuchsia-500
-                  hover:text-[#0c0520]
-                  hover:border-fuchsia-200
-                  hover:shadow-xl hover:shadow-fuchsia-500/60
-                  hover:-translate-y-0.5 hover:scale-105
-                  active:scale-95 active:translate-y-0
-                "
-              >
-                Reset body to center
-              </button>
-            </div>
-          </Panel>
+              <div className="mt-3 flex justify-end">
+                    <button
+                      onClick={resetBody}
+                      className="
+                    px-3 py-1.5 text-xs rounded-lg cursor-pointer font-semibold
+                    border border-fuchsia-400/70
+                    bg-fuchsia-500/10 text-fuchsia-700
+                    shadow-sm shadow-black/10
+                    transition-all duration-200
+                    hover:bg-fuchsia-500
+                    hover:text-[#0c0520]
+                    hover:border-fuchsia-200
+                    hover:shadow-xl hover:shadow-fuchsia-500/60
+                    hover:-translate-y-0.5 hover:scale-105
+                    active:scale-95 active:translate-y-0
+                  "
+                    >
+                      Reset body to center
+                    </button>
+              </div>
+            </Panel>
+          </div>
         </div>
       </div>
     </section>

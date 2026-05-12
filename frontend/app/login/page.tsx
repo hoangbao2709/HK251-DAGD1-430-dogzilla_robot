@@ -1,8 +1,6 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-
-// Để thống nhất với Dashboard: dùng chung BACKEND_BASE
 const BACKEND_BASE =
   process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
 
@@ -64,12 +62,6 @@ export default function LoginPage() {
         if (json.email) {
           localStorage.setItem("user_email", json.email);
         }
-        if (json.robot_url) {
-          localStorage.setItem("robot_url", json.robot_url);
-        }
-        if (json.robot_device_id) {
-          localStorage.setItem("robot_device_id", json.robot_device_id);
-        }
       }
 
       router.push("/dashboard");
@@ -94,23 +86,16 @@ export default function LoginPage() {
     >
       <div className="w-full max-w-md mx-auto flex flex-col">
         <div className="flex-1 overflow-y-auto">
-
-          {/* CARD: MOBILE = full width, PC = card */}
           <div
             className="
           mt-0 sm:mt-8 mb-0 sm:mb-4
           w-full
-          
-          /* MOBILE style (no rounded, no border, full width) */
           rounded-none border-0 shadow-none bg-transparent p-6
-
-          /* DESKTOP style */
           sm:rounded-3xl sm:border sm:border-white/10 sm:bg-white/5
           sm:shadow-[0_0_0_1px_rgba(255,255,255,0.02)]
           sm:p-8
         "
           >
-            {/* Ring chỉ hiện trên PC */}
             <div className="hidden sm:block pointer-events-none absolute inset-0 rounded-3xl ring-1 ring-inset ring-fuchsia-500/20" />
 
             <div className="mb-6 text-center">
@@ -151,10 +136,9 @@ export default function LoginPage() {
                   className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 pr-16 text-sm sm:text-base outline-none placeholder:text-white/40 focus:border-indigo-400/50 focus:ring-2 focus:ring-indigo-400/30"
                   autoComplete="current-password"
                 />
-                <button
-                  type="button"
+                <button type="button"
                   onClick={() => setShowPassword((s) => !s)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg px-3 py-1 text-xs bg-white/5 border border-white/10 hover:bg-white/10"
+                  className="cursor-pointer absolute right-2 top-1/2 -translate-y-1/2 rounded-lg px-3 py-1 text-xs bg-white/5 border border-white/10 hover:bg-white/10"
                   aria-label={showPassword ? "Hide password" : "Show password"}
                 >
                   {showPassword ? "Hide" : "Show"}
@@ -187,7 +171,7 @@ export default function LoginPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full rounded-xl border border-fuchsia-400/40 bg-gradient-to-r from-pink-500/30 via-indigo-500/30 to-sky-500/30 px-4 py-3 text-sm sm:text-base font-semibold hover:from-pink-500/40 hover:via-indigo-500/40 hover:to-sky-500/40 disabled:opacity-60"
+                className="cursor-pointer w-full rounded-xl border border-fuchsia-400/40 bg-gradient-to-r from-pink-500/30 via-indigo-500/30 to-sky-500/30 px-4 py-3 text-sm sm:text-base font-semibold hover:from-pink-500/40 hover:via-indigo-500/40 hover:to-sky-500/40 disabled:opacity-60"
               >
                 {loading ? "Signing in..." : "Sign in"}
               </button>
@@ -202,13 +186,13 @@ export default function LoginPage() {
               <div className="grid grid-cols-2 gap-3">
                 <button
                   type="button"
-                  className="rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-xs sm:text-sm hover:bg-white/10"
+                  className="cursor-pointer rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-xs sm:text-sm hover:bg-white/10"
                 >
                   Login with Google
                 </button>
                 <button
                   type="button"
-                  className="rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-xs sm:text-sm hover:bg-white/10"
+                  className="cursor-pointer rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-xs sm:text-sm hover:bg-white/10"
                 >
                   Login with GitHub
                 </button>
@@ -244,3 +228,4 @@ function FieldLabel({
     </label>
   );
 }
+

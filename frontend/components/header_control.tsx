@@ -1,22 +1,19 @@
 "use client";
 
 import ThemeToggle from "@/components/ThemeToggle";
-import React, { useEffect, useState } from "react";
-import Link from "next/link";
 import { ChevronDown } from "lucide-react";
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { useTheme } from "next-themes";
+
 type HeaderControlProps = {
   mode: "remote" | "fpv";
   onToggle: () => void;
   lidarUrl?: string | null;
+  lidarActive?: boolean;
   connected: boolean;
-
-  // lỗi truyền từ bên ngoài (vd: connect error "Failed to fetch")
   errorExternal?: string | null;
-
-  // flag robot_connected từ ngoài nếu có
   robotConnectedFlag?: boolean | null;
-
-  // log lệnh gửi đi
   commandLog?: string[];
 };
 
@@ -30,14 +27,7 @@ type SystemTelemetry = {
 
 type Telemetry = {
   robot_connected: boolean;
-  turn_speed_range?: [number, number];
-  step_default?: number;
-  z_range?: [number, number];
-  z_current?: number;
-  pitch_range?: [number, number];
-  pitch_current?: number;
   battery?: number | null;
-  fw?: string | null;
   fps?: number | null;
   system?: SystemTelemetry | null;
 };
@@ -46,14 +36,11 @@ type LidarPose = {
   x: number;
   y: number;
   theta?: number;
-  connected: string;
 };
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
 const robotId = "robot-a";
 const CONTROL_PREFIX = "/control/api/robots";
-
 
 async function api<T = any>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
@@ -61,96 +48,69 @@ async function api<T = any>(path: string, init?: RequestInit): Promise<T> {
     headers: { "Content-Type": "application/json", ...(init?.headers || {}) },
     cache: "no-store",
   });
-  if (!res.ok) {
-    throw new Error(`Request failed: ${res.status}`);
-  }
+  if (!res.ok) throw new Error(`Request failed: ${res.status}`);
   return res.json();
 }
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl bg-white/5 border border-white/10 p-3">
-      <div className="text-[10px] uppercase opacity-60">{label}</div>
-      <div className="text-sm mt-1">{value}</div>
+    <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] dark:bg-[rgba(255,255,255,0.04)] dark:border-white/10">
+      <div className="text-[10px] uppercase tracking-[0.22em] text-[var(--muted-2)] dark:text-white/45">
+        {label}
+      </div>
+      <div className="mt-1 text-sm font-semibold text-[var(--foreground)] dark:text-white">
+        {value}
+      </div>
     </div>
   );
-}
-
-function buildLidarPoseUrl(lidarUrl: string) {
-  if (!lidarUrl) return "";
-  if (lidarUrl.endsWith("/pose") || lidarUrl.endsWith("/pose/")) {
-    return lidarUrl;
-  }
-
-  try {
-    const u = new URL(lidarUrl);
-    if (u.pathname.endsWith("/pose") || u.pathname.endsWith("/pose/")) {
-      return u.toString();
-    }
-    if (!u.pathname.endsWith("/")) {
-      u.pathname += "/";
-    }
-    u.pathname += "pose";
-    return u.toString();
-  } catch {
-    return `${lidarUrl.replace(/\/$/, "")}/pose`;
-  }
 }
 
 export default function HeaderControl({
   mode,
   onToggle,
   lidarUrl,
+  lidarActive = false,
   connected,
   errorExternal,
   robotConnectedFlag,
   commandLog,
 }: HeaderControlProps) {
+  const { resolvedTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
   const isFPV = mode === "fpv";
+  const isDark = mounted && resolvedTheme === "dark";
 
-  const [robotName, setRobotName] = useState<string>("Robot A");
+  const [robotName, setRobotName] = useState("Robot A");
   const [telemetry, setTelemetry] = useState<Telemetry | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState(true);
   const [errorStatus, setErrorStatus] = useState<string | null>(null);
-  const [locationText, setLocationText] = useState<string>("-");
+  const [locationText, setLocationText] = useState("-");
   const [collapsed, setCollapsed] = useState(false);
-  // NEW: chế độ hiển thị: debug (status + log) / info (metrics)
   const [viewMode, setViewMode] = useState<"debug" | "info">("debug");
 
-  // -------- Poll /status/ trên backend --------
+  useEffect(() => setMounted(true), []);
+
   useEffect(() => {
     let isMounted = true;
-
     async function fetchStatus() {
       try {
         const data = await api<any>(`${CONTROL_PREFIX}/${robotId}/status/`);
         if (!isMounted) return;
-
         setRobotName(data.name || "Robot A");
-
-        const t: Telemetry =
+        setTelemetry(
           data.telemetry ?? {
             robot_connected: data.robot_connected ?? false,
-            turn_speed_range: data.turn_speed_range,
-            step_default: data.step_default,
-            z_range: data.z_range,
-            z_current: data.z_current,
-            pitch_range: data.pitch_range,
-            pitch_current: data.pitch_current,
             battery: data.battery,
-            fw: data.fw,
             fps: data.fps,
             system: data.system ?? null,
-          };
-
-        setTelemetry(t);
+          }
+        );
         setErrorStatus(null);
-        setLoading(false);
       } catch (e: any) {
-        console.error("Fetch status error", e);
         if (!isMounted) return;
         setErrorStatus(e?.message || "Cannot fetch robot status");
-        setLoading(false);
+      } finally {
+        if (isMounted) setLoading(false);
       }
     }
 
@@ -162,30 +122,33 @@ export default function HeaderControl({
     };
   }, []);
 
-  // -------- Poll Lidar pose --------
   useEffect(() => {
-    if (!lidarUrl) {
+    if (!lidarActive) {
       setLocationText("-");
       return;
     }
 
-    const poseUrl = buildLidarPoseUrl(lidarUrl);
     let stop = false;
 
     async function fetchPose() {
       try {
-        const res = await fetch(poseUrl, { cache: "no-store" });
-        if (!res.ok) throw new Error(`Pose HTTP ${res.status}`);
-        const raw = await res.json();
+        const raw = await api<any>(`${CONTROL_PREFIX}/${robotId}/slam/state/`);
         if (stop) return;
-
-        const p: LidarPose = raw;
+        const p: LidarPose = raw?.data ?? raw ?? {};
         if (typeof p?.x === "number" && typeof p?.y === "number") {
-          const x = p.x.toFixed(2);
-          const y = p.y.toFixed(2);
           const thetaText =
             typeof p.theta === "number" ? `, θ: ${p.theta.toFixed(2)} rad` : "";
-          setLocationText(`x: ${x} m, y: ${y} m${thetaText}`);
+          setLocationText(`x: ${p.x.toFixed(2)} m, y: ${p.y.toFixed(2)} m${thetaText}`);
+        } else if (
+          typeof (p as any)?.pose?.x === "number" &&
+          typeof (p as any)?.pose?.y === "number"
+        ) {
+          const pose = (p as any).pose;
+          const thetaText =
+            typeof pose.theta === "number" ? `, θ: ${pose.theta.toFixed(2)} rad` : "";
+          setLocationText(
+            `x: ${pose.x.toFixed(2)} m, y: ${pose.y.toFixed(2)} m${thetaText}`
+          );
         } else {
           setLocationText("-");
         }
@@ -200,206 +163,161 @@ export default function HeaderControl({
       stop = true;
       clearInterval(id);
     };
-  }, [lidarUrl]);
+  }, [lidarActive]);
 
-  const sys: SystemTelemetry | null = telemetry?.system ?? null;
-
-  const cpuText =
-    sys?.cpu_percent != null ? `${sys.cpu_percent}%` : loading ? "…" : "-";
+  const sys = telemetry?.system ?? null;
+  const cpuText = sys?.cpu_percent != null ? `${sys.cpu_percent}%` : loading ? "…" : "-";
   const ramText = sys?.ram ?? (loading ? "…" : "-");
   const diskText = sys?.disk ?? (loading ? "…" : "-");
   const ipText = sys?.ip ?? (loading ? "…" : "-");
   const batteryValue =
     telemetry?.battery != null ? `${telemetry.battery}%` : loading ? "…" : "-";
-
-  // gộp lỗi: lỗi status + lỗi connect từ ngoài
   const mergedError = errorExternal || errorStatus;
 
+  const panelShell = isDark
+    ? "border border-white/10 bg-[linear-gradient(180deg,rgba(22,6,38,0.98),rgba(12,5,32,0.96))] shadow-[0_12px_30px_rgba(0,0,0,0.22)]"
+    : "border border-[var(--border)] bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(247,242,255,0.96))] shadow-[0_12px_30px_rgba(124,77,255,0.06)]";
+
   return (
-    <div className=" mb-5">
-      {/* HEADER TRÊN CÙNG */}
-      <header className="flex items-center justify-between ">
-        <h1
-          className={`gradient-title select-none transition-all duration-300 ${isFPV ? "opacity-100" : "opacity-90"
-            }`}
-        >
+    <div className="mb-5">
+      <header className="flex items-center justify-between gap-4">
+        <h1 className={`gradient-title select-none transition-all duration-300 ${isFPV ? "opacity-100" : "opacity-90"}`}>
           {isFPV ? "FPV CONTROL MODE" : "REMOTE CONTROL MODE"}
         </h1>
 
         <div className="flex items-center gap-3">
           <Link
             href="/control"
-            className="
-              px-3 py-1 rounded-xl
-              bg-pink-500/20 
-              hover:bg-pink-500/30 
-              text-pink-300 text-sm
-              transition-all
-              hover:scale-[1.03]
-              active:scale-95
-            "
+            className="rounded-xl border border-pink-300/30 bg-gradient-to-r from-pink-500/20 to-fuchsia-500/20 px-3 py-1 text-sm text-pink-500 transition hover:scale-[1.03] active:scale-95"
           >
             Disconnect
           </Link>
 
           <ThemeToggle />
 
-          <span className="text-sm opacity-70">Remote</span>
+          <span className={`text-sm font-semibold transition-colors ${isFPV ? "text-[var(--muted)]" : "text-[#24163f] dark:text-white"}`}>
+            Remote
+          </span>
           <button
             onClick={onToggle}
-            className={`w-11 h-7 rounded-full border border-violet-400/50 p-1 grid items-center transition-all duration-300 ${isFPV ? "bg-violet-500/40" : "bg-transparent"
-              }`}
+            className={`cursor-pointer relative h-8 w-14 rounded-full border p-1 transition-all duration-300 ${
+              isFPV
+                ? "border-cyan-300 bg-gradient-to-r from-[#FD749B]/30 via-[#7C4DFF]/25 to-[#00C2FF]/25"
+                : "border-violet-300 bg-gradient-to-r from-[#E8DDFF] to-[#D9F5FF]"
+            }`}
             aria-label="Toggle FPV mode"
           >
             <div
-              className={`w-5 h-5 rounded-full border border-violet-300/60 bg-white/10 transition-transform duration-300 ${isFPV ? "translate-x-4" : ""
-                }`}
-            />
-          </button>
-          <span className="text-sm">FPV</span>
-        </div>
-      </header>
-
-        {/* ROBOT CARD */}
-        <div className="relative col-span-2 p-4 rounded-2xl bg-white/5 border border-white/10 ">
-          {/* hàng trên: tên robot + trạng thái connect + nút Debug/Info */}
-          <div className="flex flex-wrap items-center gap-4 mb-2">
-            <div className="text-lg font-semibold">🤖 {robotName}</div>
-
-            <span
-              className={
-                connected
-                  ? "text-xs font-medium text-emerald-400"
-                  : "text-xs font-medium text-rose-400"
-              }
-            >
-              {connected ? "Connected" : "Not connected"}
-            </span>
-
-            {sys?.time && (
-              <div className="text-xs opacity-60">Time: {sys.time}</div>
-            )}
-
-            {/* toggle Debug / Info */}
-            <div className="ml-auto flex items-center gap-2">
-              <span className="text-[11px] opacity-60">View:</span>
-              <button
-                onClick={() => setViewMode("debug")}
-                className={`px-2 py-1 rounded-lg text-[11px] border transition-all ${
-                  viewMode === "debug"
-                    ? "bg-pink-500/40 border-pink-300 text-pink-50"
-                    : "bg-white/5 border-white/20 text-white/70"
-                }`}
-              >
-                Debug
-              </button>
-              <button
-                onClick={() => setViewMode("info")}
-                className={`px-2 py-1 rounded-lg text-[11px] border transition-all ${
-                  viewMode === "info"
-                    ? "bg-sky-500/40 border-sky-300 text-sky-50"
-                    : "bg-white/5 border-white/20 text-white/70"
-                }`}
-              >
-                Info
-              </button>
-            </div>
-          </div>
-
-          {/* NỘI DUNG: animate collapse/expand */}
-          <div
-            className={`mt-2 overflow-hidden transition-all duration-300 ${
-              collapsed ? "max-h-0 opacity-0" : "max-h-72 opacity-100"
-            }`}
-          >
-            {viewMode === "debug" ? (
-              // ===== DEBUG VIEW: status + command log =====
-              <div className="flex gap-4 h-40">
-                {/* STATUS TEXT */}
-                <div className="space-y-1 text-xs leading-relaxed w-56">
-                  {mergedError && (
-                    <div>
-                      <span className="font-semibold text-rose-300">
-                        Status error:{" "}
-                      </span>
-                      <span className="text-rose-200">{mergedError}</span>
-                    </div>
-                  )}
-
-                  <div>
-                    <span className="font-semibold opacity-80">
-                      Robot connected flag:{" "}
-                    </span>
-                    <span className="text-amber-200">
-                      {String(
-                        robotConnectedFlag ??
-                          telemetry?.robot_connected ??
-                          false
-                      )}
-                    </span>
-                  </div>
-
-                  {lidarUrl && (
-                    <div className="truncate">
-                      <span className="font-semibold opacity-80">
-                        Lidar URL:{" "}
-                      </span>
-                      <span className="text-sky-300">{lidarUrl}</span>
-                    </div>
-                  )}
-
-                  <div>
-                    <span className="font-semibold opacity-80">
-                      Location:{" "}
-                    </span>
-                    <span>{locationText}</span>
-                  </div>
-                </div>
-
-                {/* COMMAND LOG FULL WIDTH */}
-                <div className="flex flex-col w-full mx-2">
-                  <div className="rounded-xl bg-black/40 border border-white/10 px-3 py-2 text-[11px] font-mono overflow-y-auto flex-1">
-                    {commandLog && commandLog.length > 0 ? (
-                      commandLog.map((line, idx) => (
-                        <div key={idx} className="whitespace-pre-wrap">
-                          {line}
-                        </div>
-                      ))
-                    ) : (
-                      <span className="opacity-50">
-                        No command log yet. 
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              // ===== INFO VIEW: metrics =====
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm h-40 items-start content-start">
-                <Metric label="Location" value={locationText} />
-                <Metric label="CPU" value={cpuText} />
-                <Metric label="RAM" value={ramText} />
-                <Metric label="SDC" value={diskText} />
-                <Metric label="IPA" value={ipText} />
-                <Metric label="Battery" value={batteryValue} />
-              </div>
-            )}
-          </div>
-
-          {/* NÚT COLLAPSE Ở GÓC PHẢI DƯỚI */}
-          <button
-            onClick={() => setCollapsed((v) => !v)}
-            className="absolute -bottom-3 cursor-pointer right-6 w-7  h-7 rounded-full text-black hover:text-white border border-white/20 bg-gray-400 flex items-center justify-center shadow-md hover:bg-white/10 transition-all"
-            aria-label="Toggle details"
-          >
-            <ChevronDown
-              size={16}
-              className={`transition-transform duration-300 ${
-                collapsed ? "" : "rotate-180"
+              className={`h-6 w-6 rounded-full border border-white/60 bg-white shadow-[0_2px_10px_rgba(0,0,0,0.15)] transition-transform duration-300 ${
+                isFPV ? "translate-x-6" : "translate-x-0"
               }`}
             />
           </button>
+          <span className={`text-sm font-semibold transition-colors ${isFPV ? "text-[#24163f] dark:text-white" : "text-[var(--muted)]"}`}>
+            FPV
+          </span>
         </div>
+      </header>
+
+      <div className={`relative mt-4 rounded-2xl p-4 ${panelShell}`}>
+        <div className="flex flex-wrap items-center gap-4 mb-3">
+          <div className={`text-lg font-semibold ${isDark ? "text-white" : "text-[var(--foreground)]"}`}>
+            🤖 {robotName}
+          </div>
+
+          <span className={`text-xs font-semibold ${connected ? "text-emerald-500" : "text-rose-500"}`}>
+            {connected ? "Connected" : "Not connected"}
+          </span>
+
+          {sys?.time && <div className={`text-xs font-medium ${isDark ? "text-white/60" : "text-[var(--muted)]"}`}>Time: {sys.time}</div>}
+
+          <div className="ml-auto flex items-center gap-2">
+            <span className={`text-[11px] ${isDark ? "text-white/55" : "text-[var(--muted-2)]"}`}>View:</span>
+            <button onClick={() => setViewMode("debug")}
+              className={`cursor-pointer rounded-lg border px-2 py-1 text-[11px] transition-all ${
+                viewMode === "debug"
+                  ? "border-pink-300 bg-gradient-to-r from-[#FD749B] to-[#7C4DFF] text-white"
+                  : isDark
+                  ? "border-[rgba(255,255,255,0.12)] bg-[rgba(255,255,255,0.04)] text-white/80"
+                  : "border-[var(--border)] bg-[var(--surface-2)] text-[var(--muted)] hover:text-[var(--foreground)]"
+              }`}
+            >
+              Debug
+            </button>
+            <button onClick={() => setViewMode("info")}
+              className={`cursor-pointer rounded-lg border px-2 py-1 text-[11px] transition-all ${
+                viewMode === "info"
+                  ? "border-sky-300 bg-gradient-to-r from-[#00C2FF] to-[#7C4DFF] text-white"
+                  : isDark
+                  ? "border-[rgba(255,255,255,0.12)] bg-[rgba(255,255,255,0.04)] text-white/80"
+                  : "border-[var(--border)] bg-[var(--surface-2)] text-[var(--muted)] hover:text-[var(--foreground)]"
+              }`}
+            >
+              Info
+            </button>
+          </div>
+        </div>
+
+        <div className={`overflow-hidden transition-all duration-300 ${collapsed ? "max-h-0 opacity-0" : "max-h-72 opacity-100"}`}>
+          {viewMode === "debug" ? (
+            <div className="flex gap-4 h-40">
+              <div className={`w-56 space-y-1 text-xs leading-relaxed ${isDark ? "text-white/82" : "text-[var(--foreground)]/88"}`}>
+                <div>
+                  <span className="font-semibold text-[inherit]">Robot connected flag: </span>
+                  <span className="font-semibold text-amber-400">
+                    {String(robotConnectedFlag ?? telemetry?.robot_connected ?? false)}
+                  </span>
+                </div>
+
+                {lidarUrl && (
+                  <div className="truncate">
+                    <span className="font-semibold text-[inherit]">Lidar URL: </span>
+                    <span className="text-sky-400">{lidarUrl}</span>
+                  </div>
+                )}
+
+                <div>
+                  <span className="font-semibold text-[inherit]">Location: </span>
+                  <span className={isDark ? "text-white/60" : "text-[var(--muted)]"}>{locationText}</span>
+                </div>
+              </div>
+
+              <div className="flex min-w-0 flex-1 flex-col">
+                <div className={`flex-1 overflow-y-auto rounded-xl border px-3 py-2 font-mono text-[11px] ${isDark ? "border-white/10 bg-[rgba(255,255,255,0.04)] text-white/88" : "border-[var(--border)] bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(243,238,255,0.94))] text-[var(--foreground)] shadow-[inset_0_1px_0_rgba(255,255,255,0.65)]"}`}>
+                  {commandLog && commandLog.length > 0 ? (
+                    commandLog.map((line, idx) => (
+                      <div key={idx} className="whitespace-pre-wrap">
+                        {line}
+                      </div>
+                    ))
+                  ) : (
+                    <span className={isDark ? "text-white/45" : "text-[var(--muted)]"}>No command log yet.</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="grid h-40 grid-cols-2 content-start gap-4 text-sm md:grid-cols-3">
+              <Metric label="Location" value={locationText} />
+              <Metric label="CPU" value={cpuText} />
+              <Metric label="RAM" value={ramText} />
+              <Metric label="SDC" value={diskText} />
+              <Metric label="IPA" value={ipText} />
+              <Metric label="Battery" value={batteryValue} />
+            </div>
+          )}
+        </div>
+
+        <button onClick={() => setCollapsed((v) => !v)}
+          className="cursor-pointer absolute -bottom-3 right-6 flex h-7 w-7 items-center justify-center rounded-full border border-[var(--border)] bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(242,236,255,0.96))] text-[var(--foreground)] shadow-md transition-all hover:bg-[var(--surface)] dark:border-white/10 dark:bg-[rgba(255,255,255,0.06)] dark:text-white"
+          aria-label="Toggle details"
+        >
+          <ChevronDown
+            size={16}
+            className={`transition-transform duration-300 ${collapsed ? "" : "rotate-180"}`}
+          />
+        </button>
+      </div>
     </div>
   );
 }

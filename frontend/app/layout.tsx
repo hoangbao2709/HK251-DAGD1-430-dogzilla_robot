@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
@@ -14,9 +15,38 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Dogzilla Control",
+  title: "RobotControl",
   description: "Remote control web UI",
+  icons: {
+    icon: "/logo_hongtrang.png",
+  },
 };
+
+const stripExtensionAttributes = `
+(() => {
+  const strip = () => {
+    document.querySelectorAll("*").forEach((node) => {
+      for (const attr of Array.from(node.attributes)) {
+        if (
+          attr.name === "bis_skin_checked" ||
+          attr.name === "bis_register" ||
+          attr.name.startsWith("__processed_")
+        ) {
+          node.removeAttribute(attr.name);
+        }
+      }
+    });
+  };
+
+  strip();
+
+  new MutationObserver(strip).observe(document.documentElement, {
+    attributes: true,
+    childList: true,
+    subtree: true,
+  });
+})();
+`;
 
 export default function RootLayout({
   children,
@@ -26,14 +56,19 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
+        suppressHydrationWarning
         className={`
           ${geistSans.variable} ${geistMono.variable}
           min-h-screen
-          bg-slate-50 text-slate-900         /* LIGHT */
-          dark:bg-[#0c0520] dark:text-white /* DARK  */
+          bg-[var(--background)] text-[var(--foreground)]
           antialiased
         `}
       >
+        <Script
+          id="strip-extension-hydration-attrs"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{ __html: stripExtensionAttributes }}
+        />
         <Providers>{children}</Providers>
       </body>
     </html>

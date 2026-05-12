@@ -1,7 +1,14 @@
-from django.conf import settings
-from pymongo import MongoClient
+"""Deprecated compatibility helper."""
 
-_client = MongoClient(settings.MONGO_URI)
-_db = _client[settings.MONGO_DB_NAME]
+from django.contrib.auth.models import User
 
-users_collection = _db[settings.MONGO_USERS_COLLECTION]
+from .models import UserProfile
+
+
+def get_user_profile(email: str) -> UserProfile | None:
+    try:
+        user = User.objects.get(email=email)
+    except User.DoesNotExist:
+        return None
+    profile, _ = UserProfile.objects.get_or_create(user=user)
+    return profile

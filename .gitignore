@@ -115,14 +115,11 @@ build/
 *.whl
 
 # =============================================
-# DATABASE & LOCAL CONFIG
+# LOCAL CONFIG
 # =============================================
-*.db
-*.sqlite3
-*.sqlite
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 config.local.py
 local_settings.py
 
@@ -135,12 +132,15 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# Database
-db.sqlite3
-*.sqlite3
-
 # Python cache
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
+
+/docker-robot/
+dogzilla_server/
+MCP_Dogzilla/
+*.sqlite3
+*.sqlite
+*.db

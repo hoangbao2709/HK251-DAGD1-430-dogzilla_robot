@@ -2,25 +2,25 @@
 
 import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
+import { MoonStar, SunMedium } from "lucide-react";
 
 export default function ThemeToggle() {
-  const { theme, setTheme } = useTheme();
+  const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => setMounted(true), []);
   if (!mounted) return null;
 
-  const isDark = theme === "dark";
+  const isDark = resolvedTheme === "dark";
 
   return (
-    <button
-      onClick={() => setTheme(isDark ? "light" : "dark")}
-      className="px-3 py-2 rounded-xl border border-slate-300 dark:border-white/20
-                 bg-white/80 dark:bg-white/10 text-xs font-medium
-                 text-slate-900 dark:text-white
-                 transition active:scale-95"
+    <button onClick={() => setTheme(isDark ? "light" : "dark")}
+      className="cursor-pointer inline-flex items-center gap-2 rounded-xl border border-[var(--border)]
+                 bg-[var(--surface)] px-3 py-2 text-xs font-medium
+                 text-[var(--foreground)] transition active:scale-95"
     >
-      {isDark ? "☀ Light mode" : "🌙 Dark mode"}
+      {isDark ? <SunMedium size={14} /> : <MoonStar size={14} />}
+      {isDark ? "Light mode" : "Dark mode"}
     </button>
   );
 }

@@ -1,8 +1,14 @@
-# authapp/mongo_devices.py
-from pymongo import MongoClient
-from django.conf import settings
+"""Deprecated compatibility helper."""
 
-client = MongoClient(settings.MONGO_URI)
-db = client["robot_control"]
+from django.contrib.auth.models import User
 
-user_devices_collection = db["user_devices"]
+from .models import UserProfile
+
+
+def get_or_create_user_profile(email: str) -> UserProfile | None:
+    try:
+        user = User.objects.get(email=email)
+    except User.DoesNotExist:
+        return None
+    profile, _ = UserProfile.objects.get_or_create(user=user)
+    return profile
