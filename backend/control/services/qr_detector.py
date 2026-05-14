@@ -119,12 +119,7 @@ def compute_lateral_from_image_center(center_x_px, tz, camera_matrix):
 
 
 def compute_target_point(tx, tz):
-    dist = math.sqrt(tx * tx + tz * tz)
-
-    if dist < 1e-6:
-        return 0.0, 0.0, 0.0
-
-    return tx, tz, dist
+    return None, None, None
 
 
 def preprocess_for_qr(frame, detect_width=640):
@@ -252,7 +247,6 @@ def detect_qr_items(
         angle_rad = math.atan2(tx, tz)
         angle_deg = math.degrees(angle_rad)
         # Camera/PnP only provides a provisional range estimate.
-        camera_distance_m = math.sqrt(tx * tx + tz * tz)
         direction = classify_direction(angle_deg, deadband_deg)
 
         target_x, target_z, target_distance = compute_target_point(tx, tz)
@@ -262,19 +256,23 @@ def detect_qr_items(
             qr_type=qr_type,
             angle_deg=angle_deg,
             angle_rad=angle_rad,
-            distance_m=camera_distance_m,
-            lateral_x_m=tx,
-            forward_z_m=tz,
+            distance_m=None,
+            lateral_x_m=None,
+            forward_z_m=None,
             target_x_m=target_x,
             target_z_m=target_z,
             target_distance_m=target_distance,
             direction=direction,
             center_px=(int(center_x), int(center_y)),
             corners=img_points.astype(int).tolist(),
-            camera_distance_m=camera_distance_m,
+            camera_distance_m=None,
             lidar_distance_m=None,
         )
         items.append(item)
 
-    items.sort(key=lambda it: it.distance_m)
+    items.sort(
+        key=lambda it: it.lidar_distance_m
+        if it.lidar_distance_m is not None and math.isfinite(float(it.lidar_distance_m))
+        else float("inf")
+    )
     return DetectionResult(ok=len(items) > 0, items=items)

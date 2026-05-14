@@ -21,8 +21,6 @@ from .services.ros import ROSClient
 from .line_tracking_backend import LineTrackingServer
 from .services.mcp_voice import AmbiguousCommandError, execute_mcp_tool, map_text_to_tool
 from .services.qr_detect import (
-    MIN_TARGET_DISTANCE_M,
-    TARGET_PUSH_M,
     detect_qr_state_once,
     generate_qr_video_frames,
     get_current_qr_state,
@@ -40,7 +38,6 @@ from .services.qr_localization_metrics import (
     summarize_qr_localization_metrics,
 )
 from .services.voice_conversation_metrics import record_voice_conversation_metric
-from .services.slam_payload import find_nearest_obstacle_at_bearing
 logger = logging.getLogger(__name__)
 line_tracker = LineTrackingServer()
 
@@ -1341,68 +1338,32 @@ class QRPositionView(APIView):
             position_json = data.get("position_json")
             if isinstance(position_json, dict) and position_json.get("detected"):
                 position = position_json.get("position") or {}
-                angle_rad = position.get("angle_rad")
+                distance_source = str(position.get("distance_source") or "")
+                lidar_distance = position.get("distance_m")
                 try:
-                    bearing_rad = float(angle_rad)
+                    lidar_distance_value = float(lidar_distance)
                 except (TypeError, ValueError):
-                    bearing_rad = None
+                    lidar_distance_value = None
 
-                if bearing_rad is not None and math.isfinite(bearing_rad):
-                    try:
-                        slam_state = ROSClient(robot_id).get_slam_state_for_ui(
-                            include_scan_points=True,
-                            max_scan_points=240,
-                        )
-                        pose = slam_state.get("pose") or {}
-                        scan_points = (slam_state.get("scan") or {}).get("points") or []
-                        lidar_point = find_nearest_obstacle_at_bearing(
-                            pose,
-                            scan_points,
-                            bearing_rad,
-                        )
-                        if lidar_point:
-                            lidar_distance = float(lidar_point["dist"])
-                            position_json["camera_position"] = dict(position)
-                            position_json["lidar"] = {
-                                "ok": True,
-                                "source": "scan_point_at_qr_bearing",
-                                "distance_m": lidar_distance,
-                                "x": lidar_point.get("x"),
-                                "y": lidar_point.get("y"),
-                                "bearing_rad": lidar_point.get("bearing_rad"),
-                                "bearing_error_rad": lidar_point.get("bearing_error_rad"),
-                            }
-                            position_json["position"] = {
-                                **position,
-                                "distance_m": lidar_distance,
-                                "forward_z_m": lidar_distance * math.cos(bearing_rad),
-                                "lateral_x_m": lidar_distance * math.sin(bearing_rad),
-                                "distance_source": "lidar",
-                            }
-                            target_distance = max(
-                                lidar_distance + TARGET_PUSH_M,
-                                MIN_TARGET_DISTANCE_M,
-                            )
-                            position_json["target"] = {
-                                **(position_json.get("target") or {}),
-                                "x_m": target_distance * math.sin(bearing_rad),
-                                "z_m": target_distance * math.cos(bearing_rad),
-                                "distance_m": target_distance,
-                                "distance_source": "lidar",
-                            }
-                        else:
-                            position_json["lidar"] = {
-                                "ok": False,
-                                "source": "scan_point_at_qr_bearing",
-                                "reason": "no_scan_point_on_qr_bearing",
-                            }
-                    except Exception as lidar_error:
-                        logger.warning("QRPositionView lidar distance fallback failed: %s", lidar_error)
-                        position_json["lidar"] = {
-                            "ok": False,
-                            "source": "scan_point_at_qr_bearing",
-                            "reason": str(lidar_error),
-                        }
+                if distance_source == "lidar" and lidar_distance_value is not None and math.isfinite(lidar_distance_value):
+                    target = position_json.get("target") or {}
+                    position_json["lidar"] = {
+                        "ok": True,
+                        "source": "qr_detect_enriched",
+                        "distance_m": lidar_distance_value,
+                        "x": (position_json.get("target_map") or {}).get("x_m"),
+                        "y": (position_json.get("target_map") or {}).get("y_m"),
+                    }
+                    position_json["target"] = {
+                        **target,
+                        "distance_source": "lidar",
+                    }
+                else:
+                    position_json["lidar"] = {
+                        "ok": False,
+                        "source": "qr_detect_enriched",
+                        "reason": "no_lidar_hit",
+                    }
 
             return Response(
                 {

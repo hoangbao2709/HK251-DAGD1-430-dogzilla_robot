@@ -158,14 +158,8 @@ export default function FPVView({
       }
     })();
 
-    const iv = setInterval(async () => {
-      try {
-      } catch {}
-    }, 2000);
-
     return () => {
       stop = true;
-      clearInterval(iv);
       onEmergencyStop?.();
     };
   }, [appendLog, dogServer, formatError, onEmergencyStop, resetBody]);

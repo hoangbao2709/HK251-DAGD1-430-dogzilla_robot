@@ -83,11 +83,11 @@ export type QrItem = {
     text: string;
     qr_type: string;
     angle_deg: number;
-    distance_m: number;
-    lateral_x_m: number;
-    forward_z_m: number;
-    target_x_m: number;
-    target_z_m: number;
+    distance_m?: number | null;
+    lateral_x_m?: number | null;
+    forward_z_m?: number | null;
+    target_x_m?: number | null;
+    target_z_m?: number | null;
     direction: string;
     camera_distance_m?: number | null;
     lidar_distance_m?: number | null;
@@ -109,29 +109,29 @@ export type QrPositionData = {
     position?: {
         angle_deg?: number;
         angle_rad?: number;
-        distance_m?: number;
-        lateral_x_m?: number;
-        forward_z_m?: number;
-        distance_source?: "camera" | "lidar" | string;
+        distance_m?: number | null;
+        lateral_x_m?: number | null;
+        forward_z_m?: number | null;
+        distance_source?: "lidar" | "n/a" | string;
     };
     target?: {
-        x_m?: number;
-        z_m?: number;
-        distance_m?: number;
-        distance_source?: "camera" | "lidar" | string;
+        x_m?: number | null;
+        z_m?: number | null;
+        distance_m?: number | null;
+        distance_source?: "lidar" | "n/a" | string;
     };
     camera_position?: {
         angle_deg?: number;
         angle_rad?: number;
-        distance_m?: number;
-        lateral_x_m?: number;
-        forward_z_m?: number;
+        distance_m?: number | null;
+        lateral_x_m?: number | null;
+        forward_z_m?: number | null;
     };
     lidar?: {
         ok?: boolean;
         source?: string;
         reason?: string;
-        distance_m?: number;
+        distance_m?: number | null;
         x?: number;
         y?: number;
         bearing_rad?: number;

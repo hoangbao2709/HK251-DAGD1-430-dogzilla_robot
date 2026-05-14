@@ -68,31 +68,36 @@ def draw_overlay(frame, detection_result):
         x, y = item.center_px
         display_distance_m = item.lidar_distance_m
         distance_source = "LiDAR"
-        try:
-            display_distance_m = float(display_distance_m)
-        except (TypeError, ValueError):
-            display_distance_m = item.distance_m
-            distance_source = "camera"
-        else:
-            if not math.isfinite(display_distance_m):
-                display_distance_m = item.distance_m
-                distance_source = "camera"
+        if display_distance_m is None or not math.isfinite(float(display_distance_m)):
+            display_distance_m = None
+            distance_source = "N/A"
 
-        lateral_x_m = float(item.lateral_x_m)
-        # t is the forward range along the robot centerline.
-        t_m = float(display_distance_m)
-        target_distance_m = float(item.target_distance_m)
-        target_x_m = float(item.target_x_m)
-        target_z_m = float(item.target_z_m)
+        lateral_x_m = item.lateral_x_m
+        forward_z_m = item.forward_z_m
+        target_distance_m = item.target_distance_m
+        target_x_m = item.target_x_m
+        target_z_m = item.target_z_m
         map_x_m = item.map_x_m
         map_y_m = item.map_y_m
         ray_distance_m = item.ray_distance_m
+
+        def fmt(value: float | None, digits: int = 2) -> str:
+            if value is None:
+                return "N/A"
+            try:
+                number = float(value)
+            except (TypeError, ValueError):
+                return "N/A"
+            if not math.isfinite(number):
+                return "N/A"
+            return f"{number:.{digits}f}"
+
         lines = [
             f"QR: {item.text}",
             f"angle: {item.angle_deg:.1f} deg",
-            f"dist : {display_distance_m:.2f} m",
-            f"tx/t: ({lateral_x_m:.2f}, {t_m:.2f})",
-            f"target: ({target_x_m:.2f}, {target_z_m:.2f})",
+            f"dist : {fmt(display_distance_m)} m",
+            f"tx/t: ({fmt(lateral_x_m)}, {fmt(forward_z_m)})",
+            f"target: ({fmt(target_x_m)}, {fmt(target_z_m)})",
         ]
         if map_x_m is not None and map_y_m is not None:
             try:
@@ -106,6 +111,11 @@ def draw_overlay(frame, detection_result):
                 lines.append(f"ray: {float(ray_distance_m):.2f} m")
             except (TypeError, ValueError):
                 pass
+        if target_distance_m is not None:
+            try:
+                lines.append(f"target_dist: {float(target_distance_m):.2f} m")
+            except (TypeError, ValueError):
+                lines.append("target_dist: N/A")
 
         yy = y - 55
         for line in lines:

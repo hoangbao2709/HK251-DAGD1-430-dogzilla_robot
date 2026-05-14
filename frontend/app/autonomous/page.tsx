@@ -164,6 +164,15 @@ export default function AutonomousControlPage() {
   const modalMapImgRef = useRef<HTMLImageElement | null>(null);
   const modalOverlayRef = useRef<HTMLCanvasElement | null>(null);
   const lastQrDetectTimeMsRef = useRef<number | undefined>(undefined);
+  const requestLockRef = useRef({
+    status: false,
+    slam: false,
+    qrState: false,
+    qrPosition: false,
+    controlStatus: false,
+    points: false,
+    patrolStatus: false,
+  });
 
   const [robotAddr, setRobotAddr] = useState(
     () => getSelectedRobotAddr() || DEFAULT_DOG_SERVER
@@ -221,12 +230,16 @@ export default function AutonomousControlPage() {
   }, [mapModalOpen]);
 
   const fetchRobotStatus = useCallback(async () => {
+    if (requestLockRef.current.status) return;
+    requestLockRef.current.status = true;
     try {
       const data = await RobotAPI.status();
       setRobotStatus(data);
       setConnected(Boolean(data.telemetry?.robot_connected));
     } catch {
       setConnected(false);
+    } finally {
+      requestLockRef.current.status = false;
     }
   }, []);
 
@@ -251,6 +264,8 @@ export default function AutonomousControlPage() {
   }, []);
 
   const fetchSlamState = useCallback(async () => {
+    if (requestLockRef.current.slam) return;
+    requestLockRef.current.slam = true;
     try {
       const json = await RobotAPI.slamState();
       const data = json?.data ?? json ?? null;
@@ -259,10 +274,14 @@ export default function AutonomousControlPage() {
     } catch (error) {
       setSlamState(null);
       setSlamError(error instanceof Error ? error.message : "Khong lay duoc /state");
+    } finally {
+      requestLockRef.current.slam = false;
     }
   }, []);
 
   const fetchQrState = useCallback(async () => {
+    if (requestLockRef.current.qrState) return;
+    requestLockRef.current.qrState = true;
     try {
       const json = await RobotAPI.qrState();
       const data = json?.data ?? json ?? null;
@@ -273,10 +292,14 @@ export default function AutonomousControlPage() {
       setQrError(
         error instanceof Error ? error.message : "Khong lay duoc trang thai QR"
       );
+    } finally {
+      requestLockRef.current.qrState = false;
     }
   }, []);
 
   const fetchQrPosition = useCallback(async () => {
+    if (requestLockRef.current.qrPosition) return;
+    requestLockRef.current.qrPosition = true;
     try {
       const started = performance.now();
       const json = await RobotAPI.qrPosition();
@@ -290,30 +313,42 @@ export default function AutonomousControlPage() {
       setQrPositionError(
         error instanceof Error ? error.message : "Khong lay duoc vi tri QR"
       );
+    } finally {
+      requestLockRef.current.qrPosition = false;
     }
   }, []);
 
   const fetchControlStatus = useCallback(async () => {
+    if (requestLockRef.current.controlStatus) return;
+    requestLockRef.current.controlStatus = true;
     try {
       const json = await RobotAPI.controlStatus();
       const data = json?.data ?? json ?? null;
       setControlStatus(data);
     } catch {
       setControlStatus(null);
+    } finally {
+      requestLockRef.current.controlStatus = false;
     }
   }, []);
 
   const fetchPoints = useCallback(async () => {
+    if (requestLockRef.current.points) return;
+    requestLockRef.current.points = true;
     try {
       const json = await RobotAPI.points();
       const data = json?.data ?? json ?? {};
       setSavedPoints(data || {});
     } catch {
       setSavedPoints({});
+    } finally {
+      requestLockRef.current.points = false;
     }
   }, []);
 
   const fetchPatrolStatus = useCallback(async () => {
+    if (requestLockRef.current.patrolStatus) return;
+    requestLockRef.current.patrolStatus = true;
     try {
       const data = (await RobotAPI.patrolStatus()) as PatrolStatusResponse;
       setPatrolRunning(Boolean(data?.running));
@@ -321,6 +356,8 @@ export default function AutonomousControlPage() {
     } catch {
       setPatrolRunning(false);
       setPatrolMission(null);
+    } finally {
+      requestLockRef.current.patrolStatus = false;
     }
   }, []);
 
@@ -334,14 +371,14 @@ export default function AutonomousControlPage() {
     fetchPatrolStatus();
 
     const timers = [
-      setInterval(fetchRobotStatus, 3000),
-      setInterval(fetchSlamState, 1500),
-      setInterval(fetchQrState, 700),
-      setInterval(fetchQrPosition, 700),
-      setInterval(fetchControlStatus, 5000),
-      setInterval(fetchPoints, 5000),
-      setInterval(fetchPatrolStatus, 1500),
-      setInterval(() => setMapReloadKey((value) => value + 1), 3000),
+      setInterval(fetchRobotStatus, 5000),
+      setInterval(fetchSlamState, 3000),
+      setInterval(fetchQrState, 2000),
+      setInterval(fetchQrPosition, 2000),
+      setInterval(fetchControlStatus, 8000),
+      setInterval(fetchPoints, 10000),
+      setInterval(fetchPatrolStatus, 3000),
+      setInterval(() => setMapReloadKey((value) => value + 1), 10000),
     ];
 
     return () => timers.forEach(clearInterval);
@@ -838,13 +875,13 @@ export default function AutonomousControlPage() {
     const metricDistanceM =
       typeof lidarDistanceM === "number"
         ? lidarDistanceM
-        : qrMetricPosition?.distance_m;
+        : undefined;
     const qrMetricEstimate = qrMetricPosition
       ? {
         detected: Boolean(qrPosition?.detected),
         qr_text: qrMetricText,
         distance_m: metricDistanceM,
-        distance_source: typeof lidarDistanceM === "number" ? "lidar" : qrMetricPosition.distance_source,
+        distance_source: typeof lidarDistanceM === "number" ? "lidar" : "n/a",
         lidar_distance_m: lidarDistanceM,
         angle_deg: qrMetricPosition.angle_deg,
         lateral_x_m: qrMetricPosition.lateral_x_m,

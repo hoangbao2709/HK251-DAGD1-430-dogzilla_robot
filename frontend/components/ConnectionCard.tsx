@@ -55,8 +55,11 @@ export default function ConnectionCard({
 
   useEffect(() => {
     let alive = true;
+    let inFlight = false;
 
     async function fetchStatus() {
+      if (inFlight) return;
+      inFlight = true;
       const base = buildRobotBase();
       try {
         const res = await fetch(`${base}/status`, { cache: "no-store" });
@@ -75,11 +78,13 @@ export default function ConnectionCard({
           status: "offline",
           battery: null,
         });
+      } finally {
+        inFlight = false;
       }
     }
 
     fetchStatus();
-    const timer = setInterval(fetchStatus, 2000);
+    const timer = setInterval(fetchStatus, 5000);
 
     return () => {
       alive = false;

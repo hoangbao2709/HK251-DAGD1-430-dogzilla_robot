@@ -69,7 +69,7 @@ def _item_with_lidar_ray_hit(
         target_x_m=target_x_m,
         target_z_m=target_z_m,
         target_distance_m=target_distance_m,
-        camera_distance_m=item.camera_distance_m if item.camera_distance_m is not None else item.distance_m,
+        camera_distance_m=None,
         lidar_distance_m=ray_distance_m,
         map_x_m=map_x_m,
         map_y_m=map_y_m,
@@ -81,7 +81,7 @@ def _item_with_lidar_ray_hit(
 def _safe_qr_point_name(text: str) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9_-]+", "_", (text or "").strip())
     cleaned = cleaned.strip("_-")
-    return f"qr__{cleaned}" if cleaned else "qr__target"
+    return cleaned if cleaned else "target"
 
 
 def _publish_qr_target(robot_id: str, item_dict: Dict[str, Any]) -> None:
@@ -164,7 +164,7 @@ def enrich_detection_result_with_lidar(robot_id: str, result: DetectionResult) -
             continue
 
         try:
-            lidar_beam_distance_m = float(lidar_point["dist"])
+            lidar_beam_distance_m = float(lidar_point["ray_distance_m"])
         except (TypeError, ValueError):
             enriched_items.append(item)
             continue
@@ -191,7 +191,11 @@ def enrich_detection_result_with_lidar(robot_id: str, result: DetectionResult) -
             )
         )
 
-    enriched_items.sort(key=lambda item: item.distance_m)
+    enriched_items.sort(
+        key=lambda item: item.lidar_distance_m
+        if item.lidar_distance_m is not None and math.isfinite(float(item.lidar_distance_m))
+        else float("inf")
+    )
     return DetectionResult(ok=result.ok, items=enriched_items)
 
 
@@ -237,7 +241,7 @@ def get_current_qr_state(robot_id: str) -> dict:
 def qr_item_to_dict(item: QRItem) -> Dict[str, Any]:
     distance_source = "lidar"
     if item.lidar_distance_m is None or not math.isfinite(float(item.lidar_distance_m)):
-        distance_source = "camera"
+        distance_source = "n/a"
     return {
         "text": item.text,
         "qr_type": item.qr_type,

@@ -110,15 +110,15 @@ type QRLocalizationMetricPayload = {
     y?: number;
   };
   estimate?: {
-    detected?: boolean;
-    qr_text?: string;
-    text?: string;
-    distance_m?: number;
-    angle_deg?: number;
-    lateral_x_m?: number;
-    forward_z_m?: number;
-    x?: number;
-    y?: number;
+      detected?: boolean;
+      qr_text?: string;
+      text?: string;
+      distance_m?: number | null;
+      angle_deg?: number;
+      lateral_x_m?: number | null;
+      forward_z_m?: number | null;
+      x?: number | null;
+      y?: number | null;
   };
   nav?: {
     goal_x?: number;

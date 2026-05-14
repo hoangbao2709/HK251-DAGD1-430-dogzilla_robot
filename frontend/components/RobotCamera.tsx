@@ -15,7 +15,7 @@ type CameraTracking = {
   angular_z?: number;
 };
 
-export default function RobotCamera({ robotId, interval = 100 }: RobotCameraProps) {
+export default function RobotCamera({ robotId, interval = 500 }: RobotCameraProps) {
   const [frame, setFrame] = useState<string | null>(null);
   const [mask, setMask] = useState<string | null>(null);
   const [tracking, setTracking] = useState<CameraTracking | null>(null);
@@ -24,8 +24,11 @@ export default function RobotCamera({ robotId, interval = 100 }: RobotCameraProp
 
   useEffect(() => {
     let isMounted = true;
+    let inFlight = false;
 
     const fetchFrame = async () => {
+      if (inFlight) return;
+      inFlight = true;
       try {
         const res = await fetch(`http://localhost:8000/control/api/robots/${robotId}/camera/`);
         const data = await res.json();
@@ -37,6 +40,8 @@ export default function RobotCamera({ robotId, interval = 100 }: RobotCameraProp
         }
       } catch (err) {
         console.error(err);
+      } finally {
+        inFlight = false;
       }
     };
 

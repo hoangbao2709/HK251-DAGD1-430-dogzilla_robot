@@ -212,7 +212,7 @@ export default function RemoteView({
     }
 
     fetchControlStatus();
-    const id = setInterval(fetchControlStatus, 2500);
+    const id = setInterval(fetchControlStatus, 5000);
 
     return () => {
       stop = true;
@@ -293,7 +293,7 @@ export default function RemoteView({
     };
 
     checkAndConnect();
-    iv = setInterval(checkAndConnect, 2000);
+    iv = setInterval(checkAndConnect, 5000);
 
     return () => {
       stop = true;
@@ -311,7 +311,7 @@ export default function RemoteView({
         }
       } catch {
       }
-    }, 2000);
+    }, 5000);
 
     return () => {
       stop = true;

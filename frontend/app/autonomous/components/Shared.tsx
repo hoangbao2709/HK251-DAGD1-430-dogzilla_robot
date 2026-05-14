@@ -34,6 +34,7 @@ export function TopDownQrView({ data }: { data: QrPositionData | null }) {
     const rangeM = useMemo(() => {
         const candidates = [
             data?.render_hint?.suggested_max_range_m,
+            data?.lidar?.distance_m,
             data?.position?.distance_m,
             data?.target?.distance_m,
             data?.position?.forward_z_m,
@@ -70,16 +71,13 @@ export function TopDownQrView({ data }: { data: QrPositionData | null }) {
     const displayDistance =
         typeof lidarDistance === "number"
             ? lidarDistance
-            : data?.position?.distance_source === "lidar" &&
-              typeof data?.position?.distance_m === "number"
-              ? data.position.distance_m
-              : undefined;
+            : undefined;
     const distanceText =
         typeof displayDistance === "number"
             ? `${displayDistance.toFixed(2)} m`
-            : "--";
+            : "N/A";
     const sourceText =
-        typeof displayDistance === "number" ? "LiDAR" : "--";
+        typeof displayDistance === "number" ? "LiDAR" : "N/A";
 
     const targetPoint =
         typeof data?.target?.x_m === "number" && typeof data?.target?.z_m === "number"

@@ -8,12 +8,12 @@ class QRItem:
     qr_type: str
     angle_deg: float
     angle_rad: float
-    distance_m: float
-    lateral_x_m: float
-    forward_z_m: float
-    target_x_m: float
-    target_z_m: float
-    target_distance_m: float
+    distance_m: float | None
+    lateral_x_m: float | None
+    forward_z_m: float | None
+    target_x_m: float | None
+    target_z_m: float | None
+    target_distance_m: float | None
     direction: str
     center_px: tuple[int, int]
     corners: list[list[int]]

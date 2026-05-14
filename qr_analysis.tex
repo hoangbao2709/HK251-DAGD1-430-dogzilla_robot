@@ -1,0 +1,500 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[utf8]{vietnam}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsfonts}
+\usepackage{geometry}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{hyperref}
+\geometry{a4paper, margin=1in}
+
+\title{Phân tích thuật toán xử lý QR Code bằng Camera và LiDAR}
+\author{Robot Dogzilla}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{Mục tiêu}
+
+Hệ thống hiện tại xử lý QR theo hướng:
+
+\begin{itemize}
+    \item Camera dùng để phát hiện QR Code, lấy 4 góc ảnh, ước lượng pose sơ bộ và suy ra góc lệch.
+    \item LiDAR dùng để hiệu chỉnh khoảng cách thực theo hướng QR khi tìm được điểm scan phù hợp trên ray.
+    \item Overlay hiển thị khoảng cách theo LiDAR nếu có, nếu không thì fallback về khoảng cách camera.
+\end{itemize}
+
+Kết luận quan trọng:
+
+\begin{itemize}
+    \item \texttt{distance\_m} ban đầu từ camera chỉ là giá trị sơ bộ.
+    \item Khi có hit LiDAR hợp lệ, \texttt{distance\_m}, \texttt{lateral\_x\_m}, \texttt{forward\_z\_m}, \texttt{target\_*\_m} được ghi đè theo LiDAR.
+    \item \texttt{overlay.py} chỉ hiển thị giá trị camera khi \texttt{lidar\_distance\_m} không hợp lệ.
+\end{itemize}
+
+% ============================================================
+\section{Luồng xử lý tổng quát}
+
+Pipeline thực tế trong code:
+
+\begin{enumerate}
+    \item Đọc frame từ camera robot.
+    \item Phát hiện QR bằng \texttt{pyzbar} hoặc fallback OpenCV.
+    \item Sắp xếp 4 góc QR theo thứ tự top-left, top-right, bottom-right, bottom-left.
+    \item Chạy \texttt{solvePnP} để lấy pose sơ bộ.
+    \item Tính góc QR và khoảng cách camera.
+    \item Truy vấn LiDAR theo bearing của QR trên map.
+    \item Nếu tìm được hit LiDAR, thay thế toàn bộ phần range liên quan bằng giá trị LiDAR.
+    \item Sinh payload và hiển thị overlay.
+\end{enumerate}
+
+% ============================================================
+\section{Camera và ma trận nội tại}
+
+Trong \texttt{qr\_detect.py}, ma trận camera được khai báo:
+
+\begin{equation}
+K =
+\begin{bmatrix}
+920 & 0 & 640 \\
+0 & 920 & 360 \\
+0 & 0 & 1
+\end{bmatrix}
+\end{equation}
+
+Ý nghĩa:
+
+\begin{longtable}{|>{\raggedright\arraybackslash}p{4cm}|>{\raggedright\arraybackslash}p{9cm}|}
+\hline
+Biến & Ý nghĩa \\ \hline
+$f_x = 920$ & tiêu cự theo trục $X$ \\ \hline
+$f_y = 920$ & tiêu cự theo trục $Y$ \\ \hline
+$c_x = 640$ & tâm ảnh theo trục $X$ \\ \hline
+$c_y = 360$ & tâm ảnh theo trục $Y$ \\ \hline
+\end{longtable}
+
+Hệ tọa độ camera trong phần tính pose:
+
+\begin{itemize}
+    \item Trục $X$: ngang trái/phải.
+    \item Trục $Y$: dọc lên/xuống.
+    \item Trục $Z$: hướng nhìn tiến về phía trước camera.
+\end{itemize}
+
+% ============================================================
+\section{Tiền xử lý và phát hiện QR}
+
+Frame được nén xuống độ rộng tối đa \texttt{detect\_width = 640} trước khi decode QR:
+
+\begin{equation}
+scale = \frac{detect\_width}{w}
+\end{equation}
+
+Nếu frame có chiều rộng $w \le detect\_width$ thì:
+
+\begin{equation}
+scale = 1
+\end{equation}
+
+Sau đó ảnh được chuyển grayscale và làm mượt nhẹ bằng Gaussian blur.
+
+Điểm quan trọng là các điểm ảnh QR sau khi decode được đưa ngược về kích thước frame gốc bằng:
+
+\begin{equation}
+P_{img}^{(orig)} = \frac{P_{img}^{(scaled)}}{scale}
+\end{equation}
+
+% ============================================================
+\section{Sắp xếp 4 góc QR}
+
+Các góc QR được sắp theo thứ tự:
+
+\begin{enumerate}
+    \item top-left
+    \item top-right
+    \item bottom-right
+    \item bottom-left
+\end{enumerate}
+
+Giả sử 4 điểm ảnh là:
+
+\begin{equation}
+P_{img} =
+\begin{bmatrix}
+u_1 & v_1 \\
+u_2 & v_2 \\
+u_3 & v_3 \\
+u_4 & v_4
+\end{bmatrix}
+\end{equation}
+
+Khi cần fallback từ polygon sang bounding box, code dùng hình chữ nhật bao quanh.
+
+% ============================================================
+\section{Object points của QR}
+
+Kích thước thật của QR:
+
+\begin{equation}
+S = 0.12 \text{ m}
+\end{equation}
+
+Đặt:
+
+\begin{equation}
+s = \frac{S}{2}
+\end{equation}
+
+Bốn điểm 3D của QR trên mặt phẳng $Z = 0$:
+
+\begin{equation}
+P_{obj} =
+\begin{bmatrix}
+-s & -s & 0 \\
+ s & -s & 0 \\
+ s &  s & 0 \\
+-s &  s & 0
+\end{bmatrix}
+\end{equation}
+
+Ý nghĩa:
+
+\begin{itemize}
+    \item Tâm QR là gốc tọa độ local của object.
+    \item Mặt phẳng QR được giả định song song mặt phẳng $XY$ của object frame.
+\end{itemize}
+
+% ============================================================
+\section{Ước lượng pose bằng \texttt{solvePnP}}
+
+Hàm \texttt{cv2.solvePnP} trả về:
+
+\begin{equation}
+(rvec, tvec)
+\end{equation}
+
+Trong đó:
+
+\begin{equation}
+tvec =
+\begin{bmatrix}
+t_x \\
+t_y \\
+t_z
+\end{bmatrix}
+\end{equation}
+
+Code dùng:
+
+\begin{itemize}
+    \item \texttt{SOLVEPNP\_ITERATIVE} trước.
+    \item Nếu thất bại thì thử \texttt{SOLVEPNP\_IPPE\_SQUARE}.
+\end{itemize}
+
+Giá trị trục tiến trước được chuẩn hóa bằng:
+
+\begin{equation}
+tz = |t_z|
+\end{equation}
+
+Lưu ý:
+
+\begin{itemize}
+    \item Code không dùng trực tiếp $t_x$ từ \texttt{solvePnP}.
+    \item Tọa độ ngang được tính lại từ tâm ảnh bằng công thức pinhole.
+\end{itemize}
+
+% ============================================================
+\section{Tính lệch ngang từ tâm ảnh}
+
+Tâm QR trên ảnh được tính bằng:
+
+\begin{equation}
+u_c = \frac{u_1+u_2+u_3+u_4}{4}
+\end{equation}
+
+\begin{equation}
+v_c = \frac{v_1+v_2+v_3+v_4}{4}
+\end{equation}
+
+Trong code, lệch ngang được tính theo mô hình pinhole:
+
+\begin{equation}
+t_x = \frac{u_c - c_x'}{f_x'} \cdot t_z
+\end{equation}
+
+trong đó $f_x'$ và $c_x'$ là phần tử sau khi scale ma trận camera theo frame thực tế.
+
+Hệ quả:
+
+\begin{itemize}
+    \item $t_x > 0$: QR lệch sang phải trong hệ camera theo quy ước hiện tại.
+    \item $t_x < 0$: QR lệch sang trái.
+\end{itemize}
+
+% ============================================================
+\section{Góc QR}
+
+Góc lệch của QR so với trục nhìn được tính bằng:
+
+\begin{equation}
+\theta = \operatorname{atan2}(t_x, t_z)
+\end{equation}
+
+Đổi sang độ:
+
+\begin{equation}
+\theta_{deg} = \theta \cdot \frac{180}{\pi}
+\end{equation}
+
+Phân loại hướng:
+
+\begin{equation}
+direction =
+\begin{cases}
+\text{right}, & \theta_{deg} > 5^\circ \\
+\text{left}, & \theta_{deg} < -5^\circ \\
+\text{center}, & \text{ngược lại}
+\end{cases}
+\end{equation}
+
+% ============================================================
+\section{Khoảng cách camera sơ bộ}
+
+Khoảng cách từ camera đến QR được tính như độ dài vector trong hệ camera:
+
+\begin{equation}
+d_{camera} = \sqrt{t_x^2 + t_z^2}
+\end{equation}
+
+Giá trị này được gán vào:
+
+\begin{itemize}
+    \item \texttt{distance\_m}
+    \item \texttt{camera\_distance\_m}
+\end{itemize}
+
+và \texttt{lidar\_distance\_m} ban đầu để \texttt{None}.
+
+% ============================================================
+\section{Tọa độ target theo camera}
+
+Nếu chỉ dùng camera, target được suy ra trực tiếp từ pose camera:
+
+\begin{equation}
+target_x = t_x
+\end{equation}
+
+\begin{equation}
+target_z = t_z
+\end{equation}
+
+\begin{equation}
+target_{distance} = \sqrt{t_x^2 + t_z^2}
+\end{equation}
+
+Nói cách khác, target ban đầu chính là vector tương đối của QR trong hệ robot.
+
+% ============================================================
+\section{Truy vấn LiDAR theo bearing QR}
+
+Phần LiDAR được xử lý trong \texttt{find\_first\_obstacle\_on\_ray()}.
+
+Góc tia quét:
+
+\begin{equation}
+\phi = \operatorname{normalize}(yaw_{robot} + \theta + offset)
+\end{equation}
+
+trong đó:
+
+\begin{itemize}
+    \item $yaw_{robot}$ là yaw robot trong map frame.
+    \item $\theta$ là góc QR trong camera frame.
+    \item $offset$ là \texttt{CAMERA\_LIDAR\_YAW\_OFFSET\_RAD}.
+\end{itemize}
+
+Với mỗi điểm scan trên map:
+
+\begin{equation}
+dx = p_x - r_x,\quad dy = p_y - r_y
+\end{equation}
+
+Khoảng cách chiếu theo tia:
+
+\begin{equation}
+forward_m = dx \cos(\phi) + dy \sin(\phi)
+\end{equation}
+
+Khoảng cách vuông góc đến tia:
+
+\begin{equation}
+perp_m = | -dx \sin(\phi) + dy \cos(\phi) |
+\end{equation}
+
+Điểm scan hợp lệ phải thỏa:
+
+\begin{equation}
+forward_m \ge min\_distance\_m
+\end{equation}
+
+\begin{equation}
+perp_m \le corridor\_width\_m
+\end{equation}
+
+Trong các điểm hợp lệ, điểm có $forward_m$ nhỏ nhất sẽ được chọn làm hit đầu tiên trên ray.
+
+Kết quả trả về:
+
+\begin{equation}
+ray\_distance\_m = forward_m
+\end{equation}
+
+\begin{equation}
+ray\_angle\_rad = \phi
+\end{equation}
+
+% ============================================================
+\section{Hiệu chỉnh bằng LiDAR}
+
+Khi có hit LiDAR hợp lệ, code ghi đè các giá trị liên quan đến range:
+
+\begin{equation}
+distance_m = ray\_distance\_m
+\end{equation}
+
+\begin{equation}
+lateral\_x\_m = ray\_distance\_m \sin(ray\_angle\_rad)
+\end{equation}
+
+\begin{equation}
+forward\_z\_m = ray\_distance\_m \cos(ray\_angle\_rad)
+\end{equation}
+
+\begin{equation}
+target_x\_m = lateral\_x\_m
+\end{equation}
+
+\begin{equation}
+target_z\_m = forward\_z\_m
+\end{equation}
+
+\begin{equation}
+target\_distance\_m = ray\_distance\_m
+\end{equation}
+
+\begin{equation}
+distance\_source = \text{"lidar"}
+\end{equation}
+
+Ngoài ra:
+
+\begin{itemize}
+    \item \texttt{map\_x\_m}, \texttt{map\_y\_m} lưu tọa độ điểm hit trên map.
+    \item \texttt{ray\_distance\_m} là khoảng cách dọc theo tia ray.
+    \item \texttt{distance\_m} sau enrichment dùng đúng giá trị LiDAR.
+\end{itemize}
+
+% ============================================================
+\section{Ý nghĩa các trường dữ liệu}
+
+\begin{longtable}{|>{\raggedright\arraybackslash}p{4cm}|>{\raggedright\arraybackslash}p{9cm}|}
+\hline
+Trường & Ý nghĩa \\ \hline
+\texttt{angle\_deg} & góc lệch QR, đơn vị độ \\ \hline
+\texttt{angle\_rad} & góc lệch QR, đơn vị radian \\ \hline
+\texttt{distance\_m} & khoảng cách đang dùng cho xử lý, camera hoặc LiDAR tùy nguồn \\ \hline
+\texttt{camera\_distance\_m} & khoảng cách sơ bộ từ camera \\ \hline
+\texttt{lidar\_distance\_m} & khoảng cách từ LiDAR nếu có hit hợp lệ \\ \hline
+\texttt{lateral\_x\_m} & thành phần ngang trong hệ robot \\ \hline
+\texttt{forward\_z\_m} & thành phần tiến trước trong hệ robot \\ \hline
+\texttt{target\_x\_m} & hoành độ target trong hệ robot \\ \hline
+\texttt{target\_z\_m} & tung độ target trong hệ robot \\ \hline
+\texttt{target\_distance\_m} & khoảng cách đến target đang sử dụng \\ \hline
+\texttt{ray\_distance\_m} & khoảng cách dọc theo ray LiDAR \\ \hline
+\texttt{ray\_angle\_rad} & góc tia LiDAR trong map frame \\ \hline
+\texttt{distance\_source} & nguồn khoảng cách: \texttt{lidar} hoặc \texttt{camera} \\ \hline
+\end{longtable}
+
+% ============================================================
+\section{Hiển thị overlay}
+
+Trong \texttt{overlay.py}, khoảng cách hiển thị được chọn theo quy tắc:
+
+\begin{equation}
+display\_distance =
+\begin{cases}
+lidar\_distance\_m, & \text{nếu hợp lệ và finite} \\
+distance\_m, & \text{ngược lại}
+\end{cases}
+\end{equation}
+
+Chuỗi hiển thị chính:
+
+\begin{verbatim}
+QR: ...
+angle: ... deg
+dist : ... m
+tx/t: (..., ...)
+target: (..., ...)
+map: (..., ...)
+ray: ... m
+\end{verbatim}
+
+Trong đó:
+
+\begin{itemize}
+    \item \texttt{dist} là khoảng cách nguồn đang dùng để hiển thị.
+    \item \texttt{tx/t} hiển thị \texttt{lateral\_x\_m} và \texttt{display\_distance}.
+    \item \texttt{target} hiển thị \texttt{target\_x\_m} và \texttt{target\_z\_m}.
+    \item \texttt{ray} chỉ xuất hiện khi có \texttt{ray\_distance\_m}.
+\end{itemize}
+
+% ============================================================
+\section{Liên hệ với code}
+
+\begin{itemize}
+    \item \texttt{backend/control/services/qr\_detector.py}
+    \begin{itemize}
+        \item decode QR,
+        \item sắp xếp 4 góc,
+        \item chạy \texttt{solvePnP},
+        \item tính \texttt{angle\_rad}, \texttt{angle\_deg}, \texttt{distance\_m} sơ bộ.
+    \end{itemize}
+    \item \texttt{backend/control/services/qr\_detect.py}
+    \begin{itemize}
+        \item gọi detector,
+        \item truy vấn SLAM/LiDAR,
+        \item enrichment theo ray,
+        \item tạo payload xuất ra UI.
+    \end{itemize}
+    \item \texttt{backend/control/services/overlay.py}
+    \begin{itemize}
+        \item chọn nguồn khoảng cách để hiển thị,
+        \item render text overlay theo dữ liệu đã enrich.
+    \end{itemize}
+\end{itemize}
+
+% ============================================================
+\section{Kết luận}
+
+Mô hình xử lý QR hiện tại có thể tóm tắt bằng chuỗi:
+
+\begin{equation}
+Image \rightarrow QR\ Detection \rightarrow Pose \rightarrow Bearing \rightarrow LiDAR\ Raycast \rightarrow Range\ Override \rightarrow Target \rightarrow Overlay
+\end{equation}
+
+Tóm lược ngắn:
+
+\begin{itemize}
+    \item Camera chịu trách nhiệm nhận diện QR và suy ra góc.
+    \item Camera chỉ cung cấp khoảng cách sơ bộ trước khi LiDAR can thiệp.
+    \item LiDAR quyết định khoảng cách thực khi tìm được hit hợp lệ.
+    \item Overlay phản ánh đúng nguồn đang được dùng.
+\end{itemize}
+
+\end{document}
