@@ -19,6 +19,10 @@ class QRItem:
     corners: list[list[int]]
     camera_distance_m: float | None = None
     lidar_distance_m: float | None = None
+    map_x_m: float | None = None
+    map_y_m: float | None = None
+    ray_distance_m: float | None = None
+    ray_angle_rad: float | None = None
 
 
 @dataclass

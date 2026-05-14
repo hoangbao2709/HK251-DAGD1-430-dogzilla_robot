@@ -743,6 +743,43 @@ class ROSClient:
         }
         return self._post_json_by_url(url, payload)
 
+    def set_qr_target(
+        self,
+        name: str,
+        x: float,
+        y: float,
+        yaw: float = 0.0,
+        *,
+        text: str | None = None,
+        distance_source: str = "lidar",
+        distance_m: float | None = None,
+        map_x_m: float | None = None,
+        map_y_m: float | None = None,
+        ray_angle_rad: float | None = None,
+    ) -> Dict[str, Any]:
+        """
+        Publish the latest QR hit point so the Docker robot can persist and render it.
+        """
+        url = f"{self._build_slam_base_url()}/qr_target"
+        payload: Dict[str, Any] = {
+            "name": name,
+            "x": x,
+            "y": y,
+            "yaw": yaw,
+            "distance_source": distance_source,
+        }
+        if text is not None:
+            payload["text"] = text
+        if distance_m is not None:
+            payload["distance_m"] = distance_m
+        if map_x_m is not None:
+            payload["map_x_m"] = map_x_m
+        if map_y_m is not None:
+            payload["map_y_m"] = map_y_m
+        if ray_angle_rad is not None:
+            payload["ray_angle_rad"] = ray_angle_rad
+        return self._post_json_by_url(url, payload)
+
     def delete_point(self, name: str) -> Dict[str, Any]:
         """
         Xóa point trên robot.

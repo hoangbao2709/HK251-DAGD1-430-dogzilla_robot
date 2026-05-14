@@ -118,8 +118,9 @@ def find_nearest_obstacle_at_bearing(
     scan_points: list[dict[str, float]],
     bearing_rad: float,
     *,
-    half_fov_rad: float = 0.18,
-    min_distance_m: float = 0.05,
+    bearing_offset_rad: float = 0.0,
+    half_fov_rad: float = 0.12,
+    min_distance_m: float = 0.12,
 ) -> dict[str, float] | None:
     if not pose or not pose.get("ok") or not scan_points:
         return None
@@ -131,6 +132,7 @@ def find_nearest_obstacle_at_bearing(
     best: dict[str, float] | None = None
     best_abs_diff = float("inf")
     best_dist = float("inf")
+    expected_bearing = normalize_angle(bearing_rad + bearing_offset_rad)
 
     for point in scan_points:
         px = _as_float(point.get("x"))
@@ -142,7 +144,7 @@ def find_nearest_obstacle_at_bearing(
             continue
 
         point_bearing = normalize_angle(math.atan2(dy, dx) - yaw)
-        diff = abs(normalize_angle(point_bearing - bearing_rad))
+        diff = abs(normalize_angle(point_bearing - expected_bearing))
         if diff <= half_fov_rad and (diff < best_abs_diff or (diff == best_abs_diff and dist < best_dist)):
             best_abs_diff = diff
             best_dist = dist
@@ -152,6 +154,70 @@ def find_nearest_obstacle_at_bearing(
                 "dist": dist,
                 "bearing_rad": point_bearing,
                 "bearing_error_rad": diff,
+            }
+
+    return best
+
+
+def find_first_obstacle_on_ray(
+    pose: dict[str, Any] | None,
+    scan_points: list[dict[str, float]],
+    bearing_rad: float,
+    *,
+    bearing_offset_rad: float = 0.0,
+    corridor_width_m: float = 0.10,
+    min_distance_m: float = 0.12,
+    max_distance_m: float | None = None,
+) -> dict[str, float] | None:
+    """
+    Cast a ray from the robot pose on the 2D map and return the first scan point
+    that lies on that ray corridor.
+
+    The scan points are already expressed in the map frame, so this works as a
+    light-weight raycast over the available obstacle point cloud.
+    """
+    if not pose or not pose.get("ok") or not scan_points:
+        return None
+
+    rx = _as_float(pose.get("x"))
+    ry = _as_float(pose.get("y"))
+    yaw = _as_float(pose.get("theta"))
+    ray_angle = normalize_angle(yaw + bearing_rad + bearing_offset_rad)
+    ray_c = math.cos(ray_angle)
+    ray_s = math.sin(ray_angle)
+
+    best: dict[str, float] | None = None
+    best_forward = float("inf")
+    best_perp = float("inf")
+
+    for point in scan_points:
+        px = _as_float(point.get("x"))
+        py = _as_float(point.get("y"))
+        dx = px - rx
+        dy = py - ry
+
+        forward_m = dx * ray_c + dy * ray_s
+        if not math.isfinite(forward_m) or forward_m < min_distance_m:
+            continue
+        if max_distance_m is not None and forward_m > max_distance_m:
+            continue
+
+        perp_m = abs(-dx * ray_s + dy * ray_c)
+        if perp_m > corridor_width_m:
+            continue
+
+        if forward_m < best_forward or (
+            abs(forward_m - best_forward) <= 1e-6 and perp_m < best_perp
+        ):
+            best_forward = forward_m
+            best_perp = perp_m
+            best = {
+                "x": px,
+                "y": py,
+                "ray_distance_m": forward_m,
+                "map_distance_m": math.hypot(dx, dy),
+                "perp_distance_m": perp_m,
+                "ray_angle_rad": ray_angle,
             }
 
     return best

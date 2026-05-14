@@ -118,20 +118,13 @@ def compute_lateral_from_image_center(center_x_px, tz, camera_matrix):
     return tx
 
 
-def compute_target_point(tx, tz, push_m=0.35, min_target_distance_m=0.65):
+def compute_target_point(tx, tz):
     dist = math.sqrt(tx * tx + tz * tz)
 
     if dist < 1e-6:
-        return 0.0, min_target_distance_m, min_target_distance_m
+        return 0.0, 0.0, 0.0
 
-    ux = tx / dist
-    uz = tz / dist
-
-    target_dist = max(dist + push_m, min_target_distance_m)
-    target_x = ux * target_dist
-    target_z = uz * target_dist
-
-    return target_x, target_z, target_dist
+    return tx, tz, dist
 
 
 def preprocess_for_qr(frame, detect_width=640):
@@ -215,8 +208,6 @@ def detect_qr_items(
     dist_coeffs,
     qr_size_m,
     deadband_deg=5.0,
-    target_push_m=0.35,
-    min_target_distance_m=0.65,
     detect_width=640,
 ):
     decoded, scale = decode_qr_fast(frame, detect_width=detect_width)
@@ -260,22 +251,18 @@ def detect_qr_items(
 
         angle_rad = math.atan2(tx, tz)
         angle_deg = math.degrees(angle_rad)
-        distance_m = math.sqrt(tx * tx + tz * tz)
+        # Camera/PnP only provides a provisional range estimate.
+        camera_distance_m = math.sqrt(tx * tx + tz * tz)
         direction = classify_direction(angle_deg, deadband_deg)
 
-        target_x, target_z, target_distance = compute_target_point(
-            tx,
-            tz,
-            push_m=target_push_m,
-            min_target_distance_m=min_target_distance_m,
-        )
+        target_x, target_z, target_distance = compute_target_point(tx, tz)
 
         item = QRItem(
             text=qr_text,
             qr_type=qr_type,
             angle_deg=angle_deg,
             angle_rad=angle_rad,
-            distance_m=distance_m,
+            distance_m=camera_distance_m,
             lateral_x_m=tx,
             forward_z_m=tz,
             target_x_m=target_x,
@@ -284,6 +271,8 @@ def detect_qr_items(
             direction=direction,
             center_px=(int(center_x), int(center_y)),
             corners=img_points.astype(int).tolist(),
+            camera_distance_m=camera_distance_m,
+            lidar_distance_m=None,
         )
         items.append(item)
 
